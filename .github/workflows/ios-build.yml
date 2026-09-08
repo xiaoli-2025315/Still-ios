@@ -37,6 +37,8 @@ jobs:
     # 与下方升到 v5（Node 24）的 action 互为双保险。
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      # secrets 上下文不能写在 if: 里（GitHub 不允许），所以先映射到 env，再用 env 做判断
+      IOS_SIGNING_CERT: ${{ secrets.IOS_SIGNING_CERT }}
 
     steps:
       - uses: actions/checkout@v5
@@ -195,7 +197,7 @@ jobs:
           echo "  （真机签名时会由 Xcode + 你的免费 Apple ID 把它真正签进包里。）"
 
       - name: 打成 .ipa（需要签名证书，免费 CI 无证书时自动跳过）
-        if: ${{ secrets.IOS_SIGNING_CERT != '' }}
+        if: ${{ env.IOS_SIGNING_CERT != '' }}
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
           cd build-device/Build/Products/Debug-iphoneos
@@ -206,7 +208,7 @@ jobs:
           echo "打好了：$(du -h Still.ipa | cut -f1)"
 
       - name: 上传真机包（需签名证书，免费 CI 自动跳过）
-        if: ${{ secrets.IOS_SIGNING_CERT != '' }}
+        if: ${{ env.IOS_SIGNING_CERT != '' }}
         uses: actions/upload-artifact@v5
         with:
           name: Still-device-ipa

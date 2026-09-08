@@ -27,19 +27,18 @@ on:
 
   push:
     branches: [main, master]
-    paths:
-      - 'Still-iOS/Sources/**'
-      - 'Still-iOS/project.yml'
-      - 'Sources/**'
-      - 'project.yml'
-      - '.github/workflows/ios-build.yml'
 
 jobs:
   build:
     runs-on: macos-15
 
+    # Node 20 在 2026-09-23 前仍可临时放行（GitHub 官方逃生阀），
+    # 与下方升到 v5（Node 24）的 action 互为双保险。
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 无论你把 .github 放在仓库根、还是整个仓库就是 Still-iOS，都能认出来
       - name: 定位工程目录
@@ -95,7 +94,7 @@ jobs:
 
       - name: 上传编译日志
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-log
           path: ${{ steps.loc.outputs.dir }}/build.log
@@ -138,7 +137,7 @@ jobs:
 
       - name: 上传截图
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: still-screenshots
           path: ${{ steps.loc.outputs.dir }}/shots
@@ -190,7 +189,7 @@ jobs:
 
       - name: 上传真机包
         if: steps.device.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Still-device-ipa
           path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Debug-iphoneos/Still.ipa
@@ -198,7 +197,7 @@ jobs:
 
       - name: 真机编译日志（失败时看这个）
         if: steps.device.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-device-failed-log
           path: ${{ steps.loc.outputs.dir }}/build-device.log

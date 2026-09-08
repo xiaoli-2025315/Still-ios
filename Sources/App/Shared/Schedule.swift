@@ -250,9 +250,24 @@ enum RoomOption: String, AppEnum, CaseIterable {
     static var typeDisplayRepresentation: TypeDisplayRepresentation { "房间" }
 
     static var caseDisplayRepresentations: [RoomOption: DisplayRepresentation] {
-        Dictionary(uniqueKeysWithValues: allCases.map {
-            ($0, DisplayRepresentation(title: "\(Rooms.byId[$0.rawValue]?.name ?? $0.rawValue)"))
-        })
+        [
+            .still:   DisplayRepresentation(title: "还在"),
+            .clock:   DisplayRepresentation(title: "时钟"),
+            .weather: DisplayRepresentation(title: "天气"),
+            .photo:   DisplayRepresentation(title: "照片"),
+            .notes:   DisplayRepresentation(title: "备忘录"),
+            .music:   DisplayRepresentation(title: "音乐"),
+            .podcast: DisplayRepresentation(title: "播客"),
+            .cal:     DisplayRepresentation(title: "日历"),
+            .remind:  DisplayRepresentation(title: "提醒"),
+            .health:  DisplayRepresentation(title: "健康"),
+            .maps:    DisplayRepresentation(title: "地图"),
+            .album:   DisplayRepresentation(title: "相册"),
+            .battery: DisplayRepresentation(title: "电池"),
+            .short:   DisplayRepresentation(title: "捷径"),
+            .world:   DisplayRepresentation(title: "世界时钟"),
+            .timer:   DisplayRepresentation(title: "计时器"),
+        ]
     }
 
     var roomId: String { rawValue }

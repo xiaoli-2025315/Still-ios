@@ -1,0 +1,204 @@
+[0_build.txt] 2026-09-08T08:49:18.2128580Z [36;1m  echo "::error::找不到 project.yml —— 这个 workflow 要放在 Still-iOS/ 里，或放在仓库根"[0m
+[0_build.txt] 2026-09-08T08:49:19.1482190Z ##[group]Run brew install xcodegen
+[0_build.txt] 2026-09-08T08:49:19.1483770Z [36;1mbrew install xcodegen[0m
+[0_build.txt] 2026-09-08T08:49:22.2976270Z [34m==>[0m [1mWould install 1 formula:[0m
+[0_build.txt] 2026-09-08T08:49:22.9947600Z ##[group]Run set -o pipefail
+[0_build.txt] 2026-09-08T08:49:22.9947990Z [36;1mset -o pipefail[0m
+[0_build.txt] 2026-09-08T08:49:34.0101750Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-x86_64.txt (in target 'StillWidgetExtension' from project 'Still')
+[0_build.txt] 2026-09-08T08:49:34.0103610Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-x86_64.txt
+[0_build.txt] 2026-09-08T08:49:34.0105270Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-arm64.txt (in target 'StillWidgetExtension' from project 'Still')
+[0_build.txt] 2026-09-08T08:49:34.0107100Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-arm64.txt
+[0_build.txt] 2026-09-08T08:49:34.0278860Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-x86_64.txt (in target 'Still' from project 'Still')
+[0_build.txt] 2026-09-08T08:49:34.0280610Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-x86_64.txt
+[0_build.txt] 2026-09-08T08:49:34.0281980Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-arm64.txt (in target 'Still' from project 'Still')
+[0_build.txt] 2026-09-08T08:49:34.0284610Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-arm64.txt
+[0_build.txt] 2026-09-08T08:49:34.0430220Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[0_build.txt] 2026-09-08T08:49:34.0441760Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[0_build.txt] 2026-09-08T08:50:17.9676810Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[0_build.txt] 2026-09-08T08:50:20.1913520Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[0_build.txt] 2026-09-08T08:50:20.3313930Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs
+[0_build.txt] 2026-09-08T08:50:20.6301790Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/
+[0_build.txt] 2026-09-08T08:50:24.7179870Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[0_build.txt] 2026-09-08T08:50:24.7600660Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[0_build.txt] 2026-09-08T08:50:24.8989700Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[0_build.txt] 2026-09-08T08:50:24.9943240Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/
+[0_build.txt] 2026-09-08T08:50:25.0949900Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[0_build.txt] 2026-09-08T08:50:25.2295470Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs
+[0_build.txt] 2026-09-08T08:50:29.2249570Z [36;1mUDID=$(xcrun simctl list devices available -j | python3 -c '[0m
+[0_build.txt] 2026-09-08T08:50:29.2251610Z [36;1mprint(cands[0]["udid"] if cands else "")[0m
+[0_build.txt] 2026-09-08T08:50:29.2252190Z [36;1mif [ -z "$UDID" ]; then[0m
+[0_build.txt] 2026-09-08T08:50:29.2252460Z [36;1m  echo "::error::找不到可用的 iPhone 模拟器"[0m
+[0_build.txt] 2026-09-08T08:50:29.2253510Z [36;1mecho "用模拟器 UDID：$UDID"[0m
+[0_build.txt] 2026-09-08T08:50:29.2253960Z [36;1m# 冷启动模拟器比较慢，bootstatus -b 会等到开机完成[0m
+[0_build.txt] 2026-09-08T08:50:29.2254360Z [36;1mxcrun simctl bootstatus "$UDID" -b || true[0m
+[0_build.txt] 2026-09-08T08:50:29.2254700Z [36;1mxcrun simctl boot "$UDID" || true[0m
+[0_build.txt] 2026-09-08T08:50:29.2255970Z [36;1mls -la "$APP" || { echo "::error::找不到 Still.app，编译产物路径可能变了"; exit 1; }[0m
+[0_build.txt] 2026-09-08T08:50:29.2256740Z [36;1mxcrun simctl install "$UDID" "$APP"[0m
+[0_build.txt] 2026-09-08T08:50:29.2257640Z [36;1mxcrun simctl launch "$UDID" com.still.app[0m
+[0_build.txt] 2026-09-08T08:50:29.2258630Z [36;1msleep 4;  xcrun simctl io "$UDID" screenshot shots/01-刚打开.png[0m
+[0_build.txt] 2026-09-08T08:50:29.2259190Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/02-八秒后.png[0m
+[0_build.txt] 2026-09-08T08:50:29.2259720Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png[0m
+[0_build.txt] 2026-09-08T08:50:29.2260150Z [36;1msleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png[0m
+[0_build.txt] 2026-09-08T08:50:29.4917370Z ++ xcrun simctl list devices available -j
+[0_build.txt] 2026-09-08T08:50:29.5586190Z print(cands[0]["udid"] if cands else "")
+[0_build.txt] 2026-09-08T08:50:49.1517890Z + UDID=DF24883C-910C-42D6-A87A-531F98C777E2
+[0_build.txt] 2026-09-08T08:50:49.1566910Z 用模拟器 UDID：DF24883C-910C-42D6-A87A-531F98C777E2
+[0_build.txt] 2026-09-08T08:50:49.1579890Z + echo '用模拟器 UDID：DF24883C-910C-42D6-A87A-531F98C777E2'
+[0_build.txt] 2026-09-08T08:50:49.1582740Z + xcrun simctl bootstatus DF24883C-910C-42D6-A87A-531F98C777E2 -b
+[0_build.txt] 2026-09-08T08:50:50.9184090Z Monitoring boot status for iPhone 16 Pro (DF24883C-910C-42D6-A87A-531F98C777E2).
+[0_build.txt] 2026-09-08T08:50:50.9197320Z Booting device...
+[0_build.txt] 2026-09-08T08:50:50.9247060Z 	Booting
+[0_build.txt] 2026-09-08T08:51:04.3546060Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:04.8443160Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:05.5776910Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:07.0641840Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:08.0438580Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:08.6974000Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:09.2659510Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:10.0820780Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:10.9780800Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:11.8763540Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:12.6207370Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:13.7666800Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:14.5062650Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:15.6675050Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:16.8780700Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:17.4639560Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:18.5200910Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:19.4098530Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:20.4195110Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:21.6152730Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:22.3696970Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:23.5852800Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:24.5235620Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:25.4355490Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:26.4563990Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:27.4750070Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:28.3743350Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:29.3737620Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:30.5941010Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:31.4834500Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:32.3741530Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:33.4044890Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:34.4132140Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:35.4430130Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:36.4422680Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:37.4475830Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:38.4347800Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:39.4280860Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:40.6647730Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:41.4378860Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:42.7434440Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:51:43.4143970Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:52:03.4574990Z + xcrun simctl boot DF24883C-910C-42D6-A87A-531F98C777E2
+[0_build.txt] 2026-09-08T08:52:14.2671140Z An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):
+[0_build.txt] 2026-09-08T08:52:14.2778720Z Unable to boot device in current state: Booted
+[0_build.txt] 2026-09-08T08:52:14.3665540Z + xcrun simctl install DF24883C-910C-42D6-A87A-531F98C777E2 build/Build/Products/Debug-iphonesimulator/Still.app
+[0_build.txt] 2026-09-08T08:52:15.6498860Z An error was encountered processing the command (domain=IXErrorDomain, code=2):
+[0_build.txt] 2026-09-08T08:52:15.6674790Z Simulator device failed to install the application.
+[0_build.txt] 2026-09-08T08:52:15.6881550Z Underlying error (domain=IXErrorDomain, code=2):
+[0_build.txt] 2026-09-08T08:52:15.6983580Z 	Failed to set app extension placeholders for com.still.Still
+[0_build.txt] 2026-09-08T08:52:15.7126110Z 	Failed to create promise.
+[0_build.txt] 2026-09-08T08:52:15.7894680Z ##[error]Process completed with exit code 2.
+[build/3_定位工程目录.txt] 2026-09-08T08:49:18.2128580Z [36;1m  echo "::error::找不到 project.yml —— 这个 workflow 要放在 Still-iOS/ 里，或放在仓库根"[0m
+[build/6_装 XcodeGen.txt] ﻿2026-09-08T08:49:19.1482150Z ##[group]Run brew install xcodegen
+[build/6_装 XcodeGen.txt] 2026-09-08T08:49:19.1483760Z [36;1mbrew install xcodegen[0m
+[build/6_装 XcodeGen.txt] 2026-09-08T08:49:22.2976270Z [34m==>[0m [1mWould install 1 formula:[0m
+[build/8_编译（模拟器，ad-hoc 签名）.txt] ﻿2026-09-08T08:49:22.9947580Z ##[group]Run set -o pipefail
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:22.9947990Z [36;1mset -o pipefail[0m
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0101750Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-x86_64.txt (in target 'StillWidgetExtension' from project 'Still')
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0103610Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-x86_64.txt
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0105270Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-arm64.txt (in target 'StillWidgetExtension' from project 'Still')
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0107100Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/StillWidgetExtension.build/StillWidgetExtension-DebugDylibInstallName-normal-arm64.txt
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0278860Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-x86_64.txt (in target 'Still' from project 'Still')
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0280610Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-x86_64.txt
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0281970Z WriteAuxiliaryFile /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-arm64.txt (in target 'Still' from project 'Still')
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0284610Z     write-file /Users/runner/work/Still-ios/Still-ios/build/Build/Intermediates.noindex/Still.build/Debug-iphonesimulator/Still.build/Still-DebugDylibInstallName-normal-arm64.txt
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0430190Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:49:34.0441700Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:17.9676220Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:20.1913150Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:20.3313840Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:20.6301350Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:24.7179800Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:24.7600340Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:24.8989320Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Dev
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:24.9943150Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:25.0949780Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/De
+[build/8_编译（模拟器，ad-hoc 签名）.txt] 2026-09-08T08:50:25.2295290Z     /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target x86_64-apple-ios17.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2249560Z [36;1mUDID=$(xcrun simctl list devices available -j | python3 -c '[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2251610Z [36;1mprint(cands[0]["udid"] if cands else "")[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2252180Z [36;1mif [ -z "$UDID" ]; then[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2252460Z [36;1m  echo "::error::找不到可用的 iPhone 模拟器"[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2253510Z [36;1mecho "用模拟器 UDID：$UDID"[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2253960Z [36;1m# 冷启动模拟器比较慢，bootstatus -b 会等到开机完成[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2254360Z [36;1mxcrun simctl bootstatus "$UDID" -b || true[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2254700Z [36;1mxcrun simctl boot "$UDID" || true[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2255970Z [36;1mls -la "$APP" || { echo "::error::找不到 Still.app，编译产物路径可能变了"; exit 1; }[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2256740Z [36;1mxcrun simctl install "$UDID" "$APP"[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2257620Z [36;1mxcrun simctl launch "$UDID" com.still.app[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2258620Z [36;1msleep 4;  xcrun simctl io "$UDID" screenshot shots/01-刚打开.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2259190Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/02-八秒后.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2259710Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.2260150Z [36;1msleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.4917290Z ++ xcrun simctl list devices available -j
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:29.5586110Z print(cands[0]["udid"] if cands else "")
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:49.1517710Z + UDID=DF24883C-910C-42D6-A87A-531F98C777E2
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:49.1566850Z 用模拟器 UDID：DF24883C-910C-42D6-A87A-531F98C777E2
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:49.1579880Z + echo '用模拟器 UDID：DF24883C-910C-42D6-A87A-531F98C777E2'
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:49.1582700Z + xcrun simctl bootstatus DF24883C-910C-42D6-A87A-531F98C777E2 -b
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:50.9183030Z Monitoring boot status for iPhone 16 Pro (DF24883C-910C-42D6-A87A-531F98C777E2).
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:50.9197270Z Booting device...
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:50:50.9246990Z 	Booting
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:04.3546050Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:04.8443100Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:05.5776840Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:07.0641790Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:08.0438510Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:08.6973940Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:09.2659450Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:10.0820700Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:10.9780750Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:11.8760020Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:12.6207290Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:13.7666800Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:14.5062620Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:15.6675010Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:16.8780690Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:17.4639500Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:18.5200870Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:19.4098460Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:20.4195060Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:21.6152660Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:22.3696930Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:23.5852430Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:24.5235580Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:25.4355440Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:26.4563940Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:27.4749990Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:28.3743270Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:29.3737570Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:30.5940950Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:31.4834460Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:32.3741490Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:33.4044860Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:34.4132060Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:35.4430050Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:36.4422650Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:37.4475770Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:38.4347720Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:39.4280800Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:40.6647730Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:41.4378860Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:42.7434390Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:51:43.4141920Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:03.4574940Z + xcrun simctl boot DF24883C-910C-42D6-A87A-531F98C777E2
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:14.2670760Z An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:14.2778670Z Unable to boot device in current state: Booted
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:14.3665460Z + xcrun simctl install DF24883C-910C-42D6-A87A-531F98C777E2 build/Build/Products/Debug-iphonesimulator/Still.app
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:15.6489360Z An error was encountered processing the command (domain=IXErrorDomain, code=2):
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:15.6674730Z Simulator device failed to install the application.
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:15.6881000Z Underlying error (domain=IXErrorDomain, code=2):
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:15.6983540Z 	Failed to set app extension placeholders for com.still.Still
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:15.7126050Z 	Failed to create promise.
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:52:15.7894620Z ##[error]Process completed with exit code 2.

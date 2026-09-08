@@ -1,19 +1,20 @@
 # ─────────────────────────────────────────────────────────────
-# 在没有 Mac 的机器上：验证这份 SwiftUI 工程能不能编译、长什么样，
-# 并产出一个「能装到真 iPhone 上」的包。
+# 在没有 Mac 的机器上：验证这份 SwiftUI 工程能不能编译、长什么样。
 #
 # 背景：这些 .swift 文件从没进过 Xcode（写它的机器是 Windows）。
 #       「能不能编译」和「猫画得对不对」是现在最大的两个未知，这个 workflow 一次消掉。
 #
-# 为什么不需要 Apple 开发者账号：
-#       编译到「模拟器」不签名；编译到「真机」用 ad-hoc 签名（"-"），
-#       也不需要账号。最后把包装进手机那一步由 AltStore / SideStore
-#       在你的 Windows 上用免费 Apple ID 完成 —— 所以整条路是免费的。
+# 这条 CI 的定位 = 编译验证（不依赖 Mac / 不依赖 Apple 账号，全免费）。
+#   · 模拟器编译：验证 Swift 代码能编过、App 能起来；并尽量截图看猫长什么样。
+#   · 真机 arm64 编译：验证代码能为真机架构编过（不签名）。
+# 真正的「可安装签名包」CI 出不了 —— Xcode 16.4 禁止对真机 SDK 用 ad-hoc 签名，
+# 而免费 runner 也没有你的证书。出包必须在【你自己的 Mac + 免费 Apple ID】上由
+# Xcode 完成（自动签名），再经 AltStore / SideStore 侧载 —— 这一步仍免费，但需要一台 Mac。
 #
-# 产出三样东西：
+# 产出：
 #   1. build-log          编译日志（失败了看这个）
-#   2. still-screenshots  模拟器真实截图（受苹果对 Widget 扩展的签名限制，可能软失败；拿不到就靠真机侧载看猫）
-#   3. Still-device-ipa   能装到手机上的包（ad-hoc 签，交给 AltStore 重签）
+#   2. still-screenshots  模拟器真实截图（受苹果模拟器对 Widget 扩展的签名限制，可能软失败；拿不到就靠真机侧载看猫）
+#   （若日后在仓库 Secrets 里配了 IOS_SIGNING_CERT，则会额外产出 Still-device-ipa 真机包）
 #
 # 花费：macOS runner 按 10 倍计费。一次约 10-15 分钟 = 消耗 100-150 分钟额度。
 #       免费账号每月 2000 分钟，够跑 10-20 次；仓库设成 public 则完全免费不限量。
@@ -140,14 +141,15 @@ jobs:
           xcrun simctl launch "$UDID" com.still.app
 
           # 默认 300× 演示速度，隔几秒截一张就能看到它挪窝
-          sleep 4;  xcrun simctl io "$UDID" screenshot shots/01-刚打开.png
-          sleep 8;  xcrun simctl io "$UDID" screenshot shots/02-八秒后.png
-          sleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png
-          sleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png
+          # 文件名用 ASCII，避免 runner 默认 locale 下中文名写入失败导致产物缺失
+          sleep 4;  xcrun simctl io "$UDID" screenshot shots/01-open.png
+          sleep 8;  xcrun simctl io "$UDID" screenshot shots/02-8s.png
+          sleep 8;  xcrun simctl io "$UDID" screenshot shots/03-16s.png
+          sleep 10; xcrun simctl io "$UDID" screenshot shots/04-26s.png
 
           echo "=== 截图产物 ==="
           ls -la shots
-          file shots/*.png
+          file shots/*.png || true
 
       - name: 上传截图
         if: success()
@@ -158,10 +160,12 @@ jobs:
           path: ${{ steps.loc.outputs.dir }}/shots
           retention-days: 30
 
-      # ── 3. 真机版：能装到 iPhone 上的包 ───────────────────────
-      # ad-hoc 签名（"-"）不需要 Apple 账号，但会把 App Group entitlement 嵌进去。
-      # 这一步不阻断前面的截图 —— 万一签名配置有问题，至少图还能拿到。
-      - name: 编译（真机 arm64，ad-hoc 签名）
+      # ── 3. 真机版：验证能编译成 arm64（不签名） ─────────────────
+      # 重要：免费 CI 的 runner 没有 Apple 签名证书，而 Xcode 16.4 禁止对真机 SDK
+      # 用 ad-hoc（"Ad Hoc code signing is not allowed with SDK 'iOS 18.5'"）。
+      # 所以「可安装的签名包」只能在【你自己的 Mac + 免费 Apple ID】上由 Xcode 出，
+      # 再经 AltStore 侧载（仍免费，但需要一台 Mac）。CI 这里只验证：代码能为真机 arm64 编译通过。
+      - name: 编译（真机 arm64，仅验证可编译·不签名）
         id: device
         continue-on-error: true
         working-directory: ${{ steps.loc.outputs.dir }}
@@ -172,27 +176,26 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build-device \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee build-device.log
 
-      - name: 检查 App Group 有没有签进去（决定小组件能不能用）
+      - name: 检查 App Group entitlement 是否配置（决定小组件能不能用）
         if: steps.device.outcome == 'success'
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
-          APP=build-device/Build/Products/Debug-iphoneos/Still.app
-          echo "════ 主 App 的 entitlements ════"
-          codesign -d --entitlements :- "$APP" 2>&1 || true
+          echo "════ 主 App entitlements ════"
+          grep -A2 application-groups Still.entitlements 2>&1 || echo "(未找到 Still.entitlements)"
           echo ""
-          echo "════ Widget Extension 的 entitlements ════"
-          codesign -d --entitlements :- "$APP/PlugIns/StillWidgetExtension.appex" 2>&1 || true
+          echo "════ Widget Extension entitlements ════"
+          grep -A2 application-groups StillWidget.entitlements 2>&1 || echo "(未找到 StillWidget.entitlements)"
           echo ""
           echo "→ 两边都必须出现 com.apple.security.application-groups，且值是同一个。"
           echo "  少了它，小组件读不到行程表，会一直显示「还没接它回家」。"
+          echo "  （真机签名时会由 Xcode + 你的免费 Apple ID 把它真正签进包里。）"
 
-      - name: 打成 .ipa
-        if: steps.device.outcome == 'success'
+      - name: 打成 .ipa（需要签名证书，免费 CI 无证书时自动跳过）
+        if: ${{ secrets.IOS_SIGNING_CERT != '' }}
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
           cd build-device/Build/Products/Debug-iphoneos
@@ -202,8 +205,8 @@ jobs:
           zip -qry Still.ipa Payload
           echo "打好了：$(du -h Still.ipa | cut -f1)"
 
-      - name: 上传真机包
-        if: steps.device.outcome == 'success'
+      - name: 上传真机包（需签名证书，免费 CI 自动跳过）
+        if: ${{ secrets.IOS_SIGNING_CERT != '' }}
         uses: actions/upload-artifact@v5
         with:
           name: Still-device-ipa

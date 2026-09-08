@@ -69,7 +69,7 @@ jobs:
         run: xcodegen generate
 
       # ── 1. 模拟器版：为了截图，看它到底长什么样 ────────────────
-      - name: 编译（模拟器，免签名）
+      - name: 编译（模拟器，ad-hoc 签名）
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
           set -o pipefail
@@ -78,8 +78,8 @@ jobs:
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY=- \
             build 2>&1 | tee build.log
 
       # 一个 Swift 错误经常带出几十条级联报错，所以只看 error: 行
@@ -106,7 +106,7 @@ jobs:
         if: success()
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
-          set -e
+          set -ex
           mkdir -p shots
 
           # 找一台可用的 iPhone 模拟器（不同 Xcode 预装的型号不一样，别写死名字）
@@ -123,8 +123,18 @@ jobs:
           fi
           echo "用模拟器 UDID：$UDID"
 
-          xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/Still.app
+          # 冷启动模拟器比较慢，bootstatus -b 会等到开机完成
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl boot "$UDID" || true
+
+          APP=build/Build/Products/Debug-iphonesimulator/Still.app
+          echo "=== 待安装 App 是否存在 ==="
+          ls -la "$APP" || { echo "::error::找不到 Still.app，编译产物路径可能变了"; exit 1; }
+
+          echo "=== 安装 ==="
+          xcrun simctl install "$UDID" "$APP"
+
+          echo "=== 启动主 App ==="
           xcrun simctl launch "$UDID" com.still.app
 
           # 默认 300× 演示速度，隔几秒截一张就能看到它挪窝
@@ -133,7 +143,9 @@ jobs:
           sleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png
           sleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png
 
+          echo "=== 截图产物 ==="
           ls -la shots
+          file shots/*.png
 
       - name: 上传截图
         if: success()

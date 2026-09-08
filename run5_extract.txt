@@ -1,0 +1,139 @@
+files: ['0_build.txt', 'build/system.txt', 'build/1_Set up job.txt', 'build/2_Run actions_checkout@v5.txt', 'build/3_定位工程目录.txt', 'build/4_看一眼 Xcode 版本.txt', 'build/5_静态自检.txt', 'build/6_装 XcodeGen.txt', 'build/7_生成 Xcode 工程.txt', 'build/8_编译（模拟器，免签名）.txt', 'build/10_上传编译日志.txt', 'build/11_启动模拟器并截图.txt', 'build/34_Post Run actions_checkout@v5.txt', 'build/35_Complete job.txt']
+[0_build.txt] 2026-09-08T08:32:51.1205570Z [36;1m  echo "::error::找不到 project.yml —— 这个 workflow 要放在 Still-iOS/ 里，或放在仓库根"[0m
+[0_build.txt] 2026-09-08T08:32:54.5893550Z ##[group]Run set -o pipefail
+[0_build.txt] 2026-09-08T08:32:54.5893900Z [36;1mset -o pipefail[0m
+[0_build.txt] 2026-09-08T08:33:54.2959730Z [36;1mUDID=$(xcrun simctl list devices available -j | python3 -c '[0m
+[0_build.txt] 2026-09-08T08:33:54.2961370Z [36;1mprint(cands[0]["udid"] if cands else "")[0m
+[0_build.txt] 2026-09-08T08:33:54.2964680Z [36;1mif [ -z "$UDID" ]; then[0m
+[0_build.txt] 2026-09-08T08:33:54.2965360Z [36;1m  echo "::error::找不到可用的 iPhone 模拟器"[0m
+[0_build.txt] 2026-09-08T08:33:54.2967060Z [36;1mecho "用模拟器 UDID：$UDID"[0m
+[0_build.txt] 2026-09-08T08:33:54.2968050Z [36;1mxcrun simctl bootstatus "$UDID" -b[0m
+[0_build.txt] 2026-09-08T08:33:54.2969310Z [36;1mxcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/Still.app[0m
+[0_build.txt] 2026-09-08T08:33:54.2970370Z [36;1mxcrun simctl launch "$UDID" com.still.app[0m
+[0_build.txt] 2026-09-08T08:33:54.2972200Z [36;1msleep 4;  xcrun simctl io "$UDID" screenshot shots/01-刚打开.png[0m
+[0_build.txt] 2026-09-08T08:33:54.2973170Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/02-八秒后.png[0m
+[0_build.txt] 2026-09-08T08:33:54.2974130Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png[0m
+[0_build.txt] 2026-09-08T08:33:54.2975170Z [36;1msleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png[0m
+[0_build.txt] 2026-09-08T08:34:10.4294540Z 用模拟器 UDID：DF24883C-910C-42D6-A87A-531F98C777E2
+[0_build.txt] 2026-09-08T08:34:12.3100810Z Monitoring boot status for iPhone 16 Pro (DF24883C-910C-42D6-A87A-531F98C777E2).
+[0_build.txt] 2026-09-08T08:34:12.3101790Z Booting device...
+[0_build.txt] 2026-09-08T08:34:12.3102710Z 	Booting
+[0_build.txt] 2026-09-08T08:34:24.8868780Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:25.2953180Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:26.1156140Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:27.7540760Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:28.9753610Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:29.7071730Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:30.1249170Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:31.4018920Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:32.4694380Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:33.2921230Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:34.1072160Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:35.0010360Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:36.3902040Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:36.7795320Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:38.0501730Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:39.0060230Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:39.8458930Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:40.8257610Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:41.7742280Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:42.8047660Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:43.7811570Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:44.7637930Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:45.7812670Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:46.7536840Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:47.7578990Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:48.7877480Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:49.7384240Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:50.7456830Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:51.7254890Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:52.6951290Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:53.6901270Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:54.7098480Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:55.7110300Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:56.7226990Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:57.7912990Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:59.0815250Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:34:59.9834650Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:01.1954900Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:01.7415490Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:02.7351700Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:03.7452480Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:04.7422760Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:05.7565260Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:06.7483830Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:35:07.7265690Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[0_build.txt] 2026-09-08T08:36:21.6013210Z An error was encountered processing the command (domain=IXErrorDomain, code=2):
+[0_build.txt] 2026-09-08T08:36:21.6016970Z Simulator device failed to install the application.
+[0_build.txt] 2026-09-08T08:36:21.6298330Z Underlying error (domain=IXErrorDomain, code=2):
+[0_build.txt] 2026-09-08T08:36:21.6403070Z 	Failed to set app extension placeholders for com.still.Still
+[0_build.txt] 2026-09-08T08:36:21.7522250Z 	Failed to create promise.
+[0_build.txt] 2026-09-08T08:36:23.0975920Z ##[error]Process completed with exit code 2.
+[build/3_定位工程目录.txt] 2026-09-08T08:32:51.1205560Z [36;1m  echo "::error::找不到 project.yml —— 这个 workflow 要放在 Still-iOS/ 里，或放在仓库根"[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2959720Z [36;1mUDID=$(xcrun simctl list devices available -j | python3 -c '[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2961370Z [36;1mprint(cands[0]["udid"] if cands else "")[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2964630Z [36;1mif [ -z "$UDID" ]; then[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2965350Z [36;1m  echo "::error::找不到可用的 iPhone 模拟器"[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2967050Z [36;1mecho "用模拟器 UDID：$UDID"[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2968050Z [36;1mxcrun simctl bootstatus "$UDID" -b[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2969310Z [36;1mxcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/Still.app[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2970370Z [36;1mxcrun simctl launch "$UDID" com.still.app[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2972200Z [36;1msleep 4;  xcrun simctl io "$UDID" screenshot shots/01-刚打开.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2973170Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/02-八秒后.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2974120Z [36;1msleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:33:54.2975160Z [36;1msleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png[0m
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:10.4294240Z 用模拟器 UDID：DF24883C-910C-42D6-A87A-531F98C777E2
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:12.3100770Z Monitoring boot status for iPhone 16 Pro (DF24883C-910C-42D6-A87A-531F98C777E2).
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:12.3101780Z Booting device...
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:12.3102710Z 	Booting
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:24.8868730Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:25.2953180Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:26.1156070Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:27.7534960Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:28.9753600Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:29.7071690Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:30.1248990Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:31.4018910Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:32.4694370Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:33.2921150Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:34.1072150Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:35.0010320Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:36.3902030Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:36.7795250Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:38.0501720Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:39.0060150Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:39.8458890Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:40.8257570Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:41.7742210Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:42.8047590Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:43.7811510Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:44.7637870Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:45.7812580Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:46.7536790Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:47.7578880Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:48.7877470Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:49.7384200Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:50.7456750Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:51.7254590Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:52.6951280Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:53.6901250Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:54.7098470Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:55.7110290Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:56.7226960Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:57.7912940Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:59.0810940Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:34:59.9834620Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:01.1954840Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:01.7415430Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:02.7351500Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:03.7452450Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:04.7422720Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:05.7565220Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:06.7483720Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:35:07.7265690Z 		Reason:Running plugin com.apple.-0LaunchServicesMigrator (00LaunchServicesMigrator.migrator, user-agnostic)
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:36:21.6011450Z An error was encountered processing the command (domain=IXErrorDomain, code=2):
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:36:21.6016960Z Simulator device failed to install the application.
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:36:21.6298270Z Underlying error (domain=IXErrorDomain, code=2):
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:36:21.6402990Z 	Failed to set app extension placeholders for com.still.Still
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:36:21.7522190Z 	Failed to create promise.
+[build/11_启动模拟器并截图.txt] 2026-09-08T08:36:23.0975810Z ##[error]Process completed with exit code 2.

@@ -12,9 +12,11 @@
 # Xcode 完成（自动签名），再经 AltStore / SideStore 侧载 —— 这一步仍免费，但需要一台 Mac。
 #
 # 产出：
-#   1. build-log          编译日志（失败了看这个）
-#   2. still-screenshots  模拟器真实截图（受苹果模拟器对 Widget 扩展的签名限制，可能软失败；拿不到就靠真机侧载看猫）
-#   （若日后在仓库 Secrets 里配了 IOS_SIGNING_CERT，则会额外产出 Still-device-ipa 真机包）
+#   1. build-log            编译日志（失败了看这个）
+#   2. still-screenshots    模拟器真实截图（受苹果模拟器对 Widget 扩展的签名限制，可能软失败）
+#   3. Still-unsigned-ipa   未签名真机包（默认就有）→ 下载回自己电脑，交给 AltStore
+#                           用免费 Apple ID 重签并装到手机；这才是「不花钱也不用 Mac」的路径。
+#   4. Still-device-ipa     已签名真机包（仅当你填了 IOS_SIGNING_CERT 等 Secrets 才产出）
 #
 # 花费：macOS runner 按 10 倍计费。一次约 10-15 分钟 = 消耗 100-150 分钟额度。
 #       免费账号每月 2000 分钟，够跑 10-20 次；仓库设成 public 则完全免费不限量。
@@ -38,7 +40,12 @@ jobs:
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
       # secrets 上下文不能写在 if: 里（GitHub 不允许），所以先映射到 env，再用 env 做判断
-      IOS_SIGNING_CERT: ${{ secrets.IOS_SIGNING_CERT }}
+      # 免费账号默认全空 → 走「只验证编译 + 出未签名包」；填上才走「真签名出包」
+      IOS_SIGNING_CERT: ${{ secrets.IOS_SIGNING_CERT }}                     # 开发证书 P12（base64）
+      IOS_SIGNING_CERT_PASSWORD: ${{ secrets.IOS_SIGNING_CERT_PASSWORD }}   # P12 导出密码
+      IOS_PROVISION_PROFILE_APP: ${{ secrets.IOS_PROVISION_PROFILE_APP }}       # 主 App 描述文件（base64）
+      IOS_PROVISION_PROFILE_WIDGET: ${{ secrets.IOS_PROVISION_PROFILE_WIDGET }} # Widget 扩展描述文件（base64）
+      IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}             # 10 位 Team ID
 
     steps:
       - uses: actions/checkout@v5
@@ -162,13 +169,16 @@ jobs:
           path: ${{ steps.loc.outputs.dir }}/shots
           retention-days: 30
 
-      # ── 3. 真机版：验证能编译成 arm64（不签名） ─────────────────
-      # 重要：免费 CI 的 runner 没有 Apple 签名证书，而 Xcode 16.4 禁止对真机 SDK
-      # 用 ad-hoc（"Ad Hoc code signing is not allowed with SDK 'iOS 18.5'"）。
-      # 所以「可安装的签名包」只能在【你自己的 Mac + 免费 Apple ID】上由 Xcode 出，
-      # 再经 AltStore 侧载（仍免费，但需要一台 Mac）。CI 这里只验证：代码能为真机 arm64 编译通过。
+      # ── 3. 真机 arm64 ─────────────────────────────────────────
+      # 两种情况，用 IOS_SIGNING_CERT 是否为空来分岔：
+      #   · 没填（默认）→ 只验证「代码能为真机 arm64 编过」，并出未签名包给 AltStore 重签。
+      #     （Xcode 16.4 禁止对真机 SDK 用 ad-hoc，所以这里不能自己签。）
+      #   · 填了      → 走 4b，导入你的证书和描述文件，真签名出可安装的 .ipa。
+      # 注意：免费 Apple ID 的描述文件只有 7 天有效期，所以就算 CI 能签，
+      # 每周也要重新生成描述文件 —— 这也是「日常用 AltStore 自动续」更省事的原因。
       - name: 编译（真机 arm64，仅验证可编译·不签名）
         id: device
+        if: ${{ env.IOS_SIGNING_CERT == '' }}
         continue-on-error: true
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
@@ -196,23 +206,112 @@ jobs:
           echo "  少了它，小组件读不到行程表，会一直显示「还没接它回家」。"
           echo "  （真机签名时会由 Xcode + 你的免费 Apple ID 把它真正签进包里。）"
 
-      - name: 打成 .ipa（需要签名证书，免费 CI 无证书时自动跳过）
+      # ── 4a. 未签名 .ipa（默认路径：给 AltStore 在你自己电脑上重签 → 装手机）──
+      # 这是「不花钱、不用 Mac」那条路的关键产物：CI 出包，AltServer 用你的免费
+      # Apple ID 在 Windows 上重签并安装到手机，7 天到期后 AltStore 还能自动续。
+      - name: 打包未签名 .ipa（供 AltStore 本机重签）
+        id: unsignedipa
+        if: ${{ env.IOS_SIGNING_CERT == '' }}
+        continue-on-error: true
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -e
+          cd build-device/Build/Products/Debug-iphoneos
+          rm -rf Payload Still-unsigned.ipa
+          mkdir Payload
+          cp -R Still.app Payload/
+          zip -qry Still-unsigned.ipa Payload
+          echo "打好了：$(du -h Still-unsigned.ipa | cut -f1)"
+          echo "含扩展：$(ls Payload/Still.app/PlugIns 2>/dev/null || echo '(无)')"
+
+      - name: 上传未签名 .ipa
+        if: ${{ env.IOS_SIGNING_CERT == '' && steps.unsignedipa.outcome == 'success' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: Still-unsigned-ipa
+          path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Debug-iphoneos/Still-unsigned.ipa
+          retention-days: 30
+
+      # ── 4b. 真机签名出包（填了 Secrets 才走这条路）──────────────
+      - name: 导入证书与描述文件（签名准备）
+        id: signprep
         if: ${{ env.IOS_SIGNING_CERT != '' }}
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
-          cd build-device/Build/Products/Debug-iphoneos
-          rm -rf Payload Still.ipa
-          mkdir Payload
-          cp -R Still.app Payload/
-          zip -qry Still.ipa Payload
-          echo "打好了：$(du -h Still.ipa | cut -f1)"
+          set -e
+          KC="$RUNNER_TEMP/still.keychain"
+          KCPASS=$(uuidgen)
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
 
-      - name: 上传真机包（需签名证书，免费 CI 自动跳过）
+          echo "$IOS_SIGNING_CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" \
+            -P "$IOS_SIGNING_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" || true
+          security list-keychains -d user -s "$KC"
+          security default-keychain -s "$KC"
+
+          echo "════ 钥匙串里的签名身份 ════"
+          security find-identity -v -p codesigning "$KC"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          install_profile() {
+            local out="$RUNNER_TEMP/$1.mobileprovision" uuid
+            echo "$2" | base64 --decode > "$out"
+            uuid=$(security cms -D -i "$out" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)
+            cp "$out" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"
+            echo "  $1 → $uuid"
+            echo "$uuid"
+          }
+          echo "════ 安装描述文件 ════"
+          APP_UUID=$(install_profile app "$IOS_PROVISION_PROFILE_APP" | tail -1)
+          WIDGET_UUID=$(install_profile widget "$IOS_PROVISION_PROFILE_WIDGET" | tail -1)
+          echo "APP_UUID=$APP_UUID"       >> "$GITHUB_OUTPUT"
+          echo "WIDGET_UUID=$WIDGET_UUID" >> "$GITHUB_OUTPUT"
+
+      - name: 归档并导出已签名 .ipa
+        id: signarchive
+        if: ${{ env.IOS_SIGNING_CERT != '' }}
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -o pipefail
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>development</string>
+            <key>teamID</key><string>${{ env.IOS_DEVELOPMENT_TEAM }}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>stripSwiftSymbols</key><true/>
+            <key>provisioningProfiles</key><dict>
+              <key>com.still.app</key><string>${{ steps.signprep.outputs.APP_UUID }}</string>
+              <key>com.still.app.widget</key><string>${{ steps.signprep.outputs.WIDGET_UUID }}</string>
+            </dict>
+          </dict></plist>
+          PLIST
+
+          xcodebuild -scheme Still -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath Still.xcarchive archive \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM='${{ env.IOS_DEVELOPMENT_TEAM }}' \
+            CODE_SIGN_IDENTITY='Apple Development' 2>&1 | tee archive.log
+
+          xcodebuild -exportArchive -archivePath Still.xcarchive \
+            -exportPath out -exportOptionsPlist ExportOptions.plist 2>&1 | tee export.log
+
+          echo "════ 产物 ════"
+          ls -la out
+
+      - name: 上传已签名 .ipa（可直接侧载到手机）
         if: ${{ env.IOS_SIGNING_CERT != '' }}
         uses: actions/upload-artifact@v5
         with:
           name: Still-device-ipa
-          path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Debug-iphoneos/Still.ipa
+          path: ${{ steps.loc.outputs.dir }}/out/Still.ipa
           retention-days: 30
 
       - name: 真机编译日志（失败时看这个）

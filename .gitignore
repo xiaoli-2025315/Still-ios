@@ -1,0 +1,6 @@
+build/
+build-device/
+DerivedData/
+shots/
+*.log
+.DS_Store

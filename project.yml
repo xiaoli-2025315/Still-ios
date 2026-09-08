@@ -1,0 +1,97 @@
+name: Still
+options:
+  bundleIdPrefix: com.still
+  deploymentTarget:
+    iOS: "17.0"
+  groupSortPosition: none
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_PREVIEWS: "YES"
+
+targets:
+
+  # ── 主 App ────────────────────────────────────────────────
+  Still:
+    type: application
+    platform: iOS
+    # 显式写死，别让 XcodeGen 拿 bundleIdPrefix 去拼 —— 拼出来的名字
+    # 一改 target 就变，签名和 App Group 跟着乱。
+    productBundleIdentifier: com.still.app
+    sources:
+      # 一个 path 就够 —— Sources/App 已经含了 Shared/、Cat/、Home/、Panel/。
+      # 别再单独列 Shared/ 和 Cat/，XcodeGen 会生成两份引用，
+      # 同一个 .swift 被编译两次 → duplicate symbol。
+      - path: Sources/App
+        excludes:
+          - "Island/**"
+    entitlements:
+      path: Still.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.still.app
+    info:
+      path: Still-Info.plist
+      properties:
+        CFBundleDisplayName: "还在"
+        NSSupportsLiveActivities: true
+        ITSAppUsesNonExemptEncryption: false
+        # SwiftUI App 生命周期，不需要 SceneDelegate
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    dependencies:
+      # 注意：target 名 ≠ 类型名。Sources/Widget/StillWidget.swift 里有个 struct 也叫 StillWidget，
+      # 如果 target 也叫 StillWidget，就会出现「模块和类型同名」的歧义报错。
+      # 所以这里沿用 Xcode 模板的命名习惯，后缀 Extension。
+      - target: StillWidgetExtension
+
+  # ── Widget Extension（小组件 + 灵动岛 UI）────────────────
+  StillWidgetExtension:
+    type: app-extension
+    platform: iOS
+    # 必须是「主 App 的 Bundle ID + 后缀」，这是 Apple 的硬规则，
+    # 写成 com.still.widget 这种平级名字，签名时直接报错。
+    productBundleIdentifier: com.still.app.widget
+    sources:
+      - path: Sources/Widget
+      - path: Sources/App/Island
+      - path: Sources/App/Shared
+      - path: Sources/App/Cat
+      - path: Sources/App/Home/WidgetCardView.swift
+    entitlements:
+      path: StillWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.still.app
+    info:
+      path: StillWidget-Info.plist
+      properties:
+        CFBundleDisplayName: "还在"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        NSSupportsLiveActivities: true
+
+# ── Scheme ────────────────────────────────────────────────
+# 显式定义，别指望 XcodeGen 自动生成的那个。
+# CI 里 `xcodebuild -scheme Still` 报 "scheme not found" 是常见的翻车点。
+schemes:
+  Still:
+    build:
+      targets:
+        Still: all
+        StillWidgetExtension: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,205 @@
+# ─────────────────────────────────────────────────────────────
+# 在没有 Mac 的机器上：验证这份 SwiftUI 工程能不能编译、长什么样，
+# 并产出一个「能装到真 iPhone 上」的包。
+#
+# 背景：这些 .swift 文件从没进过 Xcode（写它的机器是 Windows）。
+#       「能不能编译」和「猫画得对不对」是现在最大的两个未知，这个 workflow 一次消掉。
+#
+# 为什么不需要 Apple 开发者账号：
+#       编译到「模拟器」不签名；编译到「真机」用 ad-hoc 签名（"-"），
+#       也不需要账号。最后把包装进手机那一步由 AltStore / SideStore
+#       在你的 Windows 上用免费 Apple ID 完成 —— 所以整条路是免费的。
+#
+# 产出三样东西：
+#   1. build-log          编译日志（失败了看这个）
+#   2. still-screenshots  模拟器真实截图 ← 猫画得对不对，看这个
+#   3. Still-device-ipa   能装到手机上的包（ad-hoc 签，交给 AltStore 重签）
+#
+# 花费：macOS runner 按 10 倍计费。一次约 10-15 分钟 = 消耗 100-150 分钟额度。
+#       免费账号每月 2000 分钟，够跑 10-20 次；仓库设成 public 则完全免费不限量。
+# ─────────────────────────────────────────────────────────────
+
+name: iOS 编译验证
+
+on:
+  # 手动点一下就能跑：仓库 → Actions → iOS 编译验证 → Run workflow
+  workflow_dispatch:
+
+  push:
+    branches: [main, master]
+    paths:
+      - 'Still-iOS/Sources/**'
+      - 'Still-iOS/project.yml'
+      - 'Sources/**'
+      - 'project.yml'
+      - '.github/workflows/ios-build.yml'
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 无论你把 .github 放在仓库根、还是整个仓库就是 Still-iOS，都能认出来
+      - name: 定位工程目录
+        id: loc
+        run: |
+          if [ -f "Still-iOS/project.yml" ]; then
+            echo "dir=Still-iOS" >> "$GITHUB_OUTPUT"
+          elif [ -f "project.yml" ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::找不到 project.yml —— 这个 workflow 要放在 Still-iOS/ 里，或放在仓库根"
+            exit 1
+          fi
+
+      - name: 看一眼 Xcode 版本
+        run: xcodebuild -version
+
+      # 先跑不要 Xcode 的静态自检，错了就别浪费 macOS 分钟数（10 倍计费）
+      - name: 静态自检
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: node Tools/_check.js
+
+      - name: 装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: xcodegen generate
+
+      # ── 1. 模拟器版：为了截图，看它到底长什么样 ────────────────
+      - name: 编译（模拟器，免签名）
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme Still \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee build.log
+
+      # 一个 Swift 错误经常带出几十条级联报错，所以只看 error: 行
+      - name: 挑出报错
+        if: failure()
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          echo "════ error（最多 60 条）════"
+          grep -E "error:" build.log | head -60 || true
+          echo ""
+          echo "════ 提示：先修第一条，Swift 的级联报错会自己消失 ════"
+
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ steps.loc.outputs.dir }}/build.log
+          retention-days: 7
+
+      # ── 2. 跑起来截图 ────────────────────────────────────────
+      # 「猫画得对不对」唯一的免费验证手段，别删。
+      - name: 启动模拟器并截图
+        if: success()
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -e
+          mkdir -p shots
+
+          # 找一台可用的 iPhone 模拟器（不同 Xcode 预装的型号不一样，别写死名字）
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import sys, json
+          d = json.load(sys.stdin)["devices"]
+          cands = [x for k, v in d.items() if "iOS" in k
+                     for x in v if x["name"].startswith("iPhone") and x.get("isAvailable")]
+          print(cands[0]["udid"] if cands else "")
+          ')
+          if [ -z "$UDID" ]; then
+            echo "::error::找不到可用的 iPhone 模拟器"
+            exit 1
+          fi
+          echo "用模拟器 UDID：$UDID"
+
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/Still.app
+          xcrun simctl launch "$UDID" com.still.app
+
+          # 默认 300× 演示速度，隔几秒截一张就能看到它挪窝
+          sleep 4;  xcrun simctl io "$UDID" screenshot shots/01-刚打开.png
+          sleep 8;  xcrun simctl io "$UDID" screenshot shots/02-八秒后.png
+          sleep 8;  xcrun simctl io "$UDID" screenshot shots/03-十六秒后.png
+          sleep 10; xcrun simctl io "$UDID" screenshot shots/04-二十六秒后.png
+
+          ls -la shots
+
+      - name: 上传截图
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: still-screenshots
+          path: ${{ steps.loc.outputs.dir }}/shots
+          retention-days: 30
+
+      # ── 3. 真机版：能装到 iPhone 上的包 ───────────────────────
+      # ad-hoc 签名（"-"）不需要 Apple 账号，但会把 App Group entitlement 嵌进去。
+      # 这一步不阻断前面的截图 —— 万一签名配置有问题，至少图还能拿到。
+      - name: 编译（真机 arm64，ad-hoc 签名）
+        id: device
+        continue-on-error: true
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme Still \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_IDENTITY=- \
+            build 2>&1 | tee build-device.log
+
+      - name: 检查 App Group 有没有签进去（决定小组件能不能用）
+        if: steps.device.outcome == 'success'
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          APP=build-device/Build/Products/Debug-iphoneos/Still.app
+          echo "════ 主 App 的 entitlements ════"
+          codesign -d --entitlements :- "$APP" 2>&1 || true
+          echo ""
+          echo "════ Widget Extension 的 entitlements ════"
+          codesign -d --entitlements :- "$APP/PlugIns/StillWidgetExtension.appex" 2>&1 || true
+          echo ""
+          echo "→ 两边都必须出现 com.apple.security.application-groups，且值是同一个。"
+          echo "  少了它，小组件读不到行程表，会一直显示「还没接它回家」。"
+
+      - name: 打成 .ipa
+        if: steps.device.outcome == 'success'
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          cd build-device/Build/Products/Debug-iphoneos
+          rm -rf Payload Still.ipa
+          mkdir Payload
+          cp -R Still.app Payload/
+          zip -qry Still.ipa Payload
+          echo "打好了：$(du -h Still.ipa | cut -f1)"
+
+      - name: 上传真机包
+        if: steps.device.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Still-device-ipa
+          path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Debug-iphoneos/Still.ipa
+          retention-days: 30
+
+      - name: 真机编译日志（失败时看这个）
+        if: steps.device.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-device-failed-log
+          path: ${{ steps.loc.outputs.dir }}/build-device.log
+          retention-days: 7

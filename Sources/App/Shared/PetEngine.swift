@@ -406,7 +406,7 @@ final class PetEngine: ObservableObject {
 
     /// 房间内靠近下沿的位置 —— 相当于「走到你眼前」，而不是房间正中
     private static func spotNearFront(roomId: String) -> CGPoint {
-        Rooms.byId[roomId].map { Self.deskPos(roomId: roomId, spotInRoom: CGPoint(x: 0.5, y: 0.78)) }
+        Rooms.byId[roomId].map { _ in Self.deskPos(roomId: roomId, spotInRoom: CGPoint(x: 0.5, y: 0.78)) }
             ?? CGPoint(x: 0.5, y: 0.62)
     }
 

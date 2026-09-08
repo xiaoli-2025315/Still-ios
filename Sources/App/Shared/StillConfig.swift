@@ -166,7 +166,7 @@ struct Room: Identifiable, Codable, Hashable {
     // 组件内部：猫可以站的位置（相对组件的归一化坐标）
     // 由 id 确定性推导，保证每次打开位置一致 —— 这是"它住在这儿"的一部分
     var spot: CGPoint {
-        let r = SeededRandom(seed: FNV.hash(id))
+        var r = SeededRandom(seed: FNV.hash(id))
         return CGPoint(x: 0.26 + 0.48 * CGFloat(r.next()),
                        y: 0.52 + 0.26 * CGFloat(r.next()))
     }

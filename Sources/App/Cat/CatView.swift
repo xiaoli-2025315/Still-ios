@@ -255,14 +255,17 @@ struct CatView: View {
         let cy = p.headCy - 2
         switch p.eyes {
         case .shut:
-            var left = Path(); var right = Path()
-            left.move(to: pt(85, cy))
-            left.addQuadCurve(to: pt(95, cy), control: pt(90, cy + 5))
-            right.move(to: pt(105, cy))
-            right.addQuadCurve(to: pt(115, cy), control: pt(110, cy + 5))
             ZStack {
-                left.stroke(CatColor.line, style: StrokeStyle(lineWidth: 2.4 * k, lineCap: .round)).opacity(0.8)
-                right.stroke(CatColor.line, style: StrokeStyle(lineWidth: 2.4 * k, lineCap: .round)).opacity(0.8)
+                Path { p in
+                    p.move(to: pt(85, cy))
+                    p.addQuadCurve(to: pt(95, cy), control: pt(90, cy + 5))
+                }
+                .stroke(CatColor.line, style: StrokeStyle(lineWidth: 2.4 * k, lineCap: .round)).opacity(0.8)
+                Path { p in
+                    p.move(to: pt(105, cy))
+                    p.addQuadCurve(to: pt(115, cy), control: pt(110, cy + 5))
+                }
+                .stroke(CatColor.line, style: StrokeStyle(lineWidth: 2.4 * k, lineCap: .round)).opacity(0.8)
             }
         case .wide:
             ZStack {

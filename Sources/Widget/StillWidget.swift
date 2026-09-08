@@ -94,7 +94,7 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     /// 小组件库里的预置：直接给你几个现成的，不用添加完再长按编辑。
     /// 描述写死字面量，不用插值 —— 少一个编译期可能出问题的地方。
     func recommendations() -> [AppIntentRecommendation<SelectRoomIntent>] {
-        let picks: [(RoomOption, LocalizedStringResource)] = [
+        let picks: [(RoomOption, String)] = [
             (.still,   "它的家"),
             (.clock,   "时钟房"),
             (.weather, "天气房"),

@@ -30,7 +30,7 @@ struct CatLayerView: View {
         ZStack(alignment: .bottom) {
             // 影子：越远越淡越小
             Ellipse()
-                .fill(.black.opacity(0.16 * (1 - engine.z * 0.72)))
+                .fill(.black.opacity(0.16 * (1.0 - Double(engine.z) * 0.72)))
                 .frame(width: w * 0.52, height: w * 0.13)
                 .blur(radius: 2 + engine.z * 4)
 

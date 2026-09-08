@@ -9,6 +9,7 @@ struct StatusPanelView: View {
 
     @ObservedObject var engine: PetEngine
     @State private var toast: String? = nil
+    @State private var catName: String = ""
 
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
@@ -36,6 +37,17 @@ struct StatusPanelView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+
+            // 给它起名：Siri 唤醒词里用的就是它（「跟豆豆说…」）
+            HStack(spacing: 6) {
+                Text("叫它").font(.system(size: 11)).foregroundStyle(.secondary)
+                TextField("还在", text: $catName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 92)
+                    .onSubmit { engine.setName(catName) }
+                Button("改") { engine.setName(catName) }
+                    .buttonStyle(ChipButton())
             }
 
             Divider().opacity(0.5)
@@ -118,6 +130,7 @@ struct StatusPanelView: View {
             }
         }
         .padding(14)
+        .onAppear { catName = engine.catName }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 

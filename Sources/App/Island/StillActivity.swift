@@ -42,12 +42,19 @@ struct StillLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(expandedTitle(context.state))
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(.white)
-                        Text(expandedSub(context.state))
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.white.opacity(0.6))
+                        if let reply = context.state.reply, !reply.isEmpty {
+                            Text(reply)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                        } else {
+                            Text(expandedTitle(context.state))
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.white)
+                            Text(expandedSub(context.state))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 2)
@@ -84,11 +91,20 @@ struct StillLockScreenView: View {
         HStack(spacing: 12) {
             CatView(pose: state.phase == .walking ? .walk : .sit, width: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(state.phase == .walking ? "它在走" : "还在 · \(state.roomName)")
-                    .font(.system(size: 14, weight: .medium))
-                Text(state.phase == .walking ? "从这儿走到那儿" : "它在这儿待着")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                if let reply = state.reply, !reply.isEmpty {
+                    Text(reply)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(2)
+                    Text("还在 · \(state.roomName)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(state.phase == .walking ? "它在走" : "还在 · \(state.roomName)")
+                        .font(.system(size: 14, weight: .medium))
+                    Text(state.phase == .walking ? "从这儿走到那儿" : "它在这儿待着")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }

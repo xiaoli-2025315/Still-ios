@@ -25,6 +25,7 @@ enum SharedStore {
         var callCount: Int
         var visited: [String]
         var lastSeen: Date
+        var catName: String?    // 它叫什么。nil = 还没改过，取默认「还在」
     }
 
     private static var defaults: UserDefaults? { UserDefaults(suiteName: suiteName) }
@@ -41,7 +42,8 @@ enum SharedStore {
               let s = try? JSONDecoder().decode(Snapshot.self, from: data)
         else {
             return Snapshot(roomId: Rooms.home.id, sx: 0.5, sy: 0.6,
-                            z: Cfg.zDefault, callCount: 0, visited: [], lastSeen: Date())
+                            z: Cfg.zDefault, callCount: 0, visited: [], lastSeen: Date(),
+                            catName: "还在")
         }
         return s
     }
@@ -94,18 +96,20 @@ final class IslandBridge {
     private init() {}
 
     private var activity: Any?
+    private var speakTimer: DispatchWorkItem?
 
     private var supported: Bool {
         guard #available(iOS 16.2, *) else { return false }
         return ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    func enter(roomName: String) {
+    /// 引擎按行程表把它送进岛时调用（reply = nil，按原样显示房间名）。
+    func enter(roomName: String, reply: String? = nil) {
         guard #available(iOS 16.2, *), supported else { return }
         leave()
 
         let attrs = StillActivityAttributes(roomName: roomName)
-        let state = StillActivityAttributes.ContentState(phase: .inside, roomName: roomName)
+        let state = StillActivityAttributes.ContentState(phase: .inside, roomName: roomName, reply: reply)
 
         do {
             let a = try Activity<StillActivityAttributes>.request(
@@ -119,7 +123,37 @@ final class IslandBridge {
         }
     }
 
+    /// Siri 聊天：让它从灵动岛里回你一句，不打开 App。
+    /// 没有现成活体就新开一个；有就直接更新 ContentState。
+    /// 18 秒后自动退场 —— 对话结束，岛交还给行程表驱动的节奏。
+    func speak(reply: String, catName: String) {
+        guard #available(iOS 16.2, *), supported else { return }
+        let state = StillActivityAttributes.ContentState(phase: .inside, roomName: catName, reply: reply)
+
+        if let a = activity as? Activity<StillActivityAttributes> {
+            Task { await a.update(using: state) }
+        } else {
+            let attrs = StillActivityAttributes(roomName: catName)
+            do {
+                let a = try Activity<StillActivityAttributes>.request(
+                    attributes: attrs,
+                    content: .init(state: state, staleDate: Date().addingTimeInterval(60)),
+                    pushType: nil)
+                activity = a
+            } catch {
+                // 静默降级：岛起不来不影响 Siri 回话本身（语音已经说完）
+            }
+        }
+
+        speakTimer?.cancel()
+        let t = DispatchWorkItem { [weak self] in self?.leave() }
+        speakTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + 18, execute: t)
+    }
+
     func leave() {
+        speakTimer?.cancel()
+        speakTimer = nil
         guard #available(iOS 16.2, *) else { return }
         if let a = activity as? Activity<StillActivityAttributes> {
             Task {

@@ -22,6 +22,7 @@ final class PetEngine: ObservableObject {
     @Published private(set) var visited: Set<String>
     @Published private(set) var facing: CGFloat = 1   // 1 朝右，-1 朝左
     @Published private(set) var actLog: [Act] = []
+    @Published private(set) var catName: String = "还在"
     @Published var speed: Double = 300                // 演示倍速
     @Published var hoursNow: Double = 0               // 相对真实现在的小时偏移（0=现在）
 
@@ -66,6 +67,7 @@ final class PetEngine: ObservableObject {
         z = CGFloat(store.z)
         callCount = store.callCount
         visited = Set(store.visited)
+        catName = store.catName ?? "还在"
         state = .idle
         act = .sit
         isWalking = false
@@ -443,6 +445,13 @@ final class PetEngine: ObservableObject {
         }
     }
 
+    /// 给它起名。空名回退到「还在」。Siri 唤醒词里用的就是它。
+    func setName(_ n: String) {
+        let t = n.trimmingCharacters(in: .whitespacesAndNewlines)
+        catName = t.isEmpty ? "还在" : t
+        save()
+    }
+
     // MARK: - 时间机器
 
     func seek(hoursOffset h: Double) {
@@ -506,7 +515,8 @@ final class PetEngine: ObservableObject {
             z: Float(z),
             callCount: callCount,
             visited: Array(visited),
-            lastSeen: Date()
+            lastSeen: Date(),
+            catName: catName
         ))
     }
 }

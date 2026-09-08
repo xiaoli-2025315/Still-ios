@@ -16,6 +16,8 @@ struct StillActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var phase: Phase
         var roomName: String
+        /// 它刚说的话（Siri 聊天时）。nil = 没在说话，按原来的「在哪个房间」显示。
+        var reply: String?
     }
 
     enum Phase: String, Codable, Hashable {

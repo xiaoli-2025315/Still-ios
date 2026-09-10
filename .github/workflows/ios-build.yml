@@ -351,3 +351,19 @@ jobs:
           name: build-device-failed-log
           path: ${{ steps.loc.outputs.dir }}/build-device.log
           retention-days: 7
+
+      # 失败时把编译日志一并丢到 Release：artifact 和 Actions 日志都要登录才能看，
+      # 而 Release 附件匿名可下 —— 没有 Mac 的时候，这是唯一能立刻看到 error: 的办法。
+      - name: 失败时把日志发到 Release（免登录可查）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          DIR="${{ steps.loc.outputs.dir }}"
+          gh release view nightly >/dev/null 2>&1 || \
+            gh release create nightly --title "Still 每夜构建" --notes "自动构建（含失败日志）"
+          for f in build.log build-device.log archive.log export.log; do
+            if [ -f "$DIR/$f" ]; then gh release upload nightly "$DIR/$f" --clobber || true; fi
+          done
+          echo "已上传：https://github.com/${{ github.repository }}/releases/download/nightly/build.log"

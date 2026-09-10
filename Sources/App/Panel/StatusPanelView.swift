@@ -38,9 +38,17 @@ struct StatusPanelView: View {
         return ""
     }
 
-    private func loadWidgetCount() async {
-        let infos = (try? await WidgetCenter.shared.currentConfigurations()) ?? []
-        widgetCount = infos.filter { $0.kind == "StillWidget" }.count
+    private func loadWidgetCount() {
+        // 用 iOS 16 就有的回调版，别用 iOS 17 的 async 版 —— 少一个可用性上的雷。
+        WidgetCenter.shared.getCurrentConfigurations { result in
+            let n: Int
+            if case .success(let infos) = result {
+                n = infos.filter { $0.kind == "StillWidget" }.count
+            } else {
+                n = -1
+            }
+            DispatchQueue.main.async { widgetCount = n }
+        }
         // 打开 App 就催一次刷新：小组件的刷新时刻由系统定，不催可能几小时不动。
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -123,7 +131,7 @@ struct StatusPanelView: View {
                         .foregroundStyle(Cfg.Palette.accent)
                 }
             }
-            .task { await loadWidgetCount() }
+            .onAppear(perform: loadWidgetCount)
 
             Divider().opacity(0.5)
 

@@ -30,12 +30,15 @@ targets:
       - path: Sources/App
         excludes:
           - "Island/**"
-    # ★ 故意不给 entitlement。
-    # 曾经这里声明了 com.apple.security.application-groups —— 结果自签工具
-    # （全能签/轻松签）用免费证书重签时，描述文件里没有 App Group capability，
-    # 权限对不上 → 插件要么签不上、要么签完被系统拒载 → 小组件库里根本搜不到。
-    # 而猫在哪儿是确定性算出来的（Schedule.resolve），本来就不需要共享存储。
-    # 代价只是「它只在预置的几间跑」这个精确范围暂时做不到，先保证能看见它。
+    entitlements:
+      path: Still.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.still.app
+    # ★ 这段权限声明不要删。
+    #  曾经为了「自签工具可能签不上」把它去掉过，结果小组件反而搜不到了 ——
+    #  带它的时候（旧版）是能正常添加的。去掉之后变量太多，无法定位。
+    #  现在的结论：它无害，删了反而可能让重签工具跳过对插件的签名。
     info:
       path: Still-Info.plist
       properties:
@@ -64,7 +67,12 @@ targets:
       - path: Sources/App/Shared
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
-    # ★ 同上，不给 entitlement。见上方主 App 那段注释。
+    entitlements:
+      path: StillWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.still.app
+    # ★ 同上：权限声明保持跟「能正常添加的旧版」一致，别动。
     info:
       path: StillWidget-Info.plist
       properties:

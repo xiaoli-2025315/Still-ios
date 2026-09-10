@@ -183,6 +183,8 @@ struct ProbeEntry: TimelineEntry {
 }
 
 struct ProbeProvider: TimelineProvider {
+    /// 每次出包 +1。看到几就说明手机里跑的是哪一版 —— 别再猜「是不是装错了」。
+    static let build = 3
     func placeholder(in context: Context) -> ProbeEntry { ProbeEntry(date: Date()) }
     func getSnapshot(in context: Context, completion: @escaping (ProbeEntry) -> Void) {
         completion(ProbeEntry(date: Date()))
@@ -204,13 +206,18 @@ struct StillProbeWidget: Widget {
                 Text("探针正常")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+                // ★ 版本号：用户一直怀疑「是不是装错包了」，盯这个数字就知道装的是哪一版。
+                //   每次出包改一下，看到它就说明手机里跑的是最新这份。
+                Text("v\(ProbeProvider.build)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(12)
             .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("还在 · 探针")
-        .description("只有一行字。它也是空白＝小组件扩展没被加载，重装 App 即可。")
+        .description("只有一行字 + 版本号。它也是空白＝小组件扩展没被加载，重装 App 即可。")
         .supportedFamilies([.systemSmall])
     }
 }

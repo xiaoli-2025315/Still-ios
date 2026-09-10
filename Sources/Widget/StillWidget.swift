@@ -172,7 +172,7 @@ struct StillWidget: Widget {
             StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("还在 v6 · 猫")
+        .configurationDisplayName("还在 v7 · 猫")
         .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -195,7 +195,7 @@ struct StillTextWidget: Widget {
                 // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v6 · 字")
+        .configurationDisplayName("还在 v7 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

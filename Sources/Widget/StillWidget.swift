@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
 
 // MARK: - 真的小组件
 //
@@ -52,37 +53,37 @@ struct StillWidgetEntry: TimelineEntry {
 }
 
 // MARK: - Provider
-//
-// ★ 用的是最老、最稳的 TimelineProvider（iOS 14 就有），**不是** AppIntent 那一套。
-//   原因：AppIntentConfiguration 依赖 AppIntentsMetadata，重签时一旦元数据没被正确保留，
-//   整个扩展渲染不出来 —— 实测就是「组件库里的预览图也是一片空白」。
-//   房间不再让用户长按编辑去选：**一个组件天生就是一间房**（见下方 RoomWidget）。
 
-struct RoomTimelineProvider: TimelineProvider {
+struct StillWidgetProvider: AppIntentTimelineProvider {
 
-    let roomId: String
-
-    private var roomName: String { Rooms.byId[roomId]?.name ?? "" }
+    typealias Entry = StillWidgetEntry
+    typealias Intent = SelectRoomIntent
 
     func placeholder(in context: Context) -> StillWidgetEntry {
-        StillWidgetEntry(date: Date(), state: .away(lastVisit: nil), roomName: roomName)
+        StillWidgetEntry(date: Date(), state: .away(lastVisit: nil), roomName: "时钟")
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (StillWidgetEntry) -> Void) {
-        RoomScope.report(roomId: roomId)
-        completion(entry(at: Date()))
+    func snapshot(for configuration: SelectRoomIntent, in context: Context) async -> StillWidgetEntry {
+        RoomScope.report(roomId: configuration.room.roomId)
+        return entry(for: configuration.room.roomId, at: Date())
     }
 
-    func getTimeline(in context: Context,
-                     completion: @escaping (Timeline<StillWidgetEntry>) -> Void) {
+    func timeline(for configuration: SelectRoomIntent, in context: Context) async -> Timeline<StillWidgetEntry> {
+        let roomId = configuration.room.roomId
         let now = Date()
+
         // 自报家门：告诉别的进程「这个房间有组件在桌面上」。
         // 它只在你摆出来的房间之间跑，靠的就是每个组件各自报这一笔（见 RoomScope）。
         RoomScope.report(roomId: roomId)
 
+        // ★ 不再依赖 App Group：行程表是确定性算出来的，
+        //   小组件自己和 App 算出来的必然是同一份（见 Schedule.resolve 的注释）。
+        //   以前「读不到就显示『还没接它回家』」那一支删了 ——
+        //   自签名下 App Group 常常不通，那一支会让用户在桌面永远看不见它。
         let segs = Schedule.resolve()
-        let moments = Schedule.moments(forRoom: roomId, segs: segs, from: now)
 
+        // 只排「有变化」的时刻。末尾那个 false 是兜底。
+        let moments = Schedule.moments(forRoom: roomId, segs: segs, from: now)
         let entries = moments.map { m -> StillWidgetEntry in
             let h = m.date.timeIntervalSince1970 / 3600.0
             let wn = whereNow(segs: segs, atHour: h)
@@ -90,36 +91,53 @@ struct RoomTimelineProvider: TimelineProvider {
                 let seg = Schedule.segment(segs, atHour: h)
                 let since = seg.map { Date(timeIntervalSince1970: $0.t0 * 3600.0) } ?? m.date
                 return StillWidgetEntry(date: m.date,
-                                        state: .here(pose: pose(at: m.date), since: since),
-                                        roomName: roomName,
+                                        state: .here(pose: Self.pose(roomId: roomId, at: m.date),
+                                                     since: since),
+                                        roomName: Rooms.byId[roomId]?.name ?? "",
+                                        whereNow: wn)
+            } else {
+                return StillWidgetEntry(date: m.date,
+                                        state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
+                                        roomName: Rooms.byId[roomId]?.name ?? "",
                                         whereNow: wn)
             }
-            return StillWidgetEntry(date: m.date,
-                                    state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                    roomName: roomName,
-                                    whereNow: wn)
         }
 
         // .atEnd：走完最后一条就再要一条新的。
         // 预算用尽时它会停在最后那条（兜底的「不在这儿」）—— 这是安全的失败方向。
-        completion(Timeline(entries: entries, policy: .atEnd))
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
-    private func entry(at date: Date) -> StillWidgetEntry {
+    /// 小组件库里的预置：直接给你几个现成的，不用添加完再长按编辑。
+    /// 描述写死字面量，不用插值 —— 少一个编译期可能出问题的地方。
+    func recommendations() -> [AppIntentRecommendation<SelectRoomIntent>] {
+        let picks: [(RoomOption, String)] = [
+            (.still,   "它的家"),
+            (.clock,   "时钟房"),
+            (.weather, "天气房"),
+            (.photo,   "照片房"),
+            (.notes,   "备忘录房")
+        ]
+        return picks.map { AppIntentRecommendation(intent: SelectRoomIntent(room: $0.0),
+                                                   description: $0.1) }
+    }
+
+    private func entry(for roomId: String, at date: Date) -> StillWidgetEntry {
         let segs = Schedule.resolve()
         let h = date.timeIntervalSince1970 / 3600.0
         let here = Schedule.place(segs, atHour: h) == .room(roomId)
+        let name = Rooms.byId[roomId]?.name ?? ""
         let wn = whereNow(segs: segs, atHour: h)
         if here, let seg = Schedule.segment(segs, atHour: h) {
             return StillWidgetEntry(date: date,
-                                    state: .here(pose: pose(at: date),
+                                    state: .here(pose: Self.pose(roomId: roomId, at: date),
                                                  since: Date(timeIntervalSince1970: seg.t0 * 3600.0)),
-                                    roomName: roomName,
+                                    roomName: name,
                                     whereNow: wn)
         }
         return StillWidgetEntry(date: date,
                                 state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                roomName: roomName,
+                                roomName: name,
                                 whereNow: wn)
     }
 
@@ -135,7 +153,7 @@ struct RoomTimelineProvider: TimelineProvider {
 
     /// 姿势确定性决定：同一个房间的同一个时刻，看几次都是同一个姿势。
     /// 不用随机数 —— 否则每次重绘都在抖。
-    private func pose(at date: Date) -> CatPose {
+    private static func pose(roomId: String, at date: Date) -> CatPose {
         let quarter = Int(date.timeIntervalSince1970 / 900)
         var r = SeededRandom(seed: FNV.hash(roomId) ^ UInt32(truncatingIfNeeded: quarter))
         return [CatPose.sleep, .sit, .groom, .look][r.int(4)]
@@ -143,98 +161,52 @@ struct RoomTimelineProvider: TimelineProvider {
 }
 
 // MARK: - 小组件本体
-//
-// 一个组件 = 一间房，天生就是，不需要用户长按编辑去选房间名。
-// 摆几个，它的活动范围就是几间（见 RoomScope）。
 
-struct RoomWidget: Widget {
-    var roomId: String
-
-    // ★ Widget 协议强制要求一个无参 init（报错 "protocol requires initializer 'init()'"），
-    //   所以带参数的组件必须**显式**把它写出来，光靠成员逐一初始化是不够的。
-    init() { self.roomId = Rooms.home.id }
-    init(roomId: String) { self.roomId = roomId }
-
-    private var name: String { Rooms.byId[roomId]?.name ?? "还在" }
+struct StillWidget: Widget {
+    let kind = "StillWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "StillRoom-\(roomId)",
-                            provider: RoomTimelineProvider(roomId: roomId)) { entry in
-            StillWidgetView(entry: entry)
+        AppIntentConfiguration(kind: kind,
+                               intent: SelectRoomIntent.self,
+                               provider: StillWidgetProvider()) { entry in
+            StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("还在 · \(name)")
-        .description("它的一个房间。多摆几个，它就会在它们之间穿梭。")
+        .configurationDisplayName("还在 v6 · 猫")
+        .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
-// MARK: - 探针组件（排障专用）
-//
-// 这一片里**只有一行字**，不读行程表、不画猫、不碰 App Group。
-// 如果连它都是空白 → 小组件扩展整体没被加载（重签时插件没签上），
-// 跟我们的代码无关，只能重装 / 换签名工具；
-// 如果它能显示字，而房间组件空白 → 问题在我们这边，继续查。
-//
-// 定位清楚了就可以删掉这整个 struct。
-
-struct ProbeEntry: TimelineEntry {
-    let date: Date
-}
-
-struct ProbeProvider: TimelineProvider {
-    /// 每次出包 +1。看到几就说明手机里跑的是哪一版 —— 别再猜「是不是装错了」。
-    static let build = 3
-    func placeholder(in context: Context) -> ProbeEntry { ProbeEntry(date: Date()) }
-    func getSnapshot(in context: Context, completion: @escaping (ProbeEntry) -> Void) {
-        completion(ProbeEntry(date: Date()))
-    }
-    func getTimeline(in context: Context, completion: @escaping (Timeline<ProbeEntry>) -> Void) {
-        completion(Timeline(entries: [ProbeEntry(date: Date())],
-                            policy: .after(Date().addingTimeInterval(1800))))
-    }
-}
-
-struct StillProbeWidget: Widget {
-    let kind = "StillProbe"
+/// 同一个房间、同一份数据，**只画字、不画猫**。
+///
+/// 存在的唯一目的：把「小组件扩展整体没渲染」和「画猫的那段代码崩了」一分为二。
+///   · 它也是空白  → 扩展层面就没画出来，跟画猫无关
+///   · 它有字、带猫的那个空白 → 画猫那段代码在小组件进程里崩了，修它就行
+/// 定位完可以删掉这个组件。
+struct StillTextWidget: Widget {
+    let kind = "StillTextWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: ProbeProvider()) { entry in
-            VStack(alignment: .leading, spacing: 3) {
-                Text("还在")
-                    .font(.system(size: 13, weight: .medium, design: .serif))
-                Text("探针正常")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                // ★ 版本号：用户一直怀疑「是不是装错包了」，盯这个数字就知道装的是哪一版。
-                //   每次出包改一下，看到它就说明手机里跑的是最新这份。
-                Text("v\(ProbeProvider.build)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(12)
-            .containerBackground(.fill.tertiary, for: .widget)
+        AppIntentConfiguration(kind: kind,
+                               intent: SelectRoomIntent.self,
+                               provider: StillWidgetProvider()) { entry in
+            StillWidgetView(entry: entry, textOnly: true)
+                // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
+                .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 · 探针")
-        .description("只有一行字 + 版本号。它也是空白＝小组件扩展没被加载，重装 App 即可。")
-        .supportedFamilies([.systemSmall])
+        .configurationDisplayName("还在 v6 · 字")
+        .description("排障用：同一个房间，但只写字不画猫。")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
 @main
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
-        // ★ 排障期间只留两个：探针 + 它的家。
-        //   这是最小可跑集，用来把问题一分为二：
-        //     · 两个都搜不到  → 扩展整体没被加载（签名/工具的事，跟代码无关）
-        //     · 探针有、家没有 → 房间组件里有让扩展崩掉的东西（CatView / Schedule）
-        //     · 两个都有       → 之前是「一次注册太多 + 权限声明」的问题，逐个加回即可
-        //   定位清楚后再把 clock / weather / photo / notes 加回来。
-        StillProbeWidget()               // 排障用，定位完可删
-        RoomWidget(roomId: "still")      // 它的家
-        // ★ 灵动岛（StillLiveActivity）**不**放这里。
-        //   Live Activity 是靠 ActivityConfiguration 自己注册的，不需要进 WidgetBundle。
+        StillWidget()          // 小组件：按行程表预排，同一时刻只有一个有猫
+        StillTextWidget()      // 排障用：同上，但只画字（定位完可删）
+        StillLiveActivity()    // 灵动岛 + 锁屏横幅
     }
 }
 
@@ -243,13 +215,74 @@ struct StillWidgetBundle: WidgetBundle {
 struct StillWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: StillWidgetEntry
+    /// true = 只写字，不碰 CatView / PawMark（排障用，见 StillTextWidget）
+    var textOnly: Bool = false
 
     var body: some View {
         switch entry.state {
-        case .here(let pose, let since): here(pose: pose, since: since)
-        case .away(let last):            away(lastVisit: last)
-        case .noHome:                    noHome
+        case .here(let pose, let since):
+            textOnly ? AnyView(plainHere()) : AnyView(here(pose: pose, since: since))
+        case .away(let last):
+            textOnly ? AnyView(plainAway()) : AnyView(away(lastVisit: last))
+        case .noHome:
+            textOnly ? AnyView(plainNoHome()) : AnyView(noHome)
         }
+    }
+
+    // MARK: 纯文字版（不画猫、不画爪印，最大限度排除绘制层）
+
+    private func plainHere() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("它在这儿")
+                .font(.system(size: 10))
+                .foregroundStyle(Color(red: 0.55, green: 0.35, blue: 0.25))
+            Text(entry.roomName.isEmpty ? "（未选房间）" : entry.roomName)
+                .font(.system(size: family == .systemMedium ? 22 : 17, weight: .medium, design: .serif))
+                .foregroundStyle(.black)
+                .lineLimit(1)
+            Text("v6")
+                .font(.system(size: 9))
+                .foregroundStyle(.gray)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(13)
+    }
+
+    private func plainAway() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(entry.roomName.isEmpty ? "（未选房间）" : entry.roomName)
+                .font(.system(size: 13, weight: .medium, design: .serif))
+                .foregroundStyle(.gray)
+                .lineLimit(1)
+            if let w = entry.whereNow {
+                Text("它现在在 " + w.label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+            } else {
+                Text("它还没来过")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.gray)
+            }
+            Text("v6")
+                .font(.system(size: 9))
+                .foregroundStyle(Color(red: 0.7, green: 0.7, blue: 0.7))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(13)
+    }
+
+    private func plainNoHome() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("还没接它回家")
+                .font(.system(size: 12, weight: .medium, design: .serif))
+                .foregroundStyle(.black)
+            Text("打开「还在」再回来")
+                .font(.system(size: 9))
+                .foregroundStyle(.gray)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(13)
     }
 
     // MARK: 它在这儿
@@ -341,7 +374,7 @@ struct StillWidgetView: View {
 }
 
 #Preview(as: .systemSmall) {
-    RoomWidget(roomId: "clock")
+    StillWidget()
 } timeline: {
     StillWidgetEntry(date: Date(), state: .here(pose: .sleep, since: Date().addingTimeInterval(-5400)),
                      roomName: "时钟")

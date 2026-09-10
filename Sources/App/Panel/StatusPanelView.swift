@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 // MARK: - 状态面板
 //
@@ -10,10 +11,39 @@ struct StatusPanelView: View {
     @ObservedObject var engine: PetEngine
     @State private var toast: String? = nil
     @State private var catName: String = ""
+    @State private var widgetCount: Int? = nil
 
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
     ]
+
+    // MARK: 小组件自检（把这一屏截图给我，就能定位问题）
+
+    private var widgetCountText: String {
+        guard let n = widgetCount else { return "正在查询系统登记的组件…" }
+        return "系统里登记的 Still 组件：\(n) 个"
+    }
+
+    private var diagnosis: String {
+        let renders = RoomScope.renderCount()
+        if renders > 0 {
+            return "组件跑起来了。还空白的话是渲染的事 —— 把这一屏截图给我。"
+        }
+        if let n = widgetCount, n > 0 {
+            return "系统里有组件，但它一次都没刷新 → 扩展没被加载，多半是重签时插件没签上。"
+        }
+        if let n = widgetCount, n == 0 {
+            return "系统里没登记到组件 → 先长按桌面把旧的删掉，重新加一个。"
+        }
+        return ""
+    }
+
+    private func loadWidgetCount() async {
+        let infos = (try? await WidgetCenter.shared.currentConfigurations()) ?? []
+        widgetCount = infos.filter { $0.kind == "StillWidget" }.count
+        // 打开 App 就催一次刷新：小组件的刷新时刻由系统定，不催可能几小时不动。
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -64,9 +94,13 @@ struct StatusPanelView: View {
 
             Divider().opacity(0.5)
 
-            // 活动范围
-            // 这块是给你排查用的：它只在你摆出来的组件之间跑。
-            // 摆了组件却仍显示默认的五间 → 说明小组件没报到（多半是 App Group 不通）。
+            // 活动范围 + 小组件自检
+            //
+            // 这块是排障用的：小组件跑在另一个进程里，它到底有没有被执行，
+            // 在 App 里是看不见的。所以让它每次渲染都记一笔，这里读出来。
+            //   刷新 0 次      = 扩展压根没被系统加载（重签时插件没签上，最常见）
+            //   系统登记 0 个  = 组件根本没加上去
+            //   刷新 > 0 还空白 = 代码跑了，是渲染层的事
             let scope = RoomScope.active(atHour: Schedule.hourEpoch)
             VStack(alignment: .leading, spacing: 3) {
                 Text(RoomScope.isLive() ? "它只在这几间跑" : "它先在默认的五间跑")
@@ -74,12 +108,22 @@ struct StatusPanelView: View {
                 Text(scope.compactMap { Rooms.byId[$0]?.name }.joined(separator: " · "))
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
-                Text(RoomScope.isLive()
-                     ? "再摆一个，它的活动范围就多一间。"
-                     : "还没有小组件报到。长按桌面加一个，它就只去你摆出来的地方。")
+
+                Divider().opacity(0.4)
+
+                Text("App Group \(RoomScope.probe() ? "可用" : "不可用")　·　组件已刷新 \(RoomScope.renderCount()) 次")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Cfg.Palette.accent)
+                    .foregroundStyle(RoomScope.renderCount() > 0 ? .secondary : Cfg.Palette.accent)
+                Text(widgetCountText)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(widgetCount == 0 ? Cfg.Palette.accent : .secondary)
+                if !diagnosis.isEmpty {
+                    Text(diagnosis)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Cfg.Palette.accent)
+                }
             }
+            .task { await loadWidgetCount() }
 
             Divider().opacity(0.5)
 

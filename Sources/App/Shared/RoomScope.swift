@@ -32,6 +32,8 @@ enum RoomScope {
     static let validHours: Double = 24
 
     private static let reportKey = "still.scope.report.v1"
+    private static let renderKey = "still.widget.renders.v1"
+    private static let probeKey = "still.probe.v1"
 
     /// 小组件自报。写不进去（App Group 不通）也没关系 —— 见 active 的兜底。
     static func report(roomId: String) {
@@ -40,6 +42,23 @@ enum RoomScope {
         // 用相对小时存没意义 —— 一律存绝对小时，跨进程、跨时区都一致
         m[roomId] = Date().timeIntervalSince1970 / 3600.0
         d.set(m, forKey: reportKey)
+
+        // 顺手记一次「我渲染过」—— 这是判断小组件到底跑没跑的唯一证据。
+        // App 面板里显示这个数：0 = 扩展压根没被系统加载；>0 = 代码跑了，问题在别处。
+        d.set(d.integer(forKey: renderKey) + 1, forKey: renderKey)
+    }
+
+    /// 小组件被系统渲染过多少次。
+    static func renderCount() -> Int {
+        UserDefaults(suiteName: Cfg.appGroup)?.integer(forKey: renderKey) ?? 0
+    }
+
+    /// App Group 自己能不能写进去再读出来。
+    /// 只能证明这个容器可用，**不能**证明和另一个进程共享 —— 那要看 renderCount。
+    static func probe() -> Bool {
+        guard let d = UserDefaults(suiteName: Cfg.appGroup) else { return false }
+        d.set("ok", forKey: probeKey)
+        return d.string(forKey: probeKey) == "ok"
     }
 
     /// 某一时刻生效的房间集合。**任何进程在同一小时问，答案必须逐字相同。**

@@ -169,13 +169,34 @@ struct StillWidget: Widget {
         AppIntentConfiguration(kind: kind,
                                intent: SelectRoomIntent.self,
                                provider: StillWidgetProvider()) { entry in
-            StillWidgetView(entry: entry)
+            StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        // ★ 名字里带版本号：用户一直怀疑「是不是装错包了」，
-        //   搜「还在」时会看到「还在 v5」，一眼确认装的是哪一版。每次出包 +1。
-        .configurationDisplayName("还在 v5")
-        .description("它的一个房间。多摆几个，它就会在它们之间穿梭。")
+        .configurationDisplayName("还在 v6 · 猫")
+        .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+/// 同一个房间、同一份数据，**只画字、不画猫**。
+///
+/// 存在的唯一目的：把「小组件扩展整体没渲染」和「画猫的那段代码崩了」一分为二。
+///   · 它也是空白  → 扩展层面就没画出来，跟画猫无关
+///   · 它有字、带猫的那个空白 → 画猫那段代码在小组件进程里崩了，修它就行
+/// 定位完可以删掉这个组件。
+struct StillTextWidget: Widget {
+    let kind = "StillTextWidget"
+
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: kind,
+                               intent: SelectRoomIntent.self,
+                               provider: StillWidgetProvider()) { entry in
+            StillWidgetView(entry: entry, textOnly: true)
+                // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
+                .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
+        }
+        .configurationDisplayName("还在 v6 · 字")
+        .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -184,11 +205,8 @@ struct StillWidget: Widget {
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
         StillWidget()          // 小组件：按行程表预排，同一时刻只有一个有猫
+        StillTextWidget()      // 排障用：同上，但只画字（定位完可删）
         StillLiveActivity()    // 灵动岛 + 锁屏横幅
-        // ★ 探针（StillProbeWidget）已删除。
-        //   它用的是 StaticConfiguration，而实测这台手机上只有 AppIntentConfiguration
-        //   能被系统登记 —— 探针永远搜不到，只会让人误以为没装上。
-        //   ★ 版本号改成写在组件名里（见下方 "还在 v5"），一样能确认装的是哪一版。
     }
 }
 
@@ -197,13 +215,74 @@ struct StillWidgetBundle: WidgetBundle {
 struct StillWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: StillWidgetEntry
+    /// true = 只写字，不碰 CatView / PawMark（排障用，见 StillTextWidget）
+    var textOnly: Bool = false
 
     var body: some View {
         switch entry.state {
-        case .here(let pose, let since): here(pose: pose, since: since)
-        case .away(let last):            away(lastVisit: last)
-        case .noHome:                    noHome
+        case .here(let pose, let since):
+            textOnly ? AnyView(plainHere()) : AnyView(here(pose: pose, since: since))
+        case .away(let last):
+            textOnly ? AnyView(plainAway()) : AnyView(away(lastVisit: last))
+        case .noHome:
+            textOnly ? AnyView(plainNoHome()) : AnyView(noHome)
         }
+    }
+
+    // MARK: 纯文字版（不画猫、不画爪印，最大限度排除绘制层）
+
+    private func plainHere() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("它在这儿")
+                .font(.system(size: 10))
+                .foregroundStyle(Color(red: 0.55, green: 0.35, blue: 0.25))
+            Text(entry.roomName.isEmpty ? "（未选房间）" : entry.roomName)
+                .font(.system(size: family == .systemMedium ? 22 : 17, weight: .medium, design: .serif))
+                .foregroundStyle(.black)
+                .lineLimit(1)
+            Text("v6")
+                .font(.system(size: 9))
+                .foregroundStyle(.gray)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(13)
+    }
+
+    private func plainAway() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(entry.roomName.isEmpty ? "（未选房间）" : entry.roomName)
+                .font(.system(size: 13, weight: .medium, design: .serif))
+                .foregroundStyle(.gray)
+                .lineLimit(1)
+            if let w = entry.whereNow {
+                Text("它现在在 " + w.label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+            } else {
+                Text("它还没来过")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.gray)
+            }
+            Text("v6")
+                .font(.system(size: 9))
+                .foregroundStyle(Color(red: 0.7, green: 0.7, blue: 0.7))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(13)
+    }
+
+    private func plainNoHome() -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("还没接它回家")
+                .font(.system(size: 12, weight: .medium, design: .serif))
+                .foregroundStyle(.black)
+            Text("打开「还在」再回来")
+                .font(.system(size: 9))
+                .foregroundStyle(.gray)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(13)
     }
 
     // MARK: 它在这儿

@@ -183,6 +183,8 @@ struct ProbeEntry: TimelineEntry {
 }
 
 struct ProbeProvider: TimelineProvider {
+    /// 每次出包 +1。看到几就说明手机里跑的是哪一版 —— 别再猜「是不是装错了」。
+    static let build = 3
     func placeholder(in context: Context) -> ProbeEntry { ProbeEntry(date: Date()) }
     func getSnapshot(in context: Context, completion: @escaping (ProbeEntry) -> Void) {
         completion(ProbeEntry(date: Date()))
@@ -204,13 +206,18 @@ struct StillProbeWidget: Widget {
                 Text("探针正常")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+                // ★ 版本号：用户一直怀疑「是不是装错包了」，盯这个数字就知道装的是哪一版。
+                //   每次出包改一下，看到它就说明手机里跑的是最新这份。
+                Text("v\(ProbeProvider.build)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(12)
             .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("还在 · 探针")
-        .description("只有一行字。它也是空白＝小组件扩展没被加载，重装 App 即可。")
+        .description("只有一行字 + 版本号。它也是空白＝小组件扩展没被加载，重装 App 即可。")
         .supportedFamilies([.systemSmall])
     }
 }
@@ -218,13 +225,16 @@ struct StillProbeWidget: Widget {
 @main
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
-        RoomWidget(roomId: "still")      // 它的家
-        RoomWidget(roomId: "clock")      // 时钟
-        RoomWidget(roomId: "weather")    // 天气
-        RoomWidget(roomId: "photo")      // 照片
-        RoomWidget(roomId: "notes")      // 备忘录
+        // ★ 排障期间只留两个：探针 + 它的家。
+        //   这是最小可跑集，用来把问题一分为二：
+        //     · 两个都搜不到  → 扩展整体没被加载（签名/工具的事，跟代码无关）
+        //     · 探针有、家没有 → 房间组件里有让扩展崩掉的东西（CatView / Schedule）
+        //     · 两个都有       → 之前是「一次注册太多 + 权限声明」的问题，逐个加回即可
+        //   定位清楚后再把 clock / weather / photo / notes 加回来。
         StillProbeWidget()               // 排障用，定位完可删
-        StillLiveActivity()              // 灵动岛 + 锁屏横幅
+        RoomWidget(roomId: "still")      // 它的家
+        // ★ 灵动岛（StillLiveActivity）**不**放这里。
+        //   Live Activity 是靠 ActivityConfiguration 自己注册的，不需要进 WidgetBundle。
     }
 }
 

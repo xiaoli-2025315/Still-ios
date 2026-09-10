@@ -35,6 +35,10 @@ jobs:
   build:
     runs-on: macos-15
 
+    # actions-gh-release / gh release upload 要写 Release，默认 token 是只读的
+    permissions:
+      contents: write
+
     # Node 20 在 2026-09-23 前仍可临时放行（GitHub 官方逃生阀），
     # 与下方升到 v5（Node 24）的 action 互为双保险。
     env:
@@ -231,6 +235,32 @@ jobs:
           name: Still-unsigned-ipa
           path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Release-iphoneos/Still-unsigned.ipa
           retention-days: 30
+
+      # ── 4a-2. 同一份 ipa 再发一份到 Release，拿到「免登录直链」──────
+      # 为什么：Actions 的 artifact 必须登录 GitHub 才能下。public 仓库的 Release
+      #         附件是匿名可下的 —— 于是 iPhone 自带 Safari 打开这个链接就能把 ipa
+      #         存到「文件」，再交给全能签/轻松签签名安装，全程不用电脑。
+      # 直链：https://github.com/<owner>/<repo>/releases/download/nightly/Still-unsigned.ipa
+      - name: 发布免登录直链（Release 附件）
+        if: ${{ env.IOS_SIGNING_CERT == '' && steps.unsignedipa.outcome == 'success' }}
+        working-directory: ${{ steps.loc.outputs.dir }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          IPA=build-device/Build/Products/Release-iphoneos/Still-unsigned.ipa
+          TAG=nightly
+          NOTE="每次推送自动构建的最新未签名包（Release 配置）。
+          提交 ${{ github.sha }} · $(date -u '+%Y-%m-%d %H:%M UTC')
+          下载后用全能签 / 轻松签 / AltStore 重签即可安装。"
+
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Still 每夜构建" --notes "$NOTE"
+
+          gh release upload "$TAG" "$IPA" --clobber
+
+          echo "════ 免登录直链 ════"
+          echo "${{ github.server_url }}/${{ github.repository }}/releases/download/$TAG/Still-unsigned.ipa"
 
       # ── 4b. 真机签名出包（填了 Secrets 才走这条路）──────────────
       - name: 导入证书与描述文件（签名准备）

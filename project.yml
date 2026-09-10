@@ -67,12 +67,20 @@ targets:
       - path: Sources/App/Shared
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
-    entitlements:
-      path: StillWidget.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.still.app
-    # ★ 同上：权限声明保持跟「能正常添加的旧版」一致，别动。
+    # ★★ 小组件扩展【不给】App Group 权限。这是让它能显示出内容的关键。
+    #
+    #  自签工具（全能签/轻松签）重签时生成的描述文件里，通常**不含**
+    #  com.apple.security.application-groups。而扩展如果声明了这个权限，
+    #  启动时 entitlement 与描述文件对不上 → 系统直接把扩展进程杀掉。
+    #  表现就是：组件能在库里搜到、能加到桌面，但**永远是一片空白**
+    #  （连预览缩略图都是空的）——因为画出内容的是扩展进程，它压根没起来。
+    #
+    #  主 App 那边的 App Group 保留（它自己的功能要用），
+    #  Apple 允许扩展的权限是宿主 App 的子集，这样不冲突。
+    #
+    #  代价：小组件读不到共享容器 → RoomScope 的「自报家门」暂时失效，
+    #  它先在预置的几间里跑。但行程表是确定性算的（Schedule.resolve），
+    #  不依赖共享存储，唯一性不受影响。
     info:
       path: StillWidget-Info.plist
       properties:

@@ -148,7 +148,12 @@ struct RoomTimelineProvider: TimelineProvider {
 // 摆几个，它的活动范围就是几间（见 RoomScope）。
 
 struct RoomWidget: Widget {
-    let roomId: String
+    var roomId: String
+
+    // ★ Widget 协议强制要求一个无参 init（报错 "protocol requires initializer 'init()'"），
+    //   所以带参数的组件必须**显式**把它写出来，光靠成员逐一初始化是不够的。
+    init() { self.roomId = Rooms.home.id }
+    init(roomId: String) { self.roomId = roomId }
 
     private var name: String { Rooms.byId[roomId]?.name ?? "还在" }
 

@@ -172,8 +172,10 @@ struct StillWidget: Widget {
             StillWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("还在")
-        .description("代表它的一个房间。多摆几个，它就会在它们之间穿梭。")
+        // ★ 名字里带版本号：用户一直怀疑「是不是装错包了」，
+        //   搜「还在」时会看到「还在 v5」，一眼确认装的是哪一版。每次出包 +1。
+        .configurationDisplayName("还在 v5")
+        .description("它的一个房间。多摆几个，它就会在它们之间穿梭。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -183,7 +185,10 @@ struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
         StillWidget()          // 小组件：按行程表预排，同一时刻只有一个有猫
         StillLiveActivity()    // 灵动岛 + 锁屏横幅
-        StillProbeWidget()     // 排障用：只有一行字 + 版本号，定位完可删
+        // ★ 探针（StillProbeWidget）已删除。
+        //   它用的是 StaticConfiguration，而实测这台手机上只有 AppIntentConfiguration
+        //   能被系统登记 —— 探针永远搜不到，只会让人误以为没装上。
+        //   ★ 版本号改成写在组件名里（见下方 "还在 v5"），一样能确认装的是哪一版。
     }
 }
 
@@ -286,54 +291,6 @@ struct StillWidgetView: View {
 
     private func link<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content().widgetURL(URL(string: "still://open"))
-    }
-}
-
-// MARK: - 探针组件（排障专用，v4）
-//
-// 只有两行字，不读行程表、不画猫、不碰 App Group。
-// 它和「还在」用同一套机制注册，所以：
-//   · 两个都搜不到 → 扩展整体没被加载（签名工具的事）
-//   · 探针有字、房间组件空白 → 问题在渲染/数据
-//
-// v4 这个版本号是用来确认「手机里跑的是不是这一份」的，别删。
-
-struct ProbeEntry: TimelineEntry {
-    let date: Date
-}
-
-struct ProbeProvider: TimelineProvider {
-    /// 每次出包 +1，看到几就知道装的是哪一版。
-    static let build = 4
-    func placeholder(in context: Context) -> ProbeEntry { ProbeEntry(date: Date()) }
-    func getSnapshot(in context: Context, completion: @escaping (ProbeEntry) -> Void) {
-        completion(ProbeEntry(date: Date()))
-    }
-    func getTimeline(in context: Context, completion: @escaping (Timeline<ProbeEntry>) -> Void) {
-        completion(Timeline(entries: [ProbeEntry(date: Date())],
-                            policy: .after(Date().addingTimeInterval(1800))))
-    }
-}
-
-struct StillProbeWidget: Widget {
-    let kind = "StillProbe"
-
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: ProbeProvider()) { entry in
-            VStack(alignment: .leading, spacing: 3) {
-                Text("还在")
-                    .font(.system(size: 13, weight: .medium, design: .serif))
-                Text("探针 v\(ProbeProvider.build)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(12)
-            .containerBackground(.fill.tertiary, for: .widget)
-        }
-        .configurationDisplayName("还在 · 探针")
-        .description("只有两行字 + 版本号。它也是空白＝小组件扩展没被加载。")
-        .supportedFamilies([.systemSmall])
     }
 }
 

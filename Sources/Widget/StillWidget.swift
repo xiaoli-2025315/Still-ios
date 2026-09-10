@@ -224,7 +224,9 @@ struct StillWidgetBundle: WidgetBundle {
         RoomWidget(roomId: "photo")      // 照片
         RoomWidget(roomId: "notes")      // 备忘录
         StillProbeWidget()               // 排障用，定位完可删
-        StillLiveActivity()              // 灵动岛 + 锁屏横幅
+        // ★ 灵动岛（StillLiveActivity）**不**放这里。
+        //   Live Activity 是靠 ActivityConfiguration 自己注册的，不需要进 WidgetBundle；
+        //   塞进来反而可能让系统解析整个 bundle 时出问题 —— 组件库里一个都不出现。
     }
 }
 

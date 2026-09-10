@@ -185,7 +185,7 @@ jobs:
           set -o pipefail
           xcodebuild \
             -scheme Still \
-            -configuration Debug \
+            -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build-device \
             CODE_SIGNING_ALLOWED=NO \
@@ -216,7 +216,7 @@ jobs:
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
           set -e
-          cd build-device/Build/Products/Debug-iphoneos
+          cd build-device/Build/Products/Release-iphoneos
           rm -rf Payload Still-unsigned.ipa
           mkdir Payload
           cp -R Still.app Payload/
@@ -229,7 +229,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: Still-unsigned-ipa
-          path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Debug-iphoneos/Still-unsigned.ipa
+          path: ${{ steps.loc.outputs.dir }}/build-device/Build/Products/Release-iphoneos/Still-unsigned.ipa
           retention-days: 30
 
       # ── 4b. 真机签名出包（填了 Secrets 才走这条路）──────────────

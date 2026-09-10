@@ -185,7 +185,27 @@ enum Schedule {
     static func place(_ segs: [Segment], atHour h: Double) -> Place {
         guard let s = segment(segs, atHour: h) else { return .room(Rooms.home.id) }
         if s.islandHours > 0 && h < s.islandUntil { return .island }
-        return .room(s.roomId)
+        return .room(remap(s.roomId, atHour: h, segT0: s.t0))
+    }
+
+    // MARK: 房间范围映射
+    //
+    // 段里写的房间，可能是你根本没摆的那个组件 —— 直接照着显示的话，
+    // 你扫一遍桌面一个猫都看不见，等于它消失了（用户原话）。
+    // 所以这里把它挪到「你已经摆出来的某一间」里去。
+    //
+    // ★ 为什么不在 build() 里就只生成范围内的房间：
+    //   build() 里 rnd() 的调用次数一变，整条随机序列就错位，
+    //   之前跑参数扫描扫出来的那组数（homePull / samePageRate / freshBias）全部作废。
+    //   而映射是确定性函数：给定「段 + 小时」，无论谁算、算几次，结果都一样。
+    //
+    // ★ 唯一性不受影响：place(T) 仍然只有一个返回值，所有进程算的是同一个。
+
+    static func remap(_ roomId: String, atHour h: Double, segT0: Double) -> String {
+        let scope = RoomScope.active(atHour: h)
+        if scope.isEmpty || scope.contains(roomId) { return roomId }
+        let idx = Int(FNV.hash(roomId + "@\(Int(segT0))") % UInt32(scope.count))
+        return scope[idx]
     }
 
     static func placeNow(_ segs: [Segment], offsetHours: Double = 0) -> Place {
@@ -238,9 +258,12 @@ enum Schedule {
 
     /// 它上一次来这个房间是什么时候（留痕用）
     static func lastVisit(_ segs: [Segment], roomId: String, before h: Double) -> Date? {
+        let scope = RoomScope.active(atHour: h)
         var best = -1.0
-        for s in segs where s.roomId == roomId && s.t1 <= h {
-            best = max(best, s.t1)
+        for s in segs where s.t1 <= h {
+            // 留痕也要跟着映射走，否则「上次来」指的是一个你从不看的房间
+            let r = remap(s.roomId, atHour: h, segT0: s.t0)
+            if r == roomId { best = max(best, s.t1) }
         }
         return best > 0 ? Date(timeIntervalSince1970: best * 3600.0) : nil
     }

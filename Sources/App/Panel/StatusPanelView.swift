@@ -64,6 +64,25 @@ struct StatusPanelView: View {
 
             Divider().opacity(0.5)
 
+            // 活动范围
+            // 这块是给你排查用的：它只在你摆出来的组件之间跑。
+            // 摆了组件却仍显示默认的五间 → 说明小组件没报到（多半是 App Group 不通）。
+            let scope = RoomScope.active(atHour: Schedule.hourEpoch)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(RoomScope.isLive() ? "它只在这几间跑" : "它先在默认的五间跑")
+                    .font(.system(size: 12))
+                Text(scope.compactMap { Rooms.byId[$0]?.name }.joined(separator: " · "))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                Text(RoomScope.isLive()
+                     ? "再摆一个，它的活动范围就多一间。"
+                     : "还没有小组件报到。长按桌面加一个，它就只去你摆出来的地方。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Cfg.Palette.accent)
+            }
+
+            Divider().opacity(0.5)
+
             // 时间机器
             VStack(alignment: .leading, spacing: 4) {
                 HStack {

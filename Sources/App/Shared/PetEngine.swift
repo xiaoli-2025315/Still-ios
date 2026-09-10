@@ -127,9 +127,13 @@ final class PetEngine: ObservableObject {
 
             let h = Self.hourEpoch + hoursNow
             if let s = seg(atHour: h), s.t0 != curSeg?.t0 {
-                // 时段翻篇了 —— 它自己起身换地方
+                // 时段翻篇了 —— 它自己起身换地方。
+                // ★ 下一站也要过一遍房间范围映射：段里写的房间可能是你没摆的那个组件，
+                //   直接照搬的话，画布上显示的房间和小组件上显示的就不是同一个了。
+                //   下一段的 t0 就是这一段的 t1，所以映射用的段标识取 s.t1。
                 curSeg = s
-                moveTo(s.nextRoomId, islandHours: s.islandHours)
+                moveTo(Schedule.remap(s.nextRoomId, atHour: h, segT0: s.t1),
+                       islandHours: s.islandHours)
             }
             // 岛是行程表里的一个「地方」，和组件同级
             syncIsland(atHour: h)
@@ -144,7 +148,8 @@ final class PetEngine: ObservableObject {
         hoursNow = 0
         guard let s = seg(atHour: Self.hourEpoch) else { return }
         curSeg = s
-        roomId = s.roomId
+        // 和小组件同一个映射：只落在你已经摆出来的房间里（见 Schedule.remap）
+        roomId = Schedule.remap(s.roomId, atHour: Self.hourEpoch, segT0: s.t0)
         page = Rooms.byId[roomId]?.page ?? 0
         let spot = Rooms.byId[roomId]?.spot ?? .init(x: 0.5, y: 0.6)
         pos = Self.deskPos(roomId: roomId, spotInRoom: spot)

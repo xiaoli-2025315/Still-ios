@@ -64,12 +64,17 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectRoomIntent, in context: Context) async -> StillWidgetEntry {
-        entry(for: configuration.room.roomId, at: Date())
+        RoomScope.report(roomId: configuration.room.roomId)
+        return entry(for: configuration.room.roomId, at: Date())
     }
 
     func timeline(for configuration: SelectRoomIntent, in context: Context) async -> Timeline<StillWidgetEntry> {
         let roomId = configuration.room.roomId
         let now = Date()
+
+        // 自报家门：告诉别的进程「这个房间有组件在桌面上」。
+        // 它只在你摆出来的房间之间跑，靠的就是每个组件各自报这一笔（见 RoomScope）。
+        RoomScope.report(roomId: roomId)
 
         // ★ 不再依赖 App Group：行程表是确定性算出来的，
         //   小组件自己和 App 算出来的必然是同一份（见 Schedule.resolve 的注释）。

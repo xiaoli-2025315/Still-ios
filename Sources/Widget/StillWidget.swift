@@ -225,15 +225,16 @@ struct StillProbeWidget: Widget {
 @main
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
-        RoomWidget(roomId: "still")      // 它的家
-        RoomWidget(roomId: "clock")      // 时钟
-        RoomWidget(roomId: "weather")    // 天气
-        RoomWidget(roomId: "photo")      // 照片
-        RoomWidget(roomId: "notes")      // 备忘录
+        // ★ 排障期间只留两个：探针 + 它的家。
+        //   这是最小可跑集，用来把问题一分为二：
+        //     · 两个都搜不到  → 扩展整体没被加载（签名/工具的事，跟代码无关）
+        //     · 探针有、家没有 → 房间组件里有让扩展崩掉的东西（CatView / Schedule）
+        //     · 两个都有       → 之前是「一次注册太多 + 权限声明」的问题，逐个加回即可
+        //   定位清楚后再把 clock / weather / photo / notes 加回来。
         StillProbeWidget()               // 排障用，定位完可删
+        RoomWidget(roomId: "still")      // 它的家
         // ★ 灵动岛（StillLiveActivity）**不**放这里。
-        //   Live Activity 是靠 ActivityConfiguration 自己注册的，不需要进 WidgetBundle；
-        //   塞进来反而可能让系统解析整个 bundle 时出问题 —— 组件库里一个都不出现。
+        //   Live Activity 是靠 ActivityConfiguration 自己注册的，不需要进 WidgetBundle。
     }
 }
 

@@ -12,7 +12,8 @@ import AppIntents
 //
 // 破法：不让它们商量，让它们各自算同一个答案。
 //
-//   · 行程表是确定性的、持久化的，App 和小组件读到同一份（Schedule.current()）
+//   · 行程表是确定性算出来的：App 和小组件各自调 Schedule.resolve()，
+//     得到逐字节相同的同一份 —— 不再依赖 App Group（自签名下它常常不通）
 //   · 每个组件按行程表预排一条 timeline，entry 精确落在「猫进出我这个房间」的时刻
 //     （一天挪窝约 11 次，所以 8 小时的 timeline 里通常只有 2~4 个 entry）
 //   · 于是任意时刻 T，所有组件的答案都来自同一个 place(T)，只有一个回答 true
@@ -35,10 +36,20 @@ enum WidgetState {
     case noHome
 }
 
+/// 它这会儿在哪儿。
+/// ★ 不管猫在不在「我」这一间，用户都有权知道 —— 「可寻址」是七条原理之一。
+///   以前只有打开 App 才说，现在每个组件上都写，扫一眼桌面就知道去哪儿找它。
+struct WhereNow {
+    let label: String      // "日历" / "灵动岛"
+    let isIsland: Bool
+}
+
 struct StillWidgetEntry: TimelineEntry {
     let date: Date
     let state: WidgetState
     let roomName: String
+    /// 它现在在哪儿。给默认值，旧调用点不用跟着改。
+    var whereNow: WhereNow? = nil
 }
 
 // MARK: - Provider
@@ -60,29 +71,30 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
         let roomId = configuration.room.roomId
         let now = Date()
 
-        guard let segs = Schedule.current() else {
-            // 行程表还没生成 —— 用户还没打开过 App。
-            // 这里绝不自己编一份：小组件只读取，生成是 App 的活儿，
-            // 否则两个进程可能在同一秒各写一份不同的，唯一性就崩了。
-            let e = StillWidgetEntry(date: now, state: .noHome, roomName: Rooms.byId[roomId]?.name ?? "")
-            return Timeline(entries: [e], policy: .after(now.addingTimeInterval(30 * 60)))
-        }
+        // ★ 不再依赖 App Group：行程表是确定性算出来的，
+        //   小组件自己和 App 算出来的必然是同一份（见 Schedule.resolve 的注释）。
+        //   以前「读不到就显示『还没接它回家』」那一支删了 ——
+        //   自签名下 App Group 常常不通，那一支会让用户在桌面永远看不见它。
+        let segs = Schedule.resolve()
 
         // 只排「有变化」的时刻。末尾那个 false 是兜底。
         let moments = Schedule.moments(forRoom: roomId, segs: segs, from: now)
         let entries = moments.map { m -> StillWidgetEntry in
             let h = m.date.timeIntervalSince1970 / 3600.0
+            let wn = whereNow(segs: segs, atHour: h)
             if m.here {
                 let seg = Schedule.segment(segs, atHour: h)
                 let since = seg.map { Date(timeIntervalSince1970: $0.t0 * 3600.0) } ?? m.date
                 return StillWidgetEntry(date: m.date,
                                         state: .here(pose: Self.pose(roomId: roomId, at: m.date),
                                                      since: since),
-                                        roomName: Rooms.byId[roomId]?.name ?? "")
+                                        roomName: Rooms.byId[roomId]?.name ?? "",
+                                        whereNow: wn)
             } else {
                 return StillWidgetEntry(date: m.date,
                                         state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                        roomName: Rooms.byId[roomId]?.name ?? "")
+                                        roomName: Rooms.byId[roomId]?.name ?? "",
+                                        whereNow: wn)
             }
         }
 
@@ -106,21 +118,32 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     }
 
     private func entry(for roomId: String, at date: Date) -> StillWidgetEntry {
-        guard let segs = Schedule.current() else {
-            return StillWidgetEntry(date: date, state: .noHome, roomName: Rooms.byId[roomId]?.name ?? "")
-        }
+        let segs = Schedule.resolve()
         let h = date.timeIntervalSince1970 / 3600.0
         let here = Schedule.place(segs, atHour: h) == .room(roomId)
         let name = Rooms.byId[roomId]?.name ?? ""
+        let wn = whereNow(segs: segs, atHour: h)
         if here, let seg = Schedule.segment(segs, atHour: h) {
             return StillWidgetEntry(date: date,
                                     state: .here(pose: Self.pose(roomId: roomId, at: date),
                                                  since: Date(timeIntervalSince1970: seg.t0 * 3600.0)),
-                                    roomName: name)
+                                    roomName: name,
+                                    whereNow: wn)
         }
         return StillWidgetEntry(date: date,
                                 state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                roomName: name)
+                                roomName: name,
+                                whereNow: wn)
+    }
+
+    /// 它这会儿在哪个房间 —— 在灵动岛里也算一间（第 17 间）。
+    private func whereNow(segs: [Segment], atHour h: Double) -> WhereNow {
+        switch Schedule.place(segs, atHour: h) {
+        case .island:
+            return WhereNow(label: "灵动岛", isIsland: true)
+        case .room(let id):
+            return WhereNow(label: Rooms.byId[id]?.name ?? "—", isIsland: false)
+        }
     }
 
     /// 姿势确定性决定：同一个房间的同一个时刻，看几次都是同一个姿势。
@@ -196,8 +219,10 @@ struct StillWidgetView: View {
 
     // MARK: 它不在这儿
     //
-    // 只留痕，不告诉它现在在哪 ——
-    // 「找不到它是正常的」。你要是想找，就去翻别的组件，或者打开 App。
+    // 留痕照留，但**要说清楚它现在在哪儿**。
+    // 以前是「找不到它是正常的，自己翻别的组件去」—— 结果用户摆的房间里
+    // 一只也看不见，等于它消失了。现在每个组件上都写「它现在在 ××」，
+    // 扫一眼桌面就知道去哪儿找（可寻址）。
 
     private func away(lastVisit: Date?) -> some View {
         link {
@@ -211,7 +236,15 @@ struct StillWidgetView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if let last = lastVisit {
+                if let w = entry.whereNow {
+                    Text("它现在在")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                    Text(w.label)
+                        .font(.system(size: 12, weight: .medium, design: .serif))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                } else if let last = lastVisit {
                     Text("上次来")
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)

@@ -53,7 +53,8 @@ enum SharedStore {
     // 这是 App 和小组件之间最重要的东西：唯一性全靠两边读到同一份。
     // key 带版本号 —— 改了 Segment 结构就换一版，免得旧数据解不出来。
     //
-    // ⚠️ 只有主 App 会写这里。小组件只读（见 Schedule.current() 的注释）。
+    // 行程表本身已经不走这里了（见 Schedule.resolve：确定性现算，谁都能算）。
+    // 留着这套存取只为兼容与调试 —— 不要在小组件里依赖它。
 
     static func saveSchedule(_ segs: [Segment]) {
         guard let d = defaults, let data = try? JSONEncoder().encode(segs) else { return }
@@ -67,6 +68,25 @@ enum SharedStore {
               !s.isEmpty
         else { return nil }
         return s
+    }
+
+    // MARK: 行程表种子
+    //
+    // 「重置行程」= 换一个种子。
+    // ★ 关键是「读不到就用默认」这条规则对 App 和小组件是**对称**的：
+    //   两边都调 loadSeed()，抽屉通就都读到新种子，不通就都返回 nil
+    //   → 都用默认种子 → 算出来的必然是同一份表（唯一性不崩）。
+
+    static let seedKey = "still.seed.v1"
+
+    static func saveSeed(_ v: UInt32) {
+        defaults?.set(Int(v), forKey: seedKey)
+    }
+
+    static func loadSeed() -> UInt32? {
+        guard let d = defaults, d.object(forKey: seedKey) != nil else { return nil }
+        let i = d.integer(forKey: seedKey)
+        return i > 0 ? UInt32(i) : nil
     }
 }
 

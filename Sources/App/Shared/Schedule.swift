@@ -55,31 +55,41 @@ enum Schedule {
     static let backHours: Double = 26      // 往前多算一点，时光机能往回看
     static let spanHours: Double = 600     // 往后算 25 天
     static let extendWhenLeft: Double = 96 // 剩余不足 4 天就往后续
+    /// 行程表周期。= spanHours：相邻周期首尾相接、不重叠。
+    /// 有它，「任何进程自己算同一份表」才不会在边界处给出两个答案。
+    static let cycleHours: Double = spanHours
 
     /// 绝对小时。所有时间计算都用这个单位，别再混用相对小时。
     static var hourEpoch: Double { Date().timeIntervalSince1970 / 3600.0 }
 
-    // MARK: 读
+    // MARK: 读 —— 唯一入口
 
-    /// 小组件专用：**只读**。
-    /// 没有行程表就返回 nil —— 那说明用户还没打开过 App，组件该显示「还没接它回家」，
-    /// 而不是自己编一份。生成是 App 的活儿，小组件绝不写行程表，
-    /// 否则两个进程可能在同一秒各写一份不同的，唯一性就崩了。
-    static func current() -> [Segment]? {
-        let h = hourEpoch
-        guard let s = SharedStore.loadSchedule(), covers(s, h) else { return nil }
-        return s
+    /// ★ App / 小组件 / 灵动岛只认这一个函数。
+    ///
+    /// 以前是「App 算好存进 App Group，小组件去读」。一旦 App Group 不通
+    /// （自签名下高概率），小组件读到 nil 就整片空白 ——
+    /// 用户除了打开 App 本体，哪儿都看不见它，违反「它一定在被看见的某处」。
+    ///
+    /// 改成谁都能算、且算出来必然是同一份：
+    /// build() 是确定性的（同 seed + 同起点 + 同样一串时长 = 逐字节相同），
+    /// 只要把起点也钉死在 cycleHours 网格上，任何进程在任意时刻算，
+    /// 只要落在同一周期，得到的就是同一份表。
+    static func resolve() -> [Segment] {
+        deterministic(atHour: hourEpoch, seed: SharedStore.loadSeed())
     }
 
-    /// App 专用：读；没有就生成一份。
+    /// 周期 N 的表覆盖 [N*cycleHours, (N+1)*cycleHours)：首尾相接、不重叠。
+    static func deterministic(atHour h: Double, seed: UInt32?) -> [Segment] {
+        let n = floor(h / cycleHours)
+        let t0 = n * cycleHours
+        return build(from: t0, to: t0 + cycleHours,
+                     startRoom: "weather",
+                     seed: seed ?? FNV.hash(seedString))
+    }
+
+    /// 兼容旧调用点：语义等价于 resolve()（不再依赖共享存储）。
     @discardableResult
-    static func ensure() -> [Segment] {
-        if let s = current() { return s }
-        let h = hourEpoch
-        let fresh = build(from: h - backHours, to: h + spanHours, startRoom: "weather")
-        SharedStore.saveSchedule(fresh)
-        return fresh
-    }
+    static func ensure() -> [Segment] { resolve() }
 
     /// 往后续。**只追加，绝不重写已有的段** ——
     /// 重写已下发的段会让旧 timeline 与新表矛盾，那才会出现两个猫。
@@ -96,15 +106,14 @@ enum Schedule {
         return true
     }
 
-    /// 重置。这是**唯一**允许重写行程表的地方。
-    /// 重置后已下发的 timeline 仍然内部自洽（旧表里同一时刻也只有一个房间有猫），
-    /// 所以不会出现两个猫 —— 只是桌面会短暂滞后到下次刷新。
+    /// 重置 = 换一个 seed。
+    /// ★ 关键：「读不到就用默认 seed」这条规则对 App 和小组件是对称的 ——
+    ///   存进去了（App Group 通）两边都读到新 seed；没存进去（不通）两边都用默认。
+    ///   所以无论哪种情况，所有进程算出的都是同一份表，唯一性不崩。
     @discardableResult
     static func reset() -> [Segment] {
-        let h = hourEpoch
-        let fresh = build(from: h - backHours, to: h + spanHours, startRoom: "weather")
-        SharedStore.saveSchedule(fresh)
-        return fresh
+        SharedStore.saveSeed(UInt32.random(in: 1...UInt32.max))
+        return resolve()
     }
 
     private static func covers(_ s: [Segment], _ h: Double) -> Bool {
@@ -155,7 +164,9 @@ enum Schedule {
                 ? r.range(Cfg.islandHoursMin...Cfg.islandHoursMax)
                 : 0
 
-            list.append(Segment(t0: t, t1: t + dur, roomId: cur,
+            // 末段截断到 tEndHour：相邻周期才能首尾相接、不重叠。
+            // 否则同一时刻会同时落进两份表的重叠区，唯一性就崩了。
+            list.append(Segment(t0: t, t1: min(t + dur, tEndHour), roomId: cur,
                                 nextRoomId: target, islandHours: islandHours))
             lastSeen[cur] = t
             t += dur
@@ -205,7 +216,11 @@ enum Schedule {
                         from now: Date = Date(),
                         coverHours: Double = Cfg.widgetCoverHours) -> [RoomMoment] {
         let h0 = now.timeIntervalSince1970 / 3600.0
-        let hEnd = h0 + coverHours
+        // ★ 绝不跨周期边界：跨了的话，这条 timeline 里「未来」的 entry 用的是旧周期的表，
+        //   到点后别的组件已经换到新周期的表 —— 那才会真的出现两只猫。
+        //   截断到边界，走完让系统按 .atEnd 再要一条（那时算的是新周期）。
+        let cycleEnd = (floor(h0 / cycleHours) + 1) * cycleHours
+        let hEnd = min(h0 + coverHours, cycleEnd)
 
         var out: [RoomMoment] = [
             RoomMoment(date: now, here: place(segs, atHour: h0) == .room(roomId))

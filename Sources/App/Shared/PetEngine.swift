@@ -95,8 +95,9 @@ final class PetEngine: ObservableObject {
 
     // MARK: - 行程表
     //
-    // 行程表由 Schedule 统一生成并持久化（App Group），这里只做查询和续期。
-    // 引擎**绝不改写**行程表 —— 那是唯一性的前提，见 Schedule.swift 顶部注释。
+    // ★ 行程表不再持久化、也不再走 App Group：Schedule.resolve() 是确定性算出来的，
+    //   App 和小组件各自调用都得到同一份（见 Schedule.swift 顶部注释）。
+    //   引擎**绝不改写**行程表 —— 那是唯一性的前提。
 
     private func seg(atHour h: Double) -> Segment? {
         Schedule.segment(schedule, atHour: h)
@@ -120,8 +121,9 @@ final class PetEngine: ObservableObject {
             // 走路的时候时间不推进：走就是走，几秒就是几秒
             hoursNow += dt * speed / 3600.0
 
-            // 快走到行程表末尾了就往后续一段（只追加，绝不重写已有的段）
-            Schedule.extendIfNeeded(&schedule)
+            // 行程表按周期确定性生成，永远覆盖当前时刻，不需要续期。
+            // （以前要 extendIfNeeded 往后续，那会把表 append 长，
+            //   而小组件自己算的是另一份长度 —— 两边就不是同一份了，唯一性会崩。）
 
             let h = Self.hourEpoch + hoursNow
             if let s = seg(atHour: h), s.t0 != curSeg?.t0 {

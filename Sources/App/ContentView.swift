@@ -8,7 +8,7 @@ import SwiftUI
 // 折腾过一整天「改了没效果」，最后发现是手机里一直装着旧包。
 
 enum AppVersion {
-    static let tag = "v8"
+    static let tag = "v9"
 }
 
 // MARK: - 主界面

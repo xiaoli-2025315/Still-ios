@@ -23,6 +23,7 @@ import os
 import plistlib
 import re
 import subprocess
+import time
 import sys
 import urllib.request
 import zipfile
@@ -33,7 +34,12 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v11"
+WANT_VERSION = "v12"
+# ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
+#   它们必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记，
+#   而上一次如果是坏的，就一直是坏的：表现是「组件加不了，重启一次好一次」。
+WANT_MARKETING = "1.12.0"
+WANT_BUILD = "12"
 
 
 def _token():
@@ -76,6 +82,35 @@ def line(ok, text):
     print(("  OK  " if ok else "  ✗✗  ") + text)
 
 
+def download(url, dst, tries=6):
+    """流式下载 + 重试。
+
+    ★ 别用 `r.read()` 一把梭：6 MB 的包走直连（绕代理）经常在半路 read timeout，
+      而 python 的 urlopen timeout 是**单次 socket 读**的超时，
+      大响应很容易偶发地卡死 —— 表现就是跑了十几分钟然后 TimeoutError。
+      流式 + 有限次重试便宜得多。
+    """
+    last = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request("https://api.github.com" + url)
+            req.add_header("Authorization", "token " + TOK)
+            req.add_header("Accept", "application/octet-stream")
+            req.add_header("User-Agent", "still-verify")
+            with urllib.request.urlopen(req, timeout=120) as r, open(dst, "wb") as f:
+                while True:
+                    chunk = r.read(256 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+            return open(dst, "rb").read()
+        except Exception as e:                                # noqa: BLE001
+            last = e
+            print("  第 %d 次下载失败（%s），重试…" % (i + 1, type(e).__name__))
+            time.sleep(2)
+    raise SystemExit("下载失败 %d 次：%r" % (tries, last))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--skip-download", action="store_true")
@@ -93,8 +128,7 @@ def main():
         print("用本地已下载的那份:", len(data), "B")
     else:
         print("下载中 ...")
-        data = api(f"/repos/{REPO}/releases/assets/{asset['id']}", raw=True)
-        open(ipa, "wb").write(data)
+        data = download(f"/repos/{REPO}/releases/assets/{asset['id']}", ipa)
         print("下载字节:", len(data), " md5", hashlib.md5(data).hexdigest()[:10])
     print()
 
@@ -139,6 +173,23 @@ def main():
     line("StillFrames.ttf" in pl.get("UIAppFonts", []), f"扩展 UIAppFonts = {pl.get('UIAppFonts', [])}")
     pl2 = plistlib.loads(z.read("Payload/Still.app/Info.plist"))
     line("StillFrames.ttf" in pl2.get("UIAppFonts", []), f"主 App UIAppFonts = {pl2.get('UIAppFonts', [])}")
+
+    # ---------------- ③b 系统眼里的「第几版」
+    #
+    # 这一项以前从来没查过，而它正是「组件加不了」的一条真因（见文件头的说明）。
+    # 两个 target 的 build 号还必须一致 —— 不一致系统会拒绝加载扩展。
+    print()
+    print("=== ③b iOS 眼里的版本号（MARKETING_VERSION / CURRENT_PROJECT_VERSION）===")
+    for label, p in (("主 App", "Payload/Still.app/Info.plist"),
+                     ("扩展", ext)):
+        plx = plistlib.loads(z.read(p))
+        short = plx.get("CFBundleShortVersionString")
+        build = plx.get("CFBundleVersion")
+        line(short == WANT_MARKETING and build == WANT_BUILD,
+             f"{label}: {short} ({build})   期望 {WANT_MARKETING} ({WANT_BUILD})")
+    a = plistlib.loads(z.read("Payload/Still.app/Info.plist")).get("CFBundleVersion")
+    e = plistlib.loads(z.read(ext)).get("CFBundleVersion")
+    line(a == e, f"App 与扩展的 build 号一致：{a} / {e}")
 
     # ---------------- ④ 视频素材：能不能解
     print()

@@ -58,6 +58,18 @@ targets:
     info:
       path: Still-Info.plist
       properties:
+        # ★★ 这两行不能省。
+        #
+        #   XcodeGen 生成 Info.plist 时，`CFBundleShortVersionString` / `CFBundleVersion`
+        #   写的是**字面量默认值** `1.0` / `1` —— 上面 settings 里的 MARKETING_VERSION /
+        #   CURRENT_PROJECT_VERSION **不会自己流进去**。
+        #   实测（v12 出包核对）：不写这两行，包里的版本号仍然是 1.0 / 1，
+        #   等于「版本号每版都变」这件事压根没生效。（差点带着这个错发出去。）
+        #
+        #   `$(...)` 由 Xcode 在 Process Info.plist 那一趟替换掉，
+        #   所以真正的数字只有 settings.base 那一处 —— 一处改，两个 target 一起走。
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: "还在"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
@@ -122,6 +134,10 @@ targets:
     info:
       path: StillWidget-Info.plist
       properties:
+        # ★ 见主 App 那段的说明：不显式写，XcodeGen 会塞字面量 1.0 / 1。
+        #   两个 target 的 CFBundleVersion **必须一致** —— 不一致系统会拒绝加载扩展。
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: "还在"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension

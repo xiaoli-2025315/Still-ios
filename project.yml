@@ -51,6 +51,9 @@ targets:
         CFBundleDisplayName: "还在"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
+        # 主 App 里也用同一套字体画它（画中画之外的静止画面 / 面板预览）
+        UIAppFonts:
+          - StillFrames.ttf
         # ★ 画中画的硬前提。缺了它 PiP 会**静默失效**：不报错、不崩溃，就是什么都不发生。
         #   配合 AVAudioSession.setCategory(.playback)+setActive(true) 一起用。
         UIBackgroundModes:
@@ -77,6 +80,21 @@ targets:
       - path: Sources/App/Shared
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
+      # ★ 组件里那只「会动的猫」全靠这个字体。
+      #
+      #  组件不能播视频、不能播动图，timeline 换图也只有约 5 秒/张。
+      #  唯一能让它连续动起来的公开手段是 `Text(timerInterval:)` ——
+      #  系统每秒把文字改一次，于是把「猫的每一帧」画成**字体的一个字形**，
+      #  用计时器的最后一位数字去翻页，就是逐帧动画。
+      #
+      #  格式是 sbix（Apple 自家的彩色位图字体表，Apple Color Emoji 用的就是它）。
+      #  生成脚本：Tools/_cat_font.py
+      #
+      #  ★ 必须显式写 buildPhase —— 资源放错会静默不打包，真机上只表现成「猫不动」。
+      #  ★ 必须只给字体这一个目录，别把整个 Resources 塞进来：
+      #    那里还有 4.6 MB 画中画视频，扩展用不上，白白撑大安装包。
+      - path: Resources/fonts
+        buildPhase: resources
     # ★★ 小组件扩展【不给】App Group 权限。这是让它能显示出内容的关键。
     #
     #  自签工具（全能签/轻松签）重签时生成的描述文件里，通常**不含**
@@ -98,6 +116,11 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
         NSSupportsLiveActivities: true
+        # ★★ 自定义字体必须**在扩展自己的 Info.plist 里**注册。
+        #  只在主 App 注册的话，组件进程读不到这个字体，
+        #  表现出来就是 `Text` 静默退回系统字体 —— 猫变成了几个数字，不报任何错。
+        UIAppFonts:
+          - StillFrames.ttf
 
 # ── Scheme ────────────────────────────────────────────────
 # 显式定义，别指望 XcodeGen 自动生成的那个。

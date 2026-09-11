@@ -180,6 +180,11 @@ final class PiPController: NSObject, ObservableObject {
             // 半路被打断的话，结果是一条都不剩。排期统一放在回到前台时做。
             return
         }
+        // ★ 先把「它在这间房」推回去。
+        //   上次它可能是「走掉」的状态（播放器停在空房间那一段），
+        //   不切回来的话，这次跟出去的就是**一间空房** —— 窗开了，里面没猫。
+        cat.showHere()
+
         guard pip.isPictureInPicturePossible else {
             note = "画中画这会儿起不来（画面要先在屏幕上）"
             return
@@ -196,6 +201,17 @@ final class PiPController: NSObject, ObservableObject {
     ///   小窗正要出来，不能在这一下把它掐掉。
     func backInForeground() {
         guard !returnToBackground else { return }
+
+        // ★★ 这一句不能少。
+        //
+        //   它「走掉」的时候把播放器切成了空房间（tick 里的 showEmpty），
+        //   而那是**同一块播放器** —— App 里那间房和小窗里那间是同源的。
+        //   所以只停小窗、不切回「它在这儿」，屋里的猫也跟着没了。
+        //
+        //   实测现象就长这样：它在小窗里变成空房间之后，此后再也没出现过
+        //   （App 里、小窗里都没有），因为没人把它切回来过。
+        cat.showHere()
+
         guard let pip, pip.isPictureInPictureActive else { return }
         pip.stopPictureInPicture()
     }
@@ -277,7 +293,24 @@ final class PiPController: NSObject, ObservableObject {
         // 先让它走，再收窗 —— 不留一个「它在里面但窗已经关了」的中间态
         cat.showEmpty()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.pip?.stopPictureInPicture()
+            self?.closePiPWithRetry(attempt: 0)
+        }
+    }
+
+    /// 收窗，收不掉就再试。
+    ///
+    /// ★ 为什么要重试：这一步是在**后台**调的（小窗开着的时候你不在 App 里），
+    ///   而系统对「后台停自己的画中画」并不总是买账 —— 它不报错、也不抛异常，
+    ///   就是**什么都没发生**。表现是：小窗一直留在角上播空房间，
+    ///   而 closesAt 已经清空，于是它再也不会自己收 ——
+    ///   用户看到的就是「它变成空房间之后，再也没出现过」。
+    private func closePiPWithRetry(attempt: Int) {
+        guard let pip else { return }
+        guard pip.isPictureInPictureActive else { return }   // 已经收掉了
+        pip.stopPictureInPicture()
+        guard attempt < 3 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.closePiPWithRetry(attempt: attempt + 1)
         }
     }
 

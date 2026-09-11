@@ -64,6 +64,8 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectRoomIntent, in context: Context) async -> StillWidgetEntry {
+        // 组件库里的预览也要问一次系统，否则预览卡上永远没猫
+        await RoomScope.refreshFromSystem()
         RoomScope.report(roomId: configuration.room.roomId)
         return entry(for: configuration.room.roomId, at: Date())
     }
@@ -72,8 +74,19 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
         let roomId = configuration.room.roomId
         let now = Date()
 
+        // ★★ 第一步，必须在这一步之前问系统：**桌面上到底摆着哪几间**。
+        //
+        //   这是「它肯定在某个小组件里」唯一靠得住的来源。
+        //   以前只靠 RoomScope.report 自报，而自报要 App Group —— 自签下读不到，
+        //   于是所有组件都退回默认五间；用户摆的房间若不在那五间里，
+        //   桌面上就是**一片空房间，一只猫都看不见**（实测就是这个现象）。
+        //
+        //   WidgetCenter.currentConfigurations() 在扩展里也能调（WWDC20 明说），
+        //   而且所有组件拿到的是同一份 → 各自算出的 place(T) 依然唯一。
+        await RoomScope.refreshFromSystem()
+
         // 自报家门：告诉别的进程「这个房间有组件在桌面上」。
-        // 它只在你摆出来的房间之间跑，靠的就是每个组件各自报这一笔（见 RoomScope）。
+        // App Group 通的时候它比系统配置更新鲜（24 小时过期），是第二优先。
         RoomScope.report(roomId: roomId)
 
         // ★ 不再依赖 App Group：行程表是确定性算出来的，
@@ -210,6 +223,55 @@ struct StillWidgetBundle: WidgetBundle {
     }
 }
 
+// MARK: - 会动的猫
+//
+// 组件里**不能播视频、不能播动图**，timeline 换图最快也只有约 5 秒/张 ——
+// 5 秒一换看着是幻灯片，不是动画。
+//
+// 唯一能让组件「自己连续动」的公开手段是 `Text(timerInterval:)`：
+// 它由**系统每秒自更新**，不重跑组件代码、不吃刷新额度、App 被杀也照走。
+//
+// 所以做法是：把猫的 10 帧画成字体里 '0'..'9' 十个字形
+// （生成脚本 Tools/_cat_font.py，sbix 彩色位图字体），
+// 再让计时器去驱动它 —— 秒的个位每秒 +1，于是每秒翻一帧，10 帧循环。
+//
+// ★ 裁切：文本长成 "0:02:03" 这样，只用 frame 留下最右边一个字符。
+//   左边溢出的部分被 clipped 掉，看不见。
+//
+// ★ 字号必须**正好落在字体的 strike 档位上**（STRIKES = 40/48/56/64/72/88/112/160/224）。
+//   实测：字号不在档位上时，有的实现会去缩放位图（糊），
+//   有的干脆判定「这个字号没有可用字形」直接不画。
+
+private let CAT_PT_SMALL: CGFloat = 56
+private let CAT_PT_MEDIUM: CGFloat = 72
+
+/// 猫的位图比例：256 × 224
+private let CAT_ASPECT: CGFloat = 224.0 / 256.0
+
+struct CatFrames: View {
+    /// ★ 必须是字体 strike 列表里的值，别随手写。
+    let pt: CGFloat
+    /// 计时器起点。用 entry 自己的时刻 —— 每条 entry 一个起点，彼此独立。
+    let start: Date
+
+    private var h: CGFloat { pt * CAT_ASPECT }
+
+    var body: some View {
+        // 起点往前挪 2 分钟：这样显示的时长永远 > 1 分钟，
+        // 不会掉进「最后 60 秒显示小数」的格式里（那种格式最后一位会变得很快）。
+        Text(timerInterval: start.addingTimeInterval(-120)
+                          ... start.addingTimeInterval(60 * 60 * 24 * 7),
+             countsDown: false)
+            .font(.custom("StillFrames", size: pt))
+            .lineLimit(1)
+            // 先让文本按完整宽度排版，再用小框裁 —— 顺序反了就变成省略号
+            .fixedSize()
+            .frame(width: pt, height: h + 4,
+                   alignment: Alignment(horizontal: .trailing, vertical: .center))
+            .clipped()
+    }
+}
+
 // MARK: - 视图
 
 struct StillWidgetView: View {
@@ -290,7 +352,12 @@ struct StillWidgetView: View {
     private func here(pose: CatPose, since: Date) -> some View {
         link {
             HStack(spacing: 10) {
-                CatView(pose: pose, width: family == .systemMedium ? 66 : 50)
+                // ★ 这只猫是**活的**：由系统每秒翻一帧，10 帧循环甩尾。
+                //   姿势暂时固定成「坐着甩尾」—— 字体现在只有这一套动画帧，
+                //   要加别的动作（睡觉 / 舔毛 / 走动）就在 Tools/_cat_font.py 里多画几套，
+                //   每一套占一组字符即可。
+                CatFrames(pt: family == .systemMedium ? CAT_PT_MEDIUM : CAT_PT_SMALL,
+                          start: entry.date)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("在").font(.system(size: 9)).foregroundStyle(.secondary)
                     Text(entry.roomName)

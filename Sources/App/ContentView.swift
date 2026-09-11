@@ -26,6 +26,7 @@ struct ContentView: View {
 
     @StateObject private var engine = PetEngine()
     @StateObject private var pip = PiPController()
+    @State private var showPanel = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {

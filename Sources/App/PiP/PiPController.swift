@@ -336,6 +336,9 @@ extension PiPController: AVPictureInPictureControllerDelegate {
     func pictureInPictureController(_ c: AVPictureInPictureController,
                                     failedToStartPictureInPictureWithError error: Error) {
         active = false
+        // 这一趟已经结束了，标记要清掉 —— 留着的话，下次你回到 App 里
+        // 小窗就不会自己收，会同时出现两只猫。
+        returnToBackground = false
         // 最常见的两条：后台起不来（-1001），和画面还没准备好。
         note = "起不来：\(error.localizedDescription)"
     }

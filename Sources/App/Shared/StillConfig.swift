@@ -18,7 +18,7 @@ enum Cfg {
     ///   此前两边各写各的（App 写 v9、组件里躺着一个写死的 v6），
     ///   光看版本号根本分不清扩展是不是新的。
     ///   这个文件同时编进主 App 和 Widget Extension（见 project.yml），所以两边都读得到。
-    static let version = "v10"
+    static let version = "v11"
 
     // MARK: 纵深（v1.23：z 是引擎的第三坐标，不是渲染层的滤镜）
     static let zNear: Float = 0.04     // 它自己能走到最近的地方

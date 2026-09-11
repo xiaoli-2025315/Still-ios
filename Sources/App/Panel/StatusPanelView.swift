@@ -60,8 +60,8 @@ struct StatusPanelView: View {
         WidgetCenter.shared.getCurrentConfigurations { result in
             let n: Int
             if case .success(let infos) = result {
-                // 两个 kind 都要数：「只写字」那个也是真的摆在桌面上的一个实例
-                n = infos.filter { $0.kind == "StillWidget" || $0.kind == "StillTextWidget" }.count
+                // 两 kind 都要数：探针也是真的摆在桌面上的一个实例（v13 起取代了「只写字」）
+                n = infos.filter { $0.kind == "StillWidget" || $0.kind == "StillProbeWidget" }.count
             } else {
                 n = -1
             }

@@ -49,8 +49,12 @@ enum RoomScope {
     /// 它对**所有组件实例**是同一份（都来自系统配置），所以不影响唯一性。
     private static var systemScope: [String] = []
 
-    /// 我们自己的组件 kind。两个都要认 —— 排障用的「只写字」那个也是一个实例。
-    private static let ourKinds: Set<String> = ["StillWidget", "StillTextWidget"]
+    /// 我们自己的组件 kind。
+    ///
+    /// ★ 只有 `StillWidget` —— 它才是「一个房间」。
+    ///   探针（StillProbeWidget）不算：它是 StaticConfiguration，没有房间可报，
+    ///   也不会出现在这里的匹配结果里（它的 configuration 不是 SelectRoomIntent）。
+    private static let ourKinds: Set<String> = ["StillWidget"]
 
     /// 在生成 timeline 之前调一次。失败就保持原样，绝不把已有的范围弄丢。
     ///

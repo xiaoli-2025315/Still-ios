@@ -195,7 +195,7 @@ struct StillTextWidget: Widget {
                 // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v7 · 字")
+        .configurationDisplayName("还在 v8 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

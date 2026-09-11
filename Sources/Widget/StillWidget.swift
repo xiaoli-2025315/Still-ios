@@ -27,24 +27,31 @@ import CoreText
 //   它暂时看不见       0.1% ~ 1.6%  （覆盖越短、刷新越少，越多）
 //
 // ─────────────────────────────────────────────────────────────
-// ★★★ v13 的一条血泪规矩：**这个扩展里凡是「让画面动起来」的东西，都必须容错。**
+// ★★★ v13 立下、v15 继续遵守的规矩：
+//   **这个扩展里凡是「让画面动起来」的东西，都必须能容错降级。**
 //
 //   用户的原话：「好像每次我让你改成能动的组件就会不能添加组件」。
-//   查下来是真的，而且两次都对得上：
-//     ① `StillLiveActivity`（灵动岛）放进 WidgetBundle 之后，组件库里搜不到这个 App
-//        —— 当时的修复就是「把它移出 bundle」（见 a06f420）。
-//     ② v11 给猫做了帧字体（让它每秒翻页），组件又加不上了。
 //
-//   机理：**组件库里能不能看到这个 App，取决于系统能不能顺顺当当地把
-//   `WidgetBundle.body` 枚举一遍、并渲染出预览。** 那条路上任何一处卡住/被杀，
-//   系统的处理不是「这张卡空白」，而是**把整个 App 从组件库里摘掉** ——
-//   用户看到的就正好是「组件加不了」。所以：
+//   ⚠️ 但要老实说：这条因果**没有证据**。
+//     把 v9 和 v10 两个包拆开逐字节比过 —— 12 个源码文件里 9 个逐字符相同，
+//     扩展 Info.plist **逐字节相同**，两版**都没有**字体。
+//     也就是说 v10 在小组件上**一行动画相关的改动都没有**，
+//     而「加不了」当时就已经在抱怨了。至少在 v9/v10 这一对上，
+//     「动画 → 加不了」是**不成立**的。
+//     （同理，早先怪罪的「Live Activity 进了 WidgetBundle」也站不住：
+//       v9 的 bundle 里也有它，而 v9 是能加的。）
 //
-//     · 需要额外资源（自定义字体）的能力 → 一律**运行时按需**获取 + **能降级**
-//     · 不能在 Info.plist 里预注册任何"新鲜东西"（那等于每次启动扩展都要过一遍）
-//     · 预览路径（snapshot / placeholder）必须无趣到不能再无趣
+//   所以现在是**老老实实承认：真因还不知道**。
+//   但规矩本身是对的，继续守：
+//     · 需要额外资源（自定义字体）的能力 → **运行时按需**获取 + **能降级**
+//     · 不在 Info.plist 里预注册任何"新鲜东西"
+//     · 预览路径（snapshot / placeholder）无趣到不能再无趣
 //
-//   宁可猫不动，也不能让组件加不上。
+//   ★ v15 的变化：猫**默认就是活的**，不再等用户去开一个开关。
+//     降级链仍然满的：字体拿不到 → 退回矢量静态猫 → 组件照样在。
+//   ★ v15 还在每张卡右下角放了一串**每秒跳动的数字**（见下面 `Ticking`）——
+//     它用系统字体、不依赖那份自造字体，所以
+//     「这张卡到底有没有在跑新代码」从此是肉眼一眼可辨的，不用再靠猜。
 
 // MARK: - Entry
 
@@ -73,9 +80,15 @@ struct StillWidgetEntry: TimelineEntry {
     var whereNow: WhereNow? = nil
     /// 这一条要不要画**会动的**猫（帧字体 + 每秒翻页）。
     ///
-    /// ★ 组件库里那张预览卡是系统单独调一次 `snapshot` 画的，那一条路必须走最朴素的画法：
-    ///   不加载自定义字体、不问系统配置。理由见 `snapshot(for:in:)` 的注释 ——
-    ///   那一条路上出任何岔子，系统会把整个 App 从组件库里摘掉，用户看到的就是「加不了」。
+    /// ★★ 默认 **true** —— v15 起，桌面上那只猫**默认就是活的**，没有开关。
+    ///
+    ///   之前 v14 把它做成「默认关、用户自己去组件设置里开」，理由是
+    ///   「Pixel Pals 也是这么做的」—— 查了它的 App Store 官方介绍，原话是
+    ///   "moving pixel pals that animate directly on the Home Screen"。
+    ///   **人家默认就动，没有开关。** 那个前提是错的，开关已拿掉。
+    ///
+    ///   唯一还显式传 false 的地方是 `snapshot` —— 组件库里那张预览卡
+    ///   是系统单独调一次 snapshot 画的，那条路上不能有任何新东西。
     var animated: Bool = true
 }
 
@@ -128,6 +141,43 @@ enum CatFont {
     /// 那条路上一点风险都不能有。
     static var fileIsBundled: Bool {
         Bundle.main.url(forResource: "StillFrames", withExtension: "ttf") != nil
+    }
+}
+
+// MARK: - 活性证据（v15 新加）
+//
+// ★★ 这一小块东西存在的唯一目的：**让用户肉眼确认「桌面上那张卡有没有在跑新代码」。**
+//
+//   背景 —— 用户连着好几版都在说同一句话：
+//     「你改了这么多，我在组件上没看出任何变化，我觉得你压根没在改。」
+//   （他的原话，不是转述：**「你能让我实际地看到，就是这个小组件真的有什么变化」**）
+//
+//   这个指责其实站得住。在此之前，我们拿来证明「改了」的东西**全是静止的**：
+//   组件显示名、一行 8.5pt 的版本号小字、背景深浅……
+//   它们本来就不该指望被人注意到 —— 拿它们当证据，等于没证据。
+//
+//   这串数字不一样：**它每秒跳一下。**
+//     · 在跳   → 桌面上这张卡确实在跑这份新代码。扎针扎对了。
+//     · 不跳   → 这张卡压根没跑新代码（问题在系统登记 / 签名那一层，
+//                再去改 Swift 全是白费劲）。
+//   一句话把「改没改到」和「改得对不对」切成两个互不干扰的问题。
+//
+//   为什么它一定画得出来：
+//     · 用**系统字体**，不依赖我们那份自造的 sbix 帧字体
+//     · 用系统的 `Text(timerInterval:)` —— 系统自己渲染，不重跑我们的代码、
+//       不吃刷新额度（72/天）、App 被杀也照走
+//   所以它不可能因为「字体没注册上」「越界」这类原因失败。
+
+enum Ticking {
+
+    /// 从 `start` 起、每秒自己往上走的一串时间（`0:00:12` / `1:02:03`）。
+    /// 字号交给调用方设 —— 它在不同卡片上大小不一样。
+    static func since(_ start: Date) -> Text {
+        // 右端给一个足够远的未来（2100-01-01），让它一直往上走而不是倒数完就停。
+        let far = Date(timeIntervalSince1970: 4_102_444_800)
+        // 防御：起止反了会让 ClosedRange 直接崩，这里兜一下。
+        let from = start < far ? start : far.addingTimeInterval(-60)
+        return Text(timerInterval: from...far, countsDown: false).monospacedDigit()
     }
 }
 
@@ -195,12 +245,14 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
                                         state: .here(pose: Self.pose(roomId: roomId, at: m.date),
                                                      since: since),
                                         roomName: Rooms.byId[roomId]?.name ?? "",
-                                        whereNow: wn)
+                                        whereNow: wn,
+                                        animated: true)
             } else {
                 return StillWidgetEntry(date: m.date,
                                         state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
                                         roomName: Rooms.byId[roomId]?.name ?? "",
-                                        whereNow: wn)
+                                        whereNow: wn,
+                                        animated: true)
             }
         }
 
@@ -485,7 +537,11 @@ struct StillWidgetView: View {
                         .font(.system(size: family == .systemMedium ? 19 : 15,
                                       weight: .medium, design: .serif))
                         .lineLimit(1)
-                    Text("待了 \(since, format: .relative(presentation: .numeric))")
+                    // ★★ v15：这一行**每秒自己跳一下**。
+                    //   以前是一句静止的「待了 1 小时」—— 静止的东西证明不了任何事，
+                    //   而用户要看的就是「它到底有没有在变」。
+                    //   现在这一行同时是两件事：语义（在这间房待了多久）+ 证据（组件在跑这份代码）。
+                    (Text("待了 ") + Ticking.since(since))
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -534,9 +590,13 @@ struct StillWidgetView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
-                Text(Cfg.version)
-                    .font(.system(size: 8.5))
-                    .foregroundStyle(.quaternary)
+                // ★★ v15：这一行**每秒自己跳一下** —— 它离开这间房多久了。
+                //   和「它在这儿」那张卡上的「待了 …」是一对：
+                //   两张卡上永远都有一个在动的数字，**每张卡都能自证它是活的**。
+                //   见 `Ticking`。
+                (Text("离开 ") + Ticking.since(entry.date))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
             }
             .padding(13)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -553,9 +613,7 @@ struct StillWidgetView: View {
                 Text("打开「还在」，再回来添加组件")
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
-                Text(Cfg.version)
-                    .font(.system(size: 8.5))
-                    .foregroundStyle(.quaternary)
+                // 版本号交给 `link` 右下角那块统一的证据位，这里不再重复画。
             }
             .padding(13)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -563,7 +621,21 @@ struct StillWidgetView: View {
     }
 
     private func link<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content().widgetURL(URL(string: "still://open"))
+        content()
+            .widgetURL(URL(string: "still://open"))
+            // ★★ v15：右下角这一小块是**给用户看的证据**，不是装饰。
+            //    版本号 + 帧字体状态，后面跟一串**每秒跳动**的数字。
+            //      · 活 = 帧字体文件打进包里了，猫能动
+            //      · 静 = 字体不在，猫退回静态（组件本身一定还在）
+            //    `fileIsBundled` 只查 Bundle、不碰 CoreText —— 预览那条路上零风险。
+            .overlay(alignment: .bottomTrailing) {
+                // v15 · 活 = 帧字体在包里，猫能动 / v15 · 静 = 字体不在，退回静态猫。
+                Text("\(Cfg.version)·\(CatFont.fileIsBundled ? "活" : "静")")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.trailing, 11)
+                    .padding(.bottom, 8)
+            }
     }
 }
 
@@ -571,7 +643,7 @@ struct StillWidgetView: View {
     StillWidget()
 } timeline: {
     StillWidgetEntry(date: Date(), state: .here(pose: .sleep, since: Date().addingTimeInterval(-5400)),
-                     roomName: "时钟", animated: false)
+                     roomName: "时钟")
     StillWidgetEntry(date: Date().addingTimeInterval(3600), state: .away(lastVisit: Date().addingTimeInterval(-7200)),
-                     roomName: "时钟", animated: false)
+                     roomName: "时钟")
 }

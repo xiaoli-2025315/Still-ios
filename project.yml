@@ -19,8 +19,8 @@ settings:
     #
     #   顺带一个好处：设置 → 通用 → iPhone 储存空间 里能直接看到装的是第几版，
     #   「手机上到底跑的是哪一份」不再是靠猜。
-    MARKETING_VERSION: "1.13.0"
-    CURRENT_PROJECT_VERSION: "13"
+    MARKETING_VERSION: "1.15.0"
+    CURRENT_PROJECT_VERSION: "15"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 

@@ -318,6 +318,20 @@ struct SelectRoomIntent: WidgetConfigurationIntent {
     @Parameter(title: "房间", default: .clock)
     var room: RoomOption
 
+    // ★★ v14 曾经在这里放过一个「让它动」的开关，默认关。**v15 已经拿掉了。**
+    //
+    //   拿掉的理由：那个开关的前提是错的。
+    //   我当时以为 Pixel Pals 是「默认静态、动画要用户自己去开」——
+    //   去查了它的 App Store 官方介绍，人家写得很直白：
+    //     "moving pixel pals that animate directly on the Home Screen"
+    //   它是**默认就动**的，没有开关。
+    //
+    //   更要紧的是用户这边的实感：他反复说「你改了这么多版，我看不出组件有任何变化」。
+    //   在这种情况下再加一个默认关闭的开关，等于把「能看到变化」又推远一步 ——
+    //   他不但要重装，还得知道去哪儿把开关打开。
+    //
+    //   所以：**没了。装上就是会动的。**
+
     // 显式写两个 init：一个是 Swift 的默认成员构造，
     // 一个是 WidgetKit 在组件库里创建预置时要用的无参构造。
     init() { self.room = .clock }

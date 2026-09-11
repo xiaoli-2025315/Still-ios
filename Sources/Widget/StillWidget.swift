@@ -50,6 +50,12 @@ struct StillWidgetEntry: TimelineEntry {
     let roomName: String
     /// 它现在在哪儿。给默认值，旧调用点不用跟着改。
     var whereNow: WhereNow? = nil
+    /// 这一条要不要画**会动的**猫（帧字体 + 每秒翻页）。
+    ///
+    /// ★ 组件库里那张预览卡是系统单独调一次 `snapshot` 画的，那一条路必须走最朴素的画法：
+    ///   不加载自定义字体、不问系统配置。理由见 `snapshot(for:in:)` 的注释 ——
+    ///   那一条路上出任何岔子，系统会把整个 App 从组件库里摘掉，用户看到的就是「加不了」。
+    var animated: Bool = true
 }
 
 // MARK: - Provider
@@ -64,10 +70,21 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectRoomIntent, in context: Context) async -> StillWidgetEntry {
-        // 组件库里的预览也要问一次系统，否则预览卡上永远没猫
-        await RoomScope.refreshFromSystem()
-        RoomScope.report(roomId: configuration.room.roomId)
-        return entry(for: configuration.room.roomId, at: Date())
+        // ★★ 这一条路要**无趣**，这是「App 能出现在组件库里」的前提。
+        //
+        //   组件库里那张预览卡，是系统单独调一次 `snapshot` 画的 —— 和桌面上那几张
+        //   互不相干。这条路上我们做过两件别人没做过的事：
+        //     ① 问系统要「桌面上摆着哪几间」（`WidgetCenter.currentConfigurations()`，
+        //        一次跨进程调用，而且是**在系统正等着我们出结果的时候**发的）
+        //     ② 加载一份自定义的彩色位图字体（sbix）—— 那是唯一的动画手段，见文件末尾
+        //   任何一件让扩展卡住或者被杀，系统的处理不是「预览空白」，
+        //   而是**把这个 App 整个从组件库里摘掉** —— 用户看到的就是「组件加不了」。
+        //
+        //   所以这里一律走最朴素的一条：不算范围、不问系统、不碰字体、不画会动的猫。
+        //   桌面上那张卡照样是活的 —— 走的是 timeline，不是这里。
+        var e = entry(for: configuration.room.roomId, at: Date())
+        e.animated = false
+        return e
     }
 
     func timeline(for configuration: SelectRoomIntent, in context: Context) async -> Timeline<StillWidgetEntry> {
@@ -349,15 +366,32 @@ struct StillWidgetView: View {
 
     // MARK: 它在这儿
 
+    /// 组件上那只猫。**两种画法，尺寸完全一样**（宽 : 高 都是 1 : 0.875）。
+    ///
+    /// · `animated` —— 走帧字体，每秒翻一页，这是桌面上那只「活猫」
+    /// · 否则      —— 走矢量 CatView，静态、零依赖，只用在组件库预览那一条路
+    ///
+    /// 之所以要留静态这一档，是因为预览那一条路不能有任何新鲜东西（见 snapshot 的注释）。
+    /// 两者的外框一样大，所以切来切去布局不会跳。
+    @ViewBuilder
+    private func cat(pose: CatPose) -> some View {
+        let pt = family == .systemMedium ? CAT_PT_MEDIUM : CAT_PT_SMALL
+        if entry.animated {
+            // ★ 这只猫是**活的**：由系统每秒翻一帧，10 帧循环甩尾。
+            //   姿势暂时固定成「坐着甩尾」—— 字体现在只有这一套动画帧，
+            //   要加别的动作（睡觉 / 舔毛 / 走动）就在 Tools/_cat_font.py 里多画几套，
+            //   每一套占一组字符即可。
+            CatFrames(pt: pt, start: entry.date)
+        } else {
+            CatView(pose: pose, width: pt)
+                .frame(width: pt, height: pt * CAT_ASPECT, alignment: .center)
+        }
+    }
+
     private func here(pose: CatPose, since: Date) -> some View {
         link {
             HStack(spacing: 10) {
-                // ★ 这只猫是**活的**：由系统每秒翻一帧，10 帧循环甩尾。
-                //   姿势暂时固定成「坐着甩尾」—— 字体现在只有这一套动画帧，
-                //   要加别的动作（睡觉 / 舔毛 / 走动）就在 Tools/_cat_font.py 里多画几套，
-                //   每一套占一组字符即可。
-                CatFrames(pt: family == .systemMedium ? CAT_PT_MEDIUM : CAT_PT_SMALL,
-                          start: entry.date)
+                cat(pose: pose)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("在").font(.system(size: 9)).foregroundStyle(.secondary)
                     Text(entry.roomName)

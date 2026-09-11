@@ -9,8 +9,18 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    # ★★ 这两个版本号必须每出一版就跟着走（v12 → 1.12.0 / 12）。
+    #
+    #   iOS 对「App 有哪些扩展」这件事是按 (bundle id, 版本) 记住的。
+    #   版本号一直是 1.0.0 / 1 的话，覆盖安装之后系统会认为「还是那一版」，
+    #   于是沿用上一次那份登记 —— 上一次如果是坏的（扩展加载失败过），
+    #   它就一直坏着。表现正好就是用户报的那句：**组件加不了，重启一次好一次**。
+    #   以前每一版都是同一个版本号，这条一直在踩，只是没人把它连起来看。
+    #
+    #   顺带一个好处：设置 → 通用 → iPhone 储存空间 里能直接看到装的是第几版，
+    #   「手机上到底跑的是哪一份」不再是靠猜。
+    MARKETING_VERSION: "1.12.0"
+    CURRENT_PROJECT_VERSION: "12"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 

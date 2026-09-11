@@ -47,45 +47,62 @@ enum Notifier {
 
     // MARK: 排期
 
-    /// 重排：先清掉自己以前排的，再按当前行程表排一批新的。
-    /// 清是必须的 —— 行程表在换周期时会给出不同的答案，旧的那些会跟新表对不上。
+    /// 重排：把未来「它来找你」的时刻挂上去。
+    ///
+    /// ★★ 顺序是**先挂新的、再清旧的**，不是「先全清、再全排」。
+    ///
+    ///   清除永远比新增更危险：App 在任何一步都可能被系统当场冻住
+    ///   （你切出去的那一刻、小窗刚收掉的那一刻）。
+    ///   如果卡在「已经清干净、还没来得及挂」中间，结果就是**一条都不剩** ——
+    ///   而那之后 App 醒不过来，再也没机会补，用户看到的就是「它再也不来找我了」。
+    ///   现在最坏情况只是「有一条旧的和新的重复」，重复的 id 相同会互相覆盖，
+    ///   连这个都不会发生。
+    ///
+    /// ★ 排查用：每一条的 id 由「它到点的绝对小时」算出来，同一个小时问多少次都一样，
+    ///   所以这个函数可以反复调，不会越挂越多。
     static func reschedule() {
-        clear {
-            let items = upcoming(from: Schedule.hourEpoch,
-                                 hours: horizonHours,
-                                 cap: maxPending)
-            guard !items.isEmpty else { return }
+        let items = upcoming(from: Schedule.hourEpoch,
+                             hours: horizonHours,
+                             cap: maxPending)
+        let center = UNUserNotificationCenter.current()
+        let name = SharedStore.load().catName ?? "还在"
+        var keep = Set<String>()
 
-            let center = UNUserNotificationCenter.current()
-            let name = SharedStore.load().catName ?? "还在"
+        for (h, from, to) in items {
+            let content = UNMutableNotificationContent()
+            content.title = name
+            content.body = body(atHour: h, from: from, to: to)
+            content.sound = .default
+            content.categoryIdentifier = category
+            content.userInfo = ["summon": true]
+            // ★ 不要用 .timeSensitive。
+            //   那一档要 Time Sensitive Notifications 这个 capability（entitlement），
+            //   而自签重签时它不在描述文件里 —— 跟当初 App Group 是同一类事。
+            //   代价只是穿不过专注模式，换来的是「一定会送到」。
+            content.interruptionLevel = .active
+            content.threadIdentifier = category
 
-            for (h, from, to) in items {
-                let content = UNMutableNotificationContent()
-                content.title = name
-                content.body = body(atHour: h, from: from, to: to)
-                content.sound = .default
-                content.categoryIdentifier = category
-                content.userInfo = ["summon": true]
-                // 穿透专注模式。它来找你这件小事，值得。
-                content.interruptionLevel = .timeSensitive
-                content.threadIdentifier = category
+            let date = Date(timeIntervalSince1970: h * 3600.0)
+            let comps = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute, .second], from: date)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
 
-                let date = Date(timeIntervalSince1970: h * 3600.0)
-                let comps = Calendar.current.dateComponents(
-                    [.year, .month, .day, .hour, .minute, .second], from: date)
-                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+            let id = idPrefix + String(Int(h * 3600))
+            keep.insert(id)
+            center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        }
 
-                center.add(UNNotificationRequest(
-                    identifier: idPrefix + String(Int(h * 3600)),
-                    content: content,
-                    trigger: trigger))
-            }
+        // 再清掉「这次没排上」的旧条目。中途被打断也无所谓 —— 新的已经在上面挂好了。
+        center.getPendingNotificationRequests { reqs in
+            let stale = reqs.map(\.identifier).filter { $0.hasPrefix(idPrefix) && !keep.contains($0) }
+            guard !stale.isEmpty else { return }
+            center.removePendingNotificationRequests(withIdentifiers: stale)
         }
     }
 
     /// 立刻敲一下（测试用）。
     /// 整条链子（通知 → 点 → 小窗）最怕的是「排期排错了」和「起不来」混在一起分不清，
-    /// 所以留一个能当场触发的手动入口。
+    /// 所以留一个能当场触发的手动入口 —— 面板上那颗「敲我一下」就是它。
     static func summonNow(after seconds: Double = 5) {
         let content = UNMutableNotificationContent()
         content.title = SharedStore.load().catName ?? "还在"
@@ -93,12 +110,45 @@ enum Notifier {
         content.sound = .default
         content.categoryIdentifier = category
         content.userInfo = ["summon": true]
-        content.interruptionLevel = .timeSensitive
+        content.interruptionLevel = .active
 
         let trigger = UNTimeIntervalNotificationTrigger(
             timeInterval: max(1, seconds), repeats: false)
         UNUserNotificationCenter.current().add(UNNotificationRequest(
             identifier: idPrefix + "test", content: content, trigger: trigger))
+    }
+
+    // MARK: 面板诊断
+    //
+    // 「一条通知都没收到」这件事有四个完全不同的原因，在 App 里长得一模一样：
+    //   ① 权限被拒 ② 一条都没挂上 ③ 挂上了但时间算错（在过去的时刻） ④ 挂了但系统没送
+    // 分开显示出来，一眼就能砍掉三个。没有这几行的时候只能干等几个小时。
+
+    /// 权限状态，人话版。
+    static func authText(_ done: @escaping (String) -> Void) {
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            let t: String
+            switch s.authorizationStatus {
+            case .notDetermined: t = "还没问过"
+            case .denied:        t = "被拒了 —— 去 设置→通知→还在 里打开"
+            case .authorized:    t = "已允许"
+            case .provisional:   t = "临时允许（只进通知中心，不弹）"
+            case .ephemeral:     t = "临时"
+            @unknown default:    t = "未知"
+            }
+            DispatchQueue.main.async { done(t) }
+        }
+    }
+
+    /// 挂着几条 + 下一条什么时候到。
+    static func pending(_ done: @escaping (Int, Date?) -> Void) {
+        UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
+            let mine = reqs.filter { $0.identifier.hasPrefix(idPrefix) }
+            let next = mine
+                .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
+                .min()
+            DispatchQueue.main.async { done(mine.count, next) }
+        }
     }
 
     static func clear(_ done: (() -> Void)? = nil) {

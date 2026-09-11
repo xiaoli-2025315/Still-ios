@@ -66,6 +66,14 @@ enum RoomScope {
     /// 或者房间列表改过名 —— 落进 `Rooms.byId` 里查不到的 id 会让猫无处可去。
     static func refreshFromSystem() async {
         guard #available(iOS 18.0, *) else { return }
+
+        // ★ 一个进程里只问一次。
+        //   这是一次跨进程调用，而且是在**系统正等着我们出结果**的时候发的
+        //   （生成 timeline 的那一下）。问第二遍没有任何新信息 ——
+        //   同一个进程的生命周期里，桌面上摆着哪几张卡不会变。
+        //   少问一次，就少一次「扩展卡住 → 被系统杀掉」的机会。
+        guard systemScope.isEmpty else { return }
+
         guard let infos = try? await WidgetCenter.shared.currentConfigurations() else { return }
 
         var ids: [String] = []

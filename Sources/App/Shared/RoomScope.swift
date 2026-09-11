@@ -14,9 +14,12 @@ import WidgetKit
 //      "You can use the WidgetCenter APIs from within your app process or
 //       extension to reload your timeline ... and you can retrieve the list
 //       of **current configurations**."
-//    → `WidgetCenter.currentConfigurations()` 在**扩展里也能调**，
-//      拿到的是「桌面上真的摆着的那几张卡」及其 AppIntent 配置（房间里选的是哪间）。
+//    → `WidgetCenter.currentConfigurations()` 拿到的是「桌面上真的摆着的那几张卡」
+//      及其 AppIntent 配置（房间里选的是哪间）。
 //    → **不需要 App Group，不需要任何 entitlement。**
+//
+//    ⚠️ 但它在**扩展进程**里要 **iOS 18.0** 起（编译期实测的硬限制，见
+//       refreshFromSystem 的注释）。17.x 的机器拿不到，只能退回下面的自报。
 //
 //    这条是唯一性的救命绳：所有组件在同一时刻问系统，拿到的是**同一份配置**，
 //    于是各自算出的 place(T) 也必然是同一个 → 桌面上永远只有一只猫，
@@ -51,9 +54,18 @@ enum RoomScope {
 
     /// 在生成 timeline 之前调一次。失败就保持原样，绝不把已有的范围弄丢。
     ///
+    /// ★★ 只在 **iOS 18.0+** 的扩展里可用 —— 这是编译期实测出来的：
+    ///     `'currentConfigurations()' is only available in application extensions
+    ///      for iOS 18.0 or newer`
+    ///     （主 App 里更早就有，但**扩展进程**里要 18.0 起。工程 target 是 17.0，
+    ///      所以必须显式加 `#available`，否则直接编译不过。）
+    ///   17.x 的机器拿不到这份名单 → 保持原样，退回「组件自报 / 默认五间」，
+    ///   不会更糟。
+    ///
     /// 为什么把 scope / 房间有效性都校验一遍：桌面上的组件可能是旧版本留下的、
     /// 或者房间列表改过名 —— 落进 `Rooms.byId` 里查不到的 id 会让猫无处可去。
     static func refreshFromSystem() async {
+        guard #available(iOS 18.0, *) else { return }
         guard let infos = try? await WidgetCenter.shared.currentConfigurations() else { return }
 
         var ids: [String] = []

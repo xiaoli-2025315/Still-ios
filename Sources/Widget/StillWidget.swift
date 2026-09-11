@@ -172,7 +172,7 @@ struct StillWidget: Widget {
             StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("还在 v7 · 猫")
+        .configurationDisplayName("还在 v8 · 猫")
         .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

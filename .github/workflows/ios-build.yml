@@ -228,6 +228,30 @@ jobs:
           echo "打好了：$(du -h Still-unsigned.ipa | cut -f1)"
           echo "含扩展：$(ls Payload/Still.app/PlugIns 2>/dev/null || echo '(无)')"
 
+      # ── 4a-1. ★ 门禁：包里那几段视频必须真的能播 ───────────────────
+      #
+      # 为什么值得单独立一道门：
+      #   「素材进包了」和「素材能播」是两件事。
+      #   文件被改坏时体积只差十几个字节，编译零报错、运行零日志，
+      #   唯一的现象是**那间房整个空掉** ——
+      #   你会去怀疑 UI、怀疑播放器、怀疑系统版本，就是不会怀疑文件本身。
+      #   实测踩过：推送脚本给所有文件做了换行规范化，把二进制里恰好出现的
+      #   0x0D 0x0A 一起吃掉，11 段 mp4 全废，
+      #   而每一道「素材在不在包里」的检查都显示正常。
+      #
+      # 这道门查的是**最终 ipa 里的那几个文件**，比对内容指纹 + container 结构。
+      # 一旦红了，后面的 artifact / 直链都不会发出去 —— 坏的包到不了手机。
+      - name: ★ 校验包里的视频片段（解不开就红）
+        if: ${{ env.IOS_SIGNING_CERT == '' && steps.unsignedipa.outcome == 'success' }}
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -e
+          IPA=build-device/Build/Products/Release-iphoneos/Still-unsigned.ipa
+          rm -rf "$RUNNER_TEMP/pipcheck" && mkdir -p "$RUNNER_TEMP/pipcheck"
+          unzip -q -o -j "$IPA" 'Payload/Still.app/*.mp4' -d "$RUNNER_TEMP/pipcheck"
+          echo "从 ipa 里解出 $(ls "$RUNNER_TEMP/pipcheck" | wc -l | tr -d ' ') 段"
+          python3 Tools/_pip_manifest.py --check --dir "$RUNNER_TEMP/pipcheck"
+
       - name: 上传未签名 .ipa
         if: ${{ env.IOS_SIGNING_CERT == '' && steps.unsignedipa.outcome == 'success' }}
         uses: actions/upload-artifact@v5

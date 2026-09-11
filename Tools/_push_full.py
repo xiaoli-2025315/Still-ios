@@ -98,14 +98,35 @@ def req(method: str, url: str, tok: str, body=None):
         raise
 
 
-def local_blob_sha(path: str) -> str:
-    """用 git 的算法算本地文件的 blob sha（与远端 blob 同算法）。"""
-    with open(path, "rb") as f:
-        data = f.read()
-    if os.name == "nt":
-        data = data.replace(b"\r\n", b"\n")
-    blob = b"blob " + str(len(data)).encode() + b"\0" + data
-    return hashlib.sha1(blob).hexdigest()
+def git_blob(path: str):
+    """交给 git 决定这个文件该存成什么字节，再把实际存下来的原始字节取出来。
+
+    返回 (sha, bytes)。
+
+    ★★ 这里**绝对不能**自己 `raw.replace(b"\\r\\n", b"\\n")`。
+       文本文件那样做是对的（本地 CRLF、CI 侧 LF），但二进制素材
+       （mp4 / png / 字体）里恰好出现的 0x0D 0x0A 会被一起吃掉。
+       后果极其隐蔽：文件还在、体积只差十几个字节、编译零报错、真机日志空白，
+       只有画面是黑的 —— 播放器解不开。
+       实测踩过：11 个 mp4 全被吃掉几十字节，App 里那间房整个空掉。
+
+    走 `git hash-object -w --path` 的好处：它按 .gitattributes 与二进制启发式判定，
+    结果跟我们本地 `git commit` **逐字节一致** —— 不会再有「本地能解码、
+    推到远端是坏的」这种两套真相。
+    """
+    r = subprocess.run(["git", "hash-object", "-w", "--path", path, path],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        # 兜底：git 不可用就直接按原始字节传（宁可原样，也不要自己改字节）
+        with open(path, "rb") as f:
+            data = f.read()
+        sha = hashlib.sha1(
+            b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+        return sha, data
+    sha = r.stdout.strip()
+    data = subprocess.run(["git", "cat-file", "blob", sha],
+                          capture_output=True).stdout
+    return sha, data
 
 
 def main():
@@ -129,25 +150,21 @@ def main():
         if not os.path.exists(p):
             print("跳过（不存在）:", p)
             continue
-        # ★ 必须先规范化换行再算 sha、再上传。
-        #   否则 Windows 的 CRLF 会让「本地算出的 sha」和「GitHub 存下的 blob sha」对不上，
-        #   构造 tree 时报 "is not a valid blob"。
-        with open(p, "rb") as f:
-            raw = f.read()
-        norm = raw.replace(b"\r\n", b"\n") if os.name == "nt" else raw
-        sha = hashlib.sha1(
-            b"blob " + str(len(norm)).encode() + b"\0" + norm).hexdigest()
+        # ★ 换行怎么处理，交给 git 判断（见 git_blob 的说明）。
+        #   自己 replace(b"\r\n", b"\n") 会把二进制素材拆坏 —— 文件还在、
+        #   体积只差十几字节、编译零报错，真机上只有一片黑。
+        sha, data = git_blob(p)
 
         # 远端已有同 sha 的 blob 就不用传了
         try:
             req("GET", f"{API}/repos/{REPO}/git/blobs/{sha}", tok)
-            print(f"blob 已存在 {p} ({sha[:10]})")
+            print(f"blob 已存在 {p} ({sha[:10]}) {len(data)}B")
         except urllib.error.HTTPError:
             res = req("POST", f"{API}/repos/{REPO}/git/blobs", tok,
-                      {"content": base64.b64encode(norm).decode(), "encoding": "base64"})
+                      {"content": base64.b64encode(data).decode(), "encoding": "base64"})
             # 用 GitHub 返回的 sha，不信任自己算的
             sha = res["sha"]
-            print(f"blob 已创建 {p} ({sha[:10]})")
+            print(f"blob 已创建 {p} ({sha[:10]}) {len(data)}B")
         new_trees_items.append((p, sha))
 
     if not new_trees_items:

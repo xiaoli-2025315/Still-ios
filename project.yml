@@ -24,12 +24,18 @@ targets:
     # 一改 target 就变，签名和 App Group 跟着乱。
     productBundleIdentifier: com.still.app
     sources:
-      # 一个 path 就够 —— Sources/App 已经含了 Shared/、Cat/、Home/、Panel/。
+      # 一个 path 就够 —— Sources/App 已经含了 Shared/、Cat/、Home/、Panel/、PiP/。
       # 别再单独列 Shared/ 和 Cat/，XcodeGen 会生成两份引用，
       # 同一个 .swift 被编译两次 → duplicate symbol。
       - path: Sources/App
         excludes:
           - "Island/**"
+      # 画中画要播的片段。素材是「4K 透明动作视频叠房间底图」合成的 720×720 方片
+      # （Tools/_pip_compose.py pack），合计约 4.6 MB。
+      # ★ 显式写 buildPhase：这些是资源不是源码，放错会静默不打包 ——
+      #   真机上只表现成「画面全黑」，编译一点问题都没有。
+      - path: Resources
+        buildPhase: resources
     entitlements:
       path: Still.entitlements
       properties:
@@ -45,6 +51,10 @@ targets:
         CFBundleDisplayName: "还在"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
+        # ★ 画中画的硬前提。缺了它 PiP 会**静默失效**：不报错、不崩溃，就是什么都不发生。
+        #   配合 AVAudioSession.setCategory(.playback)+setActive(true) 一起用。
+        UIBackgroundModes:
+          - audio
         # SwiftUI App 生命周期，不需要 SceneDelegate
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false

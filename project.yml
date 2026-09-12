@@ -19,8 +19,8 @@ settings:
     #
     #   顺带一个好处：设置 → 通用 → iPhone 储存空间 里能直接看到装的是第几版，
     #   「手机上到底跑的是哪一份」不再是靠猜。
-    MARKETING_VERSION: "1.15.0"
-    CURRENT_PROJECT_VERSION: "15"
+    MARKETING_VERSION: "1.16.0"
+    CURRENT_PROJECT_VERSION: "16"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -104,29 +104,16 @@ targets:
       - path: Sources/App/Shared
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
-      # ★ 组件里那只「会动的猫」全靠这个字体。
+      # ★★ 这里**故意不放** Resources/fonts（v16 改动：回到 v9 的形态）。
       #
-      #  组件不能播视频、不能播动图，timeline 换图也只有约 5 秒/张。
-      #  唯一能让它连续动起来的公开手段是 `Text(timerInterval:)` ——
-      #  系统每秒把文字改一次，于是把「猫的每一帧」画成**字体的一个字形**，
-      #  用计时器的最后一位数字去翻页，就是逐帧动画。
+      #   v9 → v15 之间给扩展加过一份自造的 sbix 彩色位图字体（StillFrames.ttf），
+      #   用来让组件里的猫逐帧动起来。代价是：**v9 能加组件，v11 起加不了。**
+      #   v16 的首要目标是把「能加」拿回来，所以扩展里连字体文件都不放 ——
+      #   不放文件，就不存在「系统解析这份字体时出事」这条路径。
       #
-      #  格式是 sbix（Apple 自家的彩色位图字体表，Apple Color Emoji 用的就是它）。
-      #  生成脚本：Tools/_cat_font.py
-      #
-      #  ★★ 这里只负责**把字体打进包**，**不在 Info.plist 里注册**（v13 的关键改动）。
-      #     写在 Info.plist 的 UIAppFonts 里 = 系统**每次启动这个扩展进程**都要
-      #     解析一遍这份自造的 sbix 字体。它正是「组件加不了」的头号嫌疑：
-      #     v9 没有字体 → 能加；v11 起有字体 + 在这里注册 → 加不了。
-      #     改成运行时 CTFontManagerRegisterFontsForURL 按需注册：
-      #     注册不上就退回静态矢量猫，**组件照样加得上**。
-      #     → 实现见 Sources/Widget/StillWidget.swift 的 CatFont。
-      #
-      #  ★ 必须显式写 buildPhase —— 资源放错会静默不打包，真机上只表现成「猫不动」。
-      #  ★ 必须只给字体这一个目录，别把整个 Resources 塞进来：
-      #    那里还有 4.6 MB 画中画视频，扩展用不上，白白撑大安装包。
-      - path: Resources/fonts
-        buildPhase: resources
+      #   猫暂时是 v9 那套矢量静态猫（`CatView`），一样有猫，只是不逐帧动。
+      #   要加动画，等这一版确认能加之后，再**单独**加回来（一次只动一件事）。
+      #   造字体的脚本 Tools/_cat_font.py 和 Resources/fonts/ 都留着，没删。
     # ★★ 小组件扩展【不给】App Group 权限。这是让它能显示出内容的关键。
     #
     #  自签工具（全能签/轻松签）重签时生成的描述文件里，通常**不含**

@@ -34,14 +34,14 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v15"
+WANT_VERSION = "v16"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
 #   ⚠️ 但要说清楚：这一条是**推测**，没有实测证据。
 #   （原注释里写的那句「表现是组件加不了、重启一次好一次」是我自己编的，
 #    用户从没说过，2026-09-11 当场否认过。凡是加引号的"用户原话"，写入前必须能搜到。）
-WANT_MARKETING = "1.15.0"
-WANT_BUILD = "15"
+WANT_MARKETING = "1.16.0"
+WANT_BUILD = "16"
 
 
 def _token():
@@ -152,61 +152,69 @@ def main():
     else:
         line(False, "最近 5 次 CI 里没有这个 commit 的运行")
 
-    # ---------------- ①b WidgetBundle 里有什么（这是「组件加不了」的头号真凶）
+    # ---------------- ①b WidgetBundle 里有什么
     #
-    # 判据：组件库能不能看到这个 App，取决于系统能不能顺顺当当地把 WidgetBundle.body
-    # 枚举一遍。`StillLiveActivity`（ActivityConfiguration）在里面时，历史上两次都让
-    # 组件库里搜不到这个 App。所以这里**只允许**出现那两个小组件。
+    # ★★ 这一节的期望值在 v16 **整个翻过来了**，因为以前那条判据是错的。
+    #
+    #   旧判据：「`StillLiveActivity` 在 bundle 里 → 组件库搜不到这个 App」，
+    #   还据此在 a06f420 把它移出了 bundle。
+    #   推翻它的硬事实：**v9 的 bundle 里就有 `StillLiveActivity()`，而 v9 是能加组件的**
+    #   （v9 = commit b85bea4e9b，逐行核对过）。
+    #   所以灵动岛在不在 bundle 里，跟「能不能加」**无关** —— 别再往这个方向查。
+    #
+    #   v16 的期望 = **v9 那个 bundle 原样**：StillWidget + StillTextWidget + StillLiveActivity。
+    #   v13 加的 `StillProbeWidget` 不在里面（v9 没有它，先去掉，少一个变量）。
     print()
-    print("=== ①b WidgetBundle 里注册了什么（放错东西 = 组件库搜不到这个 App）===")
+    print("=== ①b WidgetBundle 里注册了什么（期望 = v9 那三个）===")
     wsrc = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
     seg = wsrc.split("struct StillWidgetBundle")[-1]
     seg = seg.split("\n}")[0] if "\n}" in seg else seg[:1500]
     for name, should in (("StillWidget", True),
-                         ("StillProbeWidget", True),
-                         ("StillLiveActivity", False),
-                         ("StillTextWidget", False)):
+                         ("StillTextWidget", True),
+                         ("StillLiveActivity", True),
+                         ("StillProbeWidget", False)):
         inb = name in seg
         line(inb == should,
              f"{'有' if inb else '没有'} {name}" + ("" if inb == should else "  ← 不该是这样！"))
 
-    # ---------------- ①c 「让它动」默认是关的（照搬 Pixel Pals）
+    # ---------------- ①c 扩展侧**完全不碰**帧字体（v16 = v9 形态）
     #
-    # 这一版把「组件能不能加」和「里面那只猫动不动」彻底拆成两件事：
-    #   默认关 = 纯矢量静态猫，零外部依赖 —— 跟 v9 那个能正常添加的组件是同一类；
-    #   想让它动，用户在组件设置里自己打开（Pixel Pals 对它那只宠物也是这么做的）。
-    # 以前这两件事是绑死的：只要组件摆在桌面上，它就在尝试加载字体，
-    # 于是「加不了」到底是不是动画引起的，永远分不清。
+    #   v9 → v15 之间，扩展里唯一实质性的新东西就是那份自造的 sbix 字体（让猫逐帧动）。
+    #   时间线对得很整齐：**v9 没有它、能加；v11 起有它、加不了。**
+    #
+    #   v16 要先把「能加」拿回来，所以扩展这一侧连字体文件都不放
+    #   （project.yml 里也拿掉了 `Resources/fonts`）——
+    #   **不放文件，就不存在「系统解析这份字体时出事」这条路径。**
+    #   猫暂时是 v9 那套矢量静态猫（CatView）：一样有猫，只是不逐帧动。
     print()
-    print("=== ①c 「让它动」的默认值（必须是 false）===")
-    ssrc = api(f"/repos/{REPO}/contents/Sources/App/Shared/Schedule.swift?ref={head}", raw=True).decode()
-    has_param = "var animate: Bool" in ssrc
-    line(has_param, f"SelectRoomIntent 里有「让它动」这个参数：{'有' if has_param else '★ 没有'}")
-    mdef = re.search(r'@Parameter\(title: "让它动",\s*default:\s*(true|false)\)', ssrc)
-    line(bool(mdef) and mdef.group(1) == "false",
-         f"组件库里的默认值 = {mdef.group(1) if mdef else '？'}（必须是 false）")
-    sent = re.findall(r"self\.animate = (true|false)", ssrc)
-    line(bool(sent) and all(x == "false" for x in sent),
-         f"各个 init 里都设成 false：{sent or '★ 一个都没设'}")
-    wsrc_a = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
-    wsent = re.findall(r"animated: configuration\.animate", wsrc_a)
-    line(len(wsent) >= 2,
-         f"timeline 里把开关传下去了 {len(wsent)} 处（有两个分支：在这儿 / 不在这儿）")
+    print("=== ①c 扩展应该是 v9 形态（不碰字体 / 没有动画代码）===")
+    for bad, why in (("CatFont", "帧字体加载器"),
+                     ("StillFrames", "字体文件名"),
+                     ("animated", "动画开关"),
+                     ("Ticking", "每秒翻页的计时器"),
+                     ("CTFontManager", "运行时注册字体"),
+                     ("currentConfigurations", "跨进程问系统要组件配置")):
+        n = wsrc.count(bad)
+        line(n == 0, f"扩展源码里没有 {bad}（{why}）：{n} 处" +
+             ("" if n == 0 else "  ← 不该有！"))
 
-    # ---------------- ② 帧字体在两个 target 里都在吗
+    # ---------------- ② 帧字体：**扩展里必须没有**（主 App 里有也无所谓）
+    #
+    #   v11~v15 这里查的是「字体在两个 target 里都在吗」。v16 反过来：
+    #   扩展那一侧**不许有** —— 有，就意味着系统启动扩展时可能去解析它，
+    #   而那正是「v9 能加、v11 起加不了」唯一对得上的变量。
+    #   主 App 里有一份不算事：主 App 不注册它（UIAppFonts 为空），不会去解析。
     print()
-    print("=== ② 帧字体在两个 target 里吗（打进包即可，注册走运行时）===")
-    local_font = os.path.join(ROOT, "Resources", "fonts", "StillFrames.ttf")
-    sha_local = hashlib.sha256(open(local_font, "rb").read()).hexdigest()
-    for p in ("Payload/Still.app/StillFrames.ttf",
-              "Payload/Still.app/PlugIns/StillWidgetExtension.appex/StillFrames.ttf"):
-        if p in names:
-            b = z.read(p)
-            s = hashlib.sha256(b).hexdigest()
-            line(s == sha_local, f"{p}  {len(b)} B  sha {s[:10]}" +
-                 ("" if s == sha_local else " ← 与本地不一致！"))
-        else:
-            line(False, f"{p}  ★ 不在包里")
+    print("=== ② 扩展包里没有帧字体（v16 形态）===")
+    wfont = "Payload/Still.app/PlugIns/StillWidgetExtension.appex/StillFrames.ttf"
+    has_w = wfont in names
+    line(not has_w, "扩展包里没有 StillFrames.ttf" +
+         ("" if not has_w else f"  ← 不该有（{len(z.read(wfont))} B）！"))
+    appfont = "Payload/Still.app/StillFrames.ttf"
+    if appfont in names:
+        print(f"  ·   主 App 里有一份（{len(z.read(appfont))} B）—— 无害，主 App 不注册它")
+    else:
+        print("  ·   主 App 里也没有（字体已从打包链路摘干净）")
 
     # ---------------- ③ 字体**不该**出现在 Info.plist 里
     #

@@ -35,11 +35,11 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v25"
+WANT_VERSION = "v26"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
-WANT_MARKETING = "1.25.0"
-WANT_BUILD = "25"
+WANT_MARKETING = "1.26.0"
+WANT_BUILD = "26"
 
 
 def _token():
@@ -140,7 +140,7 @@ def main():
     head = json.loads(api(f"/repos/{REPO}/git/refs/heads/master"))["object"]["sha"]
     # 版本证据 = StillWidget.swift 里写死的组件显示名（Cfg.version 从 v20 起不存在）。
     wsrc0 = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
-    got = "v25" if "还在 v25 · 猫" in wsrc0 else "?"
+    got = "v26" if "还在 v26 · 猫" in wsrc0 else "?"
     line(got == WANT_VERSION, f"master HEAD {head[:8]} 的组件显示名 = 还在 {got}（期望 {WANT_VERSION}）")
     runs = json.loads(api(f"/repos/{REPO}/actions/runs?per_page=5"))["workflow_runs"]
     r0 = next((r for r in runs if r["head_sha"] == head), None)
@@ -226,12 +226,14 @@ def main():
     wsw = json.loads(api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}"))
     line(wsw["sha"] != v9tree["Sources/Widget/StillWidget.swift"],
          "StillWidget.swift 与 v9 不同（应该的：v21 起组件 = 大猫图）")
-    line("CatImageBytes.base64" in wsrc0 and "UIImage(data:" in wsrc0,
-         "猫图走内嵌 base64（v24：资源查找不可靠，数据编进二进制）")
-    line(".never" in wsrc0 and "alwaysCatEntry" in wsrc0,
-         "timeline 恒为大猫图（单 entry + .never，不判断它在不在）")
     # ★ 数代码不数注释：断言曾被源码注释里的 "PawMark" 触发过假报警（v15 的教训）。
     wsrc_code = "\n".join(l.split("//")[0] for l in wsrc0.split("\n"))
+    line("VectorCat" in wsrc0 and "Canvas" in wsrc0,
+         "猫 = 纯代码矢量（豆包方案1：位图在组件进程全灭，v21~v25 五版实证）")
+    line("UIImage" not in wsrc_code and "CatImageBytes" not in wsrc_code,
+         "组件代码里已无任何位图加载（v26）")
+    line(".never" in wsrc0 and "alwaysCatEntry" in wsrc0,
+         "timeline 恒为猫（单 entry + .never，不判断它在不在）")
     line("PawMark" not in wsrc_code, "小爪印已从组件代码里撤掉（v22）")
     # 「它现在在」只允许留在排障用的文字组件里（plainAway）；
     # 「待了」（在/here 卡）应彻底消失。组件本体（catFull）没有任何说明文字。

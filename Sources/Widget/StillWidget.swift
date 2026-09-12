@@ -4,12 +4,12 @@ import AppIntents
 
 // MARK: - 小组件
 //
-// v24 现状（用户拍板）：
-//   · 组件 = 一整张大猫图，**永远显示，不判断它在不在**。
-//     「同一时刻只在一处」对画面的约束撤掉 —— 每个组件都直接是猫。
-//   · 猫图走内嵌 base64（CatImageData.swift），不依赖任何资源查找：
-//     v21~v23 里 Image("cat_sit") 在组件进程里从来没显示出来过（文字能变、
-//     包里也有图），资源查找这条路不可信。数据编进二进制就没有丢失的可能。
+// v26 现状（豆包方案 1，用户拍板）：
+//   · 组件 = 暖米底上一只**纯代码画的矢量猫**。不用任何图片文件——
+//     v21~v23 资源名查找不显示、v24~v25 内嵌位图解码出来是黑/灰块，
+//     而文字、爪印这类代码直画的矢量从 v20 起每一次都显示成功。
+//     → 猫改走与爪印同一层的绘制方式（SwiftUI Canvas 矢量）。
+//   · 「同一时刻只在一处」的画面约束已撤（v24 起）：每个组件都是这只猫。
 
 enum WidgetState {
     /// 它现在就在这个房间里
@@ -59,7 +59,7 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
                         policy: .never)
     }
 
-    /// 每个组件、任何时刻：同一个「它在这儿」的大猫图。
+    /// 每个组件、任何时刻：同一个「它在这儿」的猫。
     private static func alwaysCatEntry(roomId: String, date: Date) -> StillWidgetEntry {
         StillWidgetEntry(date: date,
                          state: .here(pose: .sit, since: date),
@@ -91,21 +91,15 @@ struct StillWidget: Widget {
                                intent: SelectRoomIntent.self,
                                provider: StillWidgetProvider()) { entry in
             StillWidgetView(entry: entry, textOnly: false)
-                // 暖米底，猫图铺满 —— 组件本身一张图，不装卡片
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v25 · 猫")
+        .configurationDisplayName("还在 v26 · 猫")
         .description("它的一个房间，带猫。多摆几个，每个组件上都是它。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
-/// 同一个房间、同一份数据，**只画字、不画猫**。
-///
-/// 存在的唯一目的：把「小组件扩展整体没渲染」和「画猫的那段代码崩了」一分为二。
-///   · 它也是空白  → 扩展层面就没画出来，跟画猫无关
-///   · 它有字、带猫的那个空白 → 画猫那段代码在小组件进程里崩了，修它就行
-/// 定位完可以删掉这个组件。
+/// 同一个房间、同一份数据，**只画字、不画猫**（排障用，定位完可删）。
 struct StillTextWidget: Widget {
     let kind = "StillTextWidget"
 
@@ -114,10 +108,9 @@ struct StillTextWidget: Widget {
                                intent: SelectRoomIntent.self,
                                provider: StillWidgetProvider()) { entry in
             StillWidgetView(entry: entry, textOnly: true)
-                // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v25 · 字")
+        .configurationDisplayName("还在 v26 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -126,7 +119,7 @@ struct StillTextWidget: Widget {
 @main
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
-        StillWidget()          // 小组件：一张大猫图，永远显示
+        StillWidget()          // 小组件：一只矢量猫
         StillTextWidget()      // 排障用：只画字（定位完可删）
         StillLiveActivity()    // 灵动岛 + 锁屏横幅
     }
@@ -151,42 +144,21 @@ struct StillWidgetView: View {
                 plainNoHome()
             }
         } else {
-            // 组件 = 一整张大猫图。没有文字、没有卡片版式。
-            // 状态（在/不在）不参与画面 —— 任何状态都是这只猫。
             catFull()
         }
     }
 
-    // MARK: 大猫图铺满组件
+    // MARK: 矢量猫铺满组件
 
     private func catFull() -> some View {
         link {
-            if let ui = Self.catUIImage() {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // 三条加载路全失败才会走到这儿 —— 至少让屏幕上有个东西，
-                //看到它就说明「图加载失败、绘制本身是好的」。
-                Text("🐱").font(.system(size: 48))
-            }
+            VectorCat()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(family == .systemMedium ? 10 : 4)
         }
     }
 
-    /// 加载猫图的三条路，按可靠程度排序：
-    /// ① 内嵌 base64（数据在二进制里，没有查找、没有丢包可能）
-    /// ② 包内文件路径（cat_sit.png 就躺在扩展包根目录）
-    /// ③ 资源名查找（v21~v23走的这条路，实测不可靠）
-    static func catUIImage() -> UIImage? {
-        if let d = Data(base64Encoded: CatImageBytes.base64),
-           let ui = UIImage(data: d) { return ui }
-        if let p = Bundle.main.path(forResource: "cat_sit", ofType: "png"),
-           let ui = UIImage(contentsOfFile: p) { return ui }
-        return UIImage(named: "cat_sit")
-    }
-
-    // MARK: 纯文字版（不画猫、不画爪印，最大限度排除绘制层）
+    // MARK: 纯文字版（不画猫，最大限度排除绘制层）
 
     private func plainHere() -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -244,6 +216,162 @@ struct StillWidgetView: View {
 
     private func link<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content().widgetURL(URL(string: "still://open"))
+    }
+}
+
+// MARK: - 矢量猫
+//
+// 设计坐标系 172×230（跟原来那张猫图同比例），Canvas 里按组件实际尺寸缩放。
+// 全部是 Path / 椭圆 / 直线 —— 和 v20~v22 一直能显示的爪印同一层绘制。
+
+struct VectorCat: View {
+    // 配色跟随项目色板：赤陶主色 + 深一档花纹 + 深棕五官 + 奶色胸脯
+    private let fur  = Color(red: 0.79, green: 0.48, blue: 0.31)  // #C97B4E 赤陶
+    private let dark = Color(red: 0.60, green: 0.35, blue: 0.21)  // 花纹深档
+    private let ink  = Color(red: 0.24, green: 0.17, blue: 0.12)  // 五官
+    private let cream = Color(red: 0.95, green: 0.87, blue: 0.76) // 胸脯
+
+    var body: some View {
+        Canvas { ctx, size in
+            let s = min(size.width / 172, size.height / 230)
+            var c = ctx
+            c.translateBy(x: (size.width - 172 * s) / 2,
+                          y: (size.height - 230 * s) / 2)
+            c.scaleBy(x: s, y: s)
+
+            // —— 尾巴（先画，根部被身体压住）：从右下绕上来一记弯钩
+            var tail = Path()
+            tail.move(to: CGPoint(x: 126, y: 212))
+            tail.addQuadCurve(to: CGPoint(x: 156, y: 146),
+                              control: CGPoint(x: 174, y: 198))
+            c.stroke(tail, with: .color(fur),
+                     style: StrokeStyle(lineWidth: 15, lineCap: .round))
+            var tailTip = Path()
+            tailTip.move(to: CGPoint(x: 156, y: 162))
+            tailTip.addLine(to: CGPoint(x: 156, y: 146))
+            c.stroke(tailTip, with: .color(dark),
+                     style: StrokeStyle(lineWidth: 15, lineCap: .round))
+
+            // —— 身体（坐姿钟形）
+            c.fill(Path(ellipseIn: CGRect(x: 38, y: 106, width: 96, height: 118)),
+                   with: .color(fur))
+            // 胸脯
+            c.fill(Path(ellipseIn: CGRect(x: 64, y: 128, width: 44, height: 66)),
+                   with: .color(cream))
+
+            // —— 耳朵（外层毛色 + 内层深色）
+            c.fill(ear(left: true), with: .color(fur))
+            c.fill(ear(left: false), with: .color(fur))
+            c.fill(earInner(left: true), with: .color(dark))
+            c.fill(earInner(left: false), with: .color(dark))
+
+            // —— 头
+            c.fill(Path(ellipseIn: CGRect(x: 42, y: 26, width: 88, height: 86)),
+                   with: .color(fur))
+
+            // —— 头顶花纹（三道短竖纹）
+            for dx in [-15.0, 0.0, 15.0] {
+                var st = Path()
+                st.move(to: CGPoint(x: 86 + dx, y: 32))
+                st.addQuadCurve(to: CGPoint(x: 86 + dx * 1.5, y: 48),
+                                control: CGPoint(x: 86 + dx, y: 42))
+                c.stroke(st, with: .color(dark),
+                         style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
+
+            // —— 身体两侧纹（左右各两道短弧）
+            for sx in [0.0, 1.0] {
+                let x0 = sx == 0 ? 40.0 : 132.0
+                let dir: Double = sx == 0 ? 1 : -1
+                for i in 0..<2 {
+                    var st = Path()
+                    let y = 148.0 + Double(i) * 22
+                    st.move(to: CGPoint(x: x0, y: y))
+                    st.addQuadCurve(to: CGPoint(x: x0 + 14 * dir, y: y + 8),
+                                    control: CGPoint(x: x0 + 2 * dir, y: y + 8))
+                    c.stroke(st, with: .color(dark),
+                             style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                }
+            }
+
+            // —— 眼睛
+            c.fill(Path(ellipseIn: CGRect(x: 61, y: 60, width: 11, height: 11)),
+                   with: .color(ink))
+            c.fill(Path(ellipseIn: CGRect(x: 100, y: 60, width: 11, height: 11)),
+                   with: .color(ink))
+
+            // —— 鼻子 + 嘴
+            var nose = Path()
+            nose.move(to: CGPoint(x: 80, y: 79))
+            nose.addLine(to: CGPoint(x: 92, y: 79))
+            nose.addLine(to: CGPoint(x: 86, y: 86))
+            nose.closeSubpath()
+            c.fill(nose, with: .color(dark))
+            var mouth = Path()
+            mouth.move(to: CGPoint(x: 86, y: 86))
+            mouth.addQuadCurve(to: CGPoint(x: 78, y: 92), control: CGPoint(x: 81, y: 91))
+            mouth.move(to: CGPoint(x: 86, y: 86))
+            mouth.addQuadCurve(to: CGPoint(x: 94, y: 92), control: CGPoint(x: 91, y: 91))
+            c.stroke(mouth, with: .color(ink),
+                     style: StrokeStyle(lineWidth: 2, lineCap: .round))
+
+            // —— 胡须（左右各两根，淡）
+            let whiskerColor = Color(ink.opacity(0.35))
+            for (x0, y0, x1, y1) in [(58.0, 82.0, 30.0, 78.0),
+                                     (58.0, 89.0, 32.0, 96.0),
+                                     (114.0, 82.0, 142.0, 78.0),
+                                     (114.0, 89.0, 140.0, 96.0)] {
+                var w = Path()
+                w.move(to: CGPoint(x: x0, y: y0))
+                w.addLine(to: CGPoint(x: x1, y: y1))
+                c.stroke(w, with: .color(whiskerColor),
+                         style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
+
+            // —— 前爪（两只 + 脚趾缝）
+            c.fill(Path(ellipseIn: CGRect(x: 54, y: 206, width: 30, height: 19)),
+                   with: .color(fur))
+            c.fill(Path(ellipseIn: CGRect(x: 88, y: 206, width: 30, height: 19)),
+                   with: .color(fur))
+            for px in [62.0, 70.0, 96.0, 104.0] {
+                var t = Path()
+                t.move(to: CGPoint(x: px, y: 212))
+                t.addLine(to: CGPoint(x: px, y: 222))
+                c.stroke(t, with: .color(dark.opacity(0.45)),
+                         style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
+        }
+        .aspectRatio(172.0 / 230.0, contentMode: .fit)
+    }
+
+    private func ear(left: Bool) -> Path {
+        Path { p in
+            if left {
+                p.move(to: CGPoint(x: 50, y: 50))
+                p.addLine(to: CGPoint(x: 59, y: 6))
+                p.addLine(to: CGPoint(x: 84, y: 32))
+            } else {
+                p.move(to: CGPoint(x: 122, y: 50))
+                p.addLine(to: CGPoint(x: 113, y: 6))
+                p.addLine(to: CGPoint(x: 88, y: 32))
+            }
+            p.closeSubpath()
+        }
+    }
+
+    private func earInner(left: Bool) -> Path {
+        Path { p in
+            if left {
+                p.move(to: CGPoint(x: 58, y: 42))
+                p.addLine(to: CGPoint(x: 63, y: 17))
+                p.addLine(to: CGPoint(x: 77, y: 31))
+            } else {
+                p.move(to: CGPoint(x: 114, y: 42))
+                p.addLine(to: CGPoint(x: 109, y: 17))
+                p.addLine(to: CGPoint(x: 95, y: 31))
+            }
+            p.closeSubpath()
+        }
     }
 }
 

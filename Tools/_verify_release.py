@@ -23,6 +23,7 @@ import os
 import plistlib
 import re
 import subprocess
+import struct
 import time
 import sys
 import urllib.request
@@ -254,14 +255,27 @@ def main():
     #
     #   资源放错 buildPhase 会「编译全绿但包里没有」（PiP 视频踩过同一坑），
     #   所以必须从最终 ipa 里解出来看，不看配置写了什么。
+    #   ★ 不能按字节比：Xcode 打包会把 PNG 重编码成 Apple 私有 CgBI 格式
+    #     （CopyPNGFile，字节变、像素不变）—— 这里改验「chunk 结构 + 尺寸」。
     print()
-    print("=== ②b 扩展包里有静态猫图 cat_sit.png ===")
+    print("=== ②b 扩展包里有静态猫图 cat_sit.png（验尺寸，不验字节）===")
     wimg = "Payload/Still.app/PlugIns/StillWidgetExtension.appex/cat_sit.png"
-    if wimg in names:
-        nb = len(z.read(wimg))
-        line(nb == 46814, f"扩展包里有 cat_sit.png（{nb} B，期望 46814）")
-    else:
+    if wimg not in names:
         line(False, "扩展包里没有 cat_sit.png  ← 图没进打包链路，组件里会是空白！")
+    else:
+        pb = z.read(wimg)
+        w = h = None
+        cgbi = pb[8:12] == b"CgBI"
+        off = 8
+        while off < len(pb) - 8:
+            ln = struct.unpack(">I", pb[off:off + 4])[0]
+            typ = pb[off + 4:off + 8]
+            if typ == b"IHDR":
+                w, h = struct.unpack(">II", pb[off + 8:off + 16])
+                break
+            off += 12 + ln
+        line((w, h) == (172, 230),
+             f"cat_sit.png 在扩展包里：{len(pb)} B，CgBI={'是' if cgbi else '否'}，尺寸 {w}x{h}（期望 172x230）")
 
     # ---------------- ③ 字体**不该**出现在 Info.plist 里
     #
@@ -305,15 +319,17 @@ def main():
     #     主 App id / 扩展 id（= 主 id + .widget）/ App Group / 核验断言。
     # ★ 真实规则：bundle id = bundleIdPrefix + target 名（XcodeGen 拼的）。
     #   `productBundleIdentifier:` 那种写法不存在，写了也会被静默忽略。
+    # ★ 循环变量叫 bid，不许叫 got —— 上面 ① 里 got 存的是版本号，
+    #   这里盖掉它的话，最后 dist 文件名会变成 Still-com.still.…ipa（真踩过）。
     print()
     print("=== ③b-2 身份（bundle id）===")
     WANT_APPID = "com.still.Still"
     WANT_EXTID = "com.still.StillWidgetExtension"
     for label, p, want in (("主 App", "Payload/Still.app/Info.plist", WANT_APPID),
                            ("扩展", ext, WANT_EXTID)):
-        got = plistlib.loads(z.read(p)).get("CFBundleIdentifier")
-        line(got == want, f"{label} bundle id = {got}" +
-             ("" if got == want else f"  ← 期望 {want}！"))
+        bid = plistlib.loads(z.read(p)).get("CFBundleIdentifier")
+        line(bid == want, f"{label} bundle id = {bid}" +
+             ("" if bid == want else f"  ← 期望 {want}！"))
     av = plistlib.loads(z.read("Payload/Still.app/Info.plist")).get("CFBundleVersion")
     ev = plistlib.loads(z.read(ext)).get("CFBundleVersion")
     line(av == ev, f"App 与扩展的 build 号一致：{av} / {ev}")

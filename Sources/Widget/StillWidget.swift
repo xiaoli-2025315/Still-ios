@@ -170,9 +170,10 @@ struct StillWidget: Widget {
                                intent: SelectRoomIntent.self,
                                provider: StillWidgetProvider()) { entry in
             StillWidgetView(entry: entry, textOnly: false)
-                .containerBackground(.fill.tertiary, for: .widget)
+                // 暖米底，猫图铺满 —— 组件本身一张图，不装卡片
+                .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v22 · 猫")
+        .configurationDisplayName("还在 v23 · 猫")
         .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -195,7 +196,7 @@ struct StillTextWidget: Widget {
                 // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v22 · 字")
+        .configurationDisplayName("还在 v23 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -219,13 +220,31 @@ struct StillWidgetView: View {
     var textOnly: Bool = false
 
     var body: some View {
-        switch entry.state {
-        case .here(let pose, let since):
-            textOnly ? AnyView(plainHere()) : AnyView(here(pose: pose, since: since))
-        case .away(let last):
-            textOnly ? AnyView(plainAway()) : AnyView(away(lastVisit: last))
-        case .noHome:
-            textOnly ? AnyView(plainNoHome()) : AnyView(noHome)
+        if textOnly {
+            switch entry.state {
+            case .here:
+                plainHere()
+            case .away:
+                plainAway()
+            case .noHome:
+                plainNoHome()
+            }
+        } else {
+            // v23：组件 = 一整张大猫图。没有文字、没有卡片版式 —— 用户拍板
+            // 「别把它当成一张卡片，把大图放到组件里」。
+            // 「它在这儿 / 它现在在哪儿」那些说明文字从来不是他要的，整个拿掉。
+            catFull()
+        }
+    }
+
+    // MARK: 大猫图铺满组件
+
+    private func catFull() -> some View {
+        link {
+            Image("cat_sit")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -283,97 +302,6 @@ struct StillWidgetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(13)
-    }
-
-    // MARK: 它在这儿
-
-    private func here(pose: CatPose, since: Date) -> some View {
-        link {
-            HStack(spacing: 10) {
-                // 静态图猫（与安卓端同一只虎斑猫）。pose 参数保留在 entry 里，但画图不再用它。
-                Image("cat_sit")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: family == .systemMedium ? 66 : 50)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("在").font(.system(size: 9)).foregroundStyle(.secondary)
-                    Text(entry.roomName)
-                        .font(.system(size: family == .systemMedium ? 19 : 15,
-                                      weight: .medium, design: .serif))
-                        .lineLimit(1)
-                    Text("待了 \(since, format: .relative(presentation: .numeric))")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(family == .systemMedium ? 15 : 13)
-        }
-    }
-
-    // MARK: 它不在这儿
-    //
-    // 留痕照留，但**要说清楚它现在在哪儿**。
-    // 以前是「找不到它是正常的，自己翻别的组件去」—— 结果用户摆的房间里
-    // 一只也看不见，等于它消失了。现在每个组件上都写「它现在在 ××」，
-    // 扫一眼桌面就知道去哪儿找（可寻址）。
-
-    private func away(lastVisit: Date?) -> some View {
-        link {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 5) {
-                    // v22：小爪印换成猫的静态图（用户要求「不要猫爪」）。
-                    // 代价：桌面上每张「不在这儿」的卡都有猫，「同一时刻只在一处」在组件层暂让位。
-                    Image("cat_sit")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 15)
-                        .opacity(0.85)
-                    Text(entry.roomName)
-                        .font(.system(size: 13, weight: .medium, design: .serif))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if let w = entry.whereNow {
-                    Text("它现在在")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                    Text(w.label)
-                        .font(.system(size: 12, weight: .medium, design: .serif))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                } else if let last = lastVisit {
-                    Text("上次来")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                    Text(last, format: .relative(presentation: .named))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("它还没来过")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    // MARK: 还没接它回家
-
-    private var noHome: some View {
-        link {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("还没接它回家")
-                    .font(.system(size: 12, weight: .medium, design: .serif))
-                Text("打开「还在」，再回来添加组件")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 
     private func link<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {

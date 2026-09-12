@@ -227,7 +227,10 @@ def main():
     line(wsw["sha"] != v9tree["Sources/Widget/StillWidget.swift"],
          "StillWidget.swift 与 v9 不同（应该的：v21/v22 换了静态猫图）")
     line(wsrc0.count("Image(\"cat_sit\")") >= 2, "猫静态图出现在「在/不在」两类卡上")
-    line("PawMark" not in wsrc0, "小爪印已从组件里撤掉（v22）")
+    # ★ 数代码不数注释：v22 那条「PawMark 撤干净」的断言曾被源码注释里的
+    #   "PawMark" 三个字触发了假报警（v15 的教训：断言要先剥注释）。
+    wsrc_code = "\n".join(l.split("//")[0] for l in wsrc0.split("\n"))
+    line("PawMark" not in wsrc_code, "小爪印已从组件代码里撤掉（v22）")
     pyml = json.loads(api(f"/repos/{REPO}/contents/project.yml?ref={head}"))
     line(pyml["sha"] != v9tree["project.yml"],
          "project.yml 与 v9 不同（应该的：版本号 1.22.0/22 + 扩展挂 Resources/widget）")

@@ -215,7 +215,7 @@ struct StillWidgetBundle: WidgetBundle {
 struct StillWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: StillWidgetEntry
-    /// true = 只写字，不碰 CatView / PawMark（排障用，见 StillTextWidget）
+    /// true = 只写字、不画猫（排障用，见 StillTextWidget）
     var textOnly: Bool = false
 
     var body: some View {

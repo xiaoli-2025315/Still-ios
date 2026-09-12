@@ -346,9 +346,16 @@ jobs:
           </dict></plist>
           PLIST
 
+          # ★ TARGETED_DEVICE_FAMILY=1（只要 iPhone）必须在这里显式传。
+          #
+          #   写在 project.yml 的 settings.base 里**不生效** —— 打出来的包
+          #   UIDeviceFamily 一直是 [1, 2]（iPhone + iPad），Info.plist 里显式写也盖不住，
+          #   因为 Xcode 在 Process Info.plist 那一步会用这个 build setting 重新生成它。
+          #   命令行参数的优先级最高，这里传才作数。
           xcodebuild -scheme Still -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath Still.xcarchive archive \
+            TARGETED_DEVICE_FAMILY=1 \
             CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM='${{ env.IOS_DEVELOPMENT_TEAM }}' \

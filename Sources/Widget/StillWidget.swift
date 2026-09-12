@@ -94,7 +94,7 @@ struct StillWidget: Widget {
                 // 暖米底，猫图铺满 —— 组件本身一张图，不装卡片
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v24 · 猫")
+        .configurationDisplayName("还在 v25 · 猫")
         .description("它的一个房间，带猫。多摆几个，每个组件上都是它。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -117,7 +117,7 @@ struct StillTextWidget: Widget {
                 // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v24 · 字")
+        .configurationDisplayName("还在 v25 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

@@ -1,6 +1,6 @@
 name: Still
 options:
-  bundleIdPrefix: com.still
+  bundleIdPrefix: com.stillhome
   deploymentTarget:
     iOS: "17.0"
   groupSortPosition: none
@@ -19,8 +19,8 @@ settings:
     #
     #   顺带一个好处：设置 → 通用 → iPhone 储存空间 里能直接看到装的是第几版，
     #   「手机上到底跑的是哪一份」不再是靠猜。
-    MARKETING_VERSION: "1.18.0"
-    CURRENT_PROJECT_VERSION: "18"
+    MARKETING_VERSION: "1.19.0"
+    CURRENT_PROJECT_VERSION: "19"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -32,7 +32,7 @@ targets:
     platform: iOS
     # 显式写死，别让 XcodeGen 拿 bundleIdPrefix 去拼 —— 拼出来的名字
     # 一改 target 就变，签名和 App Group 跟着乱。
-    productBundleIdentifier: com.still.app
+    productBundleIdentifier: com.stillhome.still
     sources:
       # 一个 path 就够 —— Sources/App 已经含了 Shared/、Cat/、Home/、Panel/、PiP/。
       # 别再单独列 Shared/ 和 Cat/，XcodeGen 会生成两份引用，
@@ -50,7 +50,7 @@ targets:
       path: Still.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.still.app
+          - group.com.stillhome.still
     # ★ 这段权限声明不要删。
     #  曾经为了「自签工具可能签不上」把它去掉过，结果小组件反而搜不到了 ——
     #  带它的时候（旧版）是能正常添加的。去掉之后变量太多，无法定位。
@@ -101,7 +101,7 @@ targets:
     platform: iOS
     # 必须是「主 App 的 Bundle ID + 后缀」，这是 Apple 的硬规则，
     # 写成 com.still.widget 这种平级名字，签名时直接报错。
-    productBundleIdentifier: com.still.app.widget
+    productBundleIdentifier: com.stillhome.still.widget
     sources:
       - path: Sources/Widget
       - path: Sources/App/Island

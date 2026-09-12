@@ -34,14 +34,14 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v18"
+WANT_VERSION = "v19"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
 #   ⚠️ 但要说清楚：这一条是**推测**，没有实测证据。
 #   （原注释里写的那句「表现是组件加不了、重启一次好一次」是我自己编的，
 #    用户从没说过，2026-09-11 当场否认过。凡是加引号的"用户原话"，写入前必须能搜到。）
-WANT_MARKETING = "1.18.0"
-WANT_BUILD = "18"
+WANT_MARKETING = "1.19.0"
+WANT_BUILD = "19"
 
 
 def _token():
@@ -291,6 +291,25 @@ def main():
         build = plx.get("CFBundleVersion")
         line(short == WANT_MARKETING and build == WANT_BUILD,
              f"{label}: {short} ({build})   期望 {WANT_MARKETING} ({WANT_BUILD})")
+
+    # ---------------- ③b-2 身份（v19 换了全新 bundle id）
+    #
+    #   v9 能加、v10 起搜不到，把代码层面能对上的差异全部消完（v16 回退源码、
+    #   v17 设备类型、v18 隔离 ActivityKit/WidgetCenter）仍然搜不到。
+    #   剩下唯一没换过的就是**身份本身** —— iOS 按 bundle id 记「这个 App 有哪些扩展」，
+    #   旧身份的登记一旦坏了，覆盖安装永远洗不掉。
+    #   v19 起用全新身份，让系统当从没见过的 App 重新登记。
+    #   ★ 身份是签名 / 登记 / App Group 的根，今后不许随手改；要改必须整组一起改：
+    #     主 App id / 扩展 id（= 主 id + .widget）/ App Group / 核验断言。
+    print()
+    print("=== ③b-2 身份（bundle id）===")
+    WANT_APPID = "com.stillhome.still"
+    WANT_EXTID = WANT_APPID + ".widget"
+    for label, p, want in (("主 App", "Payload/Still.app/Info.plist", WANT_APPID),
+                           ("扩展", ext, WANT_EXTID)):
+        got = plistlib.loads(z.read(p)).get("CFBundleIdentifier")
+        line(got == want, f"{label} bundle id = {got}" +
+             ("" if got == want else f"  ← 期望 {want}！"))
     av = plistlib.loads(z.read("Payload/Still.app/Info.plist")).get("CFBundleVersion")
     ev = plistlib.loads(z.read(ext)).get("CFBundleVersion")
     line(av == ev, f"App 与扩展的 build 号一致：{av} / {ev}")

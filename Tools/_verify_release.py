@@ -34,14 +34,14 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v17"
+WANT_VERSION = "v18"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
 #   ⚠️ 但要说清楚：这一条是**推测**，没有实测证据。
 #   （原注释里写的那句「表现是组件加不了、重启一次好一次」是我自己编的，
 #    用户从没说过，2026-09-11 当场否认过。凡是加引号的"用户原话"，写入前必须能搜到。）
-WANT_MARKETING = "1.17.0"
-WANT_BUILD = "17"
+WANT_MARKETING = "1.18.0"
+WANT_BUILD = "18"
 
 
 def _token():
@@ -197,6 +197,51 @@ def main():
         n = wsrc.count(bad)
         line(n == 0, f"扩展源码里没有 {bad}（{why}）：{n} 处" +
              ("" if n == 0 else "  ← 不该有！"))
+
+    # ---------------- ①d 扩展进程里**不许**再碰灵动岛 / 跨进程问系统（v18）
+    #
+    #   到这里为止，v9 与现在的包里，plist、appintents 元数据、版本号全都对上了，
+    #   唯一剩下的实质差异就是**扩展二进制里多出来的那些调用**：
+    #     · ActivityKit（`Activity.activities` / `ActivityAuthorizationInfo`）
+    #     · `WidgetCenter.currentConfigurations()`
+    #   它们全是 v10 之后才进到 Shared/ 目录的，而 Shared/ 是扩展也编译的目录 ——
+    #   于是小组件自己的进程里也会去动灵动岛、反过来问系统要组件名单。
+    #   v18 用 `WIDGET_EXT` 编译标记把这些整段隔出去，扩展侧一个都不留。
+    print()
+    print("=== ①d 扩展侧不碰 ActivityKit / 不问系统组件配置 ===")
+    ysrc = api(f"/repos/{REPO}/contents/project.yml?ref={head}", raw=True).decode()
+    line("WIDGET_EXT" in ysrc and "OTHER_SWIFT_FLAGS" in ysrc,
+         "扩展 target 带 WIDGET_EXT 编译标记" +
+         ("" if "WIDGET_EXT" in ysrc else "  ← 没有这个标记，隔离就形同虚设！"))
+
+    def guarded(path, needles):
+        """文件里这些调用，是否**全部**落在 `#if !WIDGET_EXT` 块内。"""
+        txt = api(f"/repos/{REPO}/contents/{path}?ref={head}", raw=True).decode()
+        depth, bad = 0, []
+        for i, l in enumerate(txt.splitlines(), 1):
+            s = l.strip()
+            if s.startswith("#if !WIDGET_EXT"):
+                depth += 1
+            elif s == "#endif" and depth:
+                depth -= 1
+            elif depth == 0 and not s.startswith("//"):
+                for nd in needles:
+                    if nd in l:
+                        bad.append(f"{path}:{i} {s[:52]}")
+        return bad
+
+    offenders = []
+    offenders += guarded("Sources/App/Shared/SharedStore.swift",
+                         ["ActivityAuthorizationInfo", "Activity<", "import ActivityKit"])
+    offenders += guarded("Sources/App/Shared/RoomScope.swift",
+                         ["currentConfigurations", "import WidgetKit"])
+    offenders += guarded("Sources/App/Shared/PetEngine.swift", ["IslandBridge"])
+    offenders += guarded("Sources/App/Shared/TalkToCatIntent.swift", ["IslandBridge"])
+    line(not offenders,
+         "隔离干净（扩展侧 0 处外露调用）" if not offenders
+         else f"★ {len(offenders)} 处没被隔住：")
+    for o in offenders:
+        print("      ", o)
 
     # ---------------- ② 帧字体：**扩展里必须没有**（主 App 里有也无所谓）
     #

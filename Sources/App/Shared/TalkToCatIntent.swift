@@ -30,7 +30,9 @@ struct TalkToCatIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let name = SharedStore.load().catName ?? "还在"
         let reply = CatBrain.reply(to: message, catName: name)
+#if !WIDGET_EXT
         IslandBridge.shared.speak(reply: reply, catName: name)
+#endif
         return .result()
     }
 }

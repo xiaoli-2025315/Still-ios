@@ -293,7 +293,9 @@ final class PetEngine: ObservableObject {
 
     private func enterIsland() {
         inIsland = true
+#if !WIDGET_EXT
         IslandBridge.shared.enter(roomName: Rooms.byId[roomId]?.name ?? "")
+#endif
         actGen += 1
         act = .sit
         actDeadline = Date()      // 立刻走一次动作循环
@@ -301,7 +303,9 @@ final class PetEngine: ObservableObject {
 
     private func exitIsland() {
         inIsland = false
+#if !WIDGET_EXT
         IslandBridge.shared.leave()
+#endif
         startIdleLoop()
     }
 

@@ -1,5 +1,8 @@
 import Foundation
+// 向系统问「桌面上摆了哪几张卡」只有 App 做。扩展里不做这次跨进程询问。
+#if !WIDGET_EXT
 import WidgetKit
+#endif
 
 // MARK: - 房间范围：它只在你真正摆出来的那几个组件之间跑
 //
@@ -69,6 +72,7 @@ enum RoomScope {
     /// 为什么把 scope / 房间有效性都校验一遍：桌面上的组件可能是旧版本留下的、
     /// 或者房间列表改过名 —— 落进 `Rooms.byId` 里查不到的 id 会让猫无处可去。
     static func refreshFromSystem() async {
+#if !WIDGET_EXT
         guard #available(iOS 18.0, *) else { return }
 
         // ★ 一个进程里只问一次。
@@ -89,6 +93,7 @@ enum RoomScope {
 
         let uniq = Array(Set(ids)).sorted()
         if !uniq.isEmpty { systemScope = uniq }
+#endif
     }
 
     /// 面板显示用：这一版范围是从哪儿来的。

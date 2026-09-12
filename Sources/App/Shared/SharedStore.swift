@@ -1,6 +1,9 @@
 import Foundation
 import WidgetKit
+// 灵动岛那一套只有 App 用得上。小组件扩展里连 ActivityKit 都不该碰。
+#if !WIDGET_EXT
 import ActivityKit
+#endif
 
 // MARK: - App 与小组件之间的通道
 //
@@ -105,6 +108,7 @@ enum WidgetReloader {
     }
 }
 
+#if !WIDGET_EXT
 // MARK: - 灵动岛桥接
 //
 // 引擎只管「它进岛了 / 出岛了」，ActivityKit 的活儿全在这后面。
@@ -203,3 +207,4 @@ final class IslandBridge {
         Task { @MainActor in await endAll() }
     }
 }
+#endif

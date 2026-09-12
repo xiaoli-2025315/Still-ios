@@ -19,8 +19,8 @@ settings:
     #
     #   顺带一个好处：设置 → 通用 → iPhone 储存空间 里能直接看到装的是第几版，
     #   「手机上到底跑的是哪一份」不再是靠猜。
-    MARKETING_VERSION: "1.17.0"
-    CURRENT_PROJECT_VERSION: "17"
+    MARKETING_VERSION: "1.18.0"
+    CURRENT_PROJECT_VERSION: "18"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -132,6 +132,16 @@ targets:
     #  代价：小组件读不到共享容器 → RoomScope 的「自报家门」暂时失效，
     #  它先在预置的几间里跑。但行程表是确定性算的（Schedule.resolve），
     #  不依赖共享存储，唯一性不受影响。
+    # ★★ 小组件扩展专属编译标记：`WIDGET_EXT`
+    #
+    #   Shared/ 这个目录是两边共用的，但里面有一部分活儿**只有 App 能做**：
+    #     · 开 / 关灵动岛（ActivityKit）
+    #     · 向系统问「你桌面上摆了哪几张卡」（WidgetCenter.currentConfigurations）
+    #   这些在扩展进程里跑既没有意义，也不该发生。
+    #   加了这个标记之后，代码里用 `#if !WIDGET_EXT` 把它们隔出去，
+    #   扩展编出来的二进制里就一个 ActivityKit / WidgetCenter 调用都没有。
+    settings:
+      OTHER_SWIFT_FLAGS: -D WIDGET_EXT
     info:
       path: StillWidget-Info.plist
       properties:

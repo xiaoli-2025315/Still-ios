@@ -9,8 +9,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.20.0"
-    CURRENT_PROJECT_VERSION: "20"
+    MARKETING_VERSION: "1.21.0"
+    CURRENT_PROJECT_VERSION: "21"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -79,6 +79,10 @@ targets:
       - path: Sources/App/Shared
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
+      # 组件里那张静态猫图。★ 显式写 buildPhase：png 是资源不是源码，
+      # 不写会被静默不打包（真机表现就是组件里猫是空的）。
+      - path: Resources/widget
+        buildPhase: resources
     # ★★ 小组件扩展【不给】App Group 权限。这是让它能显示出内容的关键。
     #
     #  自签工具（全能签/轻松签）重签时生成的描述文件里，通常**不含**

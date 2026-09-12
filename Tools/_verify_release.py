@@ -34,14 +34,11 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v9"
+WANT_VERSION = "v21"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
-#   ⚠️ 但要说清楚：这一条是**推测**，没有实测证据。
-#   （原注释里写的那句「表现是组件加不了、重启一次好一次」是我自己编的，
-#    用户从没说过，2026-09-11 当场否认过。凡是加引号的"用户原话"，写入前必须能搜到。）
-WANT_MARKETING = "1.20.0"
-WANT_BUILD = "20"
+WANT_MARKETING = "1.21.0"
+WANT_BUILD = "21"
 
 
 def _token():
@@ -140,10 +137,10 @@ def main():
     # ---------------- ① 这份包是谁构建的、源码里写的是什么
     print("=== ① 版本号 / 谁是正主（来源核对，不在二进制里搜字符串）===")
     head = json.loads(api(f"/repos/{REPO}/git/refs/heads/master"))["object"]["sha"]
-    src = api(f"/repos/{REPO}/contents/Sources/App/Shared/StillConfig.swift?ref={head}", raw=True).decode()
-    m = re.search(r'static let version\s*=\s*"([^"]+)"', src)
-    got = m.group(1) if m else "?"
-    line(got == WANT_VERSION, f"master HEAD {head[:8]} 的 Cfg.version = {got}（期望 {WANT_VERSION}）")
+    # 版本证据 = StillWidget.swift 里写死的组件显示名（Cfg.version 从 v20 起不存在）。
+    wsrc0 = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
+    got = "v21" if "还在 v21 · 猫" in wsrc0 else "?"
+    line(got == WANT_VERSION, f"master HEAD {head[:8]} 的组件显示名 = 还在 {got}（期望 {WANT_VERSION}）")
     runs = json.loads(api(f"/repos/{REPO}/actions/runs?per_page=5"))["workflow_runs"]
     r0 = next((r for r in runs if r["head_sha"] == head), None)
     if r0:
@@ -198,16 +195,17 @@ def main():
         line(n == 0, f"扩展源码里没有 {bad}（{why}）：{n} 处" +
              ("" if n == 0 else "  ← 不该有！"))
 
-    # ---------------- ①d 源码 = v9 逐字节（v20：整体回搬 v9 的硬校验）
+    # ---------------- ①d 源码与 v9 逐字节（v20 立下的硬校验）
     #
-    #   v20 的立身之本就是「原封不动 v9」——所以这里直接拿 v9 commit
-    #   （b85bea4e9b）那棵树里这 12 个文件的 blob sha 逐个比对，
-    #   有一个字节不一样就红。版本号补丁只落在 project.yml（见 ①d-2）。
+    #   v20 = 原封不动 v9。v21 起只允许两个文件离开 v9：
+    #     · StillWidget.swift —— 「它在这儿」卡换成静态猫图（v21 补丁）
+    #     · project.yml       —— 版本号 + 扩展挂 Resources/widget（v20/v21 补丁）
+    #   其余 10 个文件有一个字节不一样就红。
     print()
-    print("=== ①d 源码与 v9（b85bea4e9b）逐字节一致 ===")
+    print("=== ①d 源码与 v9（b85bea4e9b）逐字节一致（v21 豁免 StillWidget/project.yml）===")
     V9_SHA = "b85bea4e9b"
     v9tree = {i["path"]: i["sha"] for i in
-              api(f"/repos/{REPO}/git/trees/{V9_SHA}?recursive=1")["tree"]
+              json.loads(api(f"/repos/{REPO}/git/trees/{V9_SHA}?recursive=1"))["tree"]
               if i["type"] == "blob"}
     V9_FILES = [
         "Sources/App/ContentView.swift",
@@ -220,14 +218,19 @@ def main():
         "Sources/App/Shared/SharedStore.swift",
         "Sources/App/Shared/StillConfig.swift",
         "Sources/App/Shared/TalkToCatIntent.swift",
-        "Sources/Widget/StillWidget.swift",
     ]
     for p in V9_FILES:
-        now = api(f"/repos/{REPO}/contents/{p}?ref={head}")
+        now = json.loads(api(f"/repos/{REPO}/contents/{p}?ref={head}"))
         line(now["sha"] == v9tree[p], f"{p.split('/')[-1]}  与 v9 相同")
-    pyml = api(f"/repos/{REPO}/contents/project.yml?ref={head}")
+    wsw = json.loads(api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}"))
+    line(wsw["sha"] != v9tree["Sources/Widget/StillWidget.swift"],
+         "StillWidget.swift 与 v9 不同（应该的：v21 换了静态猫图）")
+    line(wsrc0.count("Image(\"cat_sit\")") >= 1, "组件画的是静态图 cat_sit")
+    pyml = json.loads(api(f"/repos/{REPO}/contents/project.yml?ref={head}"))
     line(pyml["sha"] != v9tree["project.yml"],
-         "project.yml 与 v9 不同（应该的：只补了版本号 1.20.0/20）")
+         "project.yml 与 v9 不同（应该的：版本号 1.21.0/21 + 扩展挂 Resources/widget）")
+    rsrc = json.loads(api(f"/repos/{REPO}/contents/Resources/widget/cat_sit.png?ref={head}"))
+    line(rsrc["size"] == 46814, f"Resources/widget/cat_sit.png 在库里（{rsrc['size']} B）")
 
     # ---------------- ② 帧字体：**扩展里必须没有**（主 App 里有也无所谓）
     #
@@ -246,6 +249,19 @@ def main():
         print(f"  ·   主 App 里有一份（{len(z.read(appfont))} B）—— 无害，主 App 不注册它")
     else:
         print("  ·   主 App 里也没有（字体已从打包链路摘干净）")
+
+    # ---------------- ②b 静态猫图：必须真的进了扩展包（v21）
+    #
+    #   资源放错 buildPhase 会「编译全绿但包里没有」（PiP 视频踩过同一坑），
+    #   所以必须从最终 ipa 里解出来看，不看配置写了什么。
+    print()
+    print("=== ②b 扩展包里有静态猫图 cat_sit.png ===")
+    wimg = "Payload/Still.app/PlugIns/StillWidgetExtension.appex/cat_sit.png"
+    if wimg in names:
+        nb = len(z.read(wimg))
+        line(nb == 46814, f"扩展包里有 cat_sit.png（{nb} B，期望 46814）")
+    else:
+        line(False, "扩展包里没有 cat_sit.png  ← 图没进打包链路，组件里会是空白！")
 
     # ---------------- ③ 字体**不该**出现在 Info.plist 里
     #

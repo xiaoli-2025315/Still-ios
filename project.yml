@@ -19,8 +19,8 @@ settings:
     #
     #   顺带一个好处：设置 → 通用 → iPhone 储存空间 里能直接看到装的是第几版，
     #   「手机上到底跑的是哪一份」不再是靠猜。
-    MARKETING_VERSION: "1.16.0"
-    CURRENT_PROJECT_VERSION: "16"
+    MARKETING_VERSION: "1.17.0"
+    CURRENT_PROJECT_VERSION: "17"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -70,6 +70,10 @@ targets:
         #   所以真正的数字只有 settings.base 那一处 —— 一处改，两个 target 一起走。
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # ★ 必须显式写。上面 settings 里的 TARGETED_DEVICE_FAMILY 不会流进 Info.plist ——
+        #   不写的话 XcodeGen 塞的是默认值 [1, 2]（iPhone + iPad），
+        #   系统就会把这个 App 当成通用 App，而不是纯 iPhone App。
+        UIDeviceFamily: [1]
         CFBundleDisplayName: "还在"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
@@ -135,6 +139,10 @@ targets:
         #   两个 target 的 CFBundleVersion **必须一致** —— 不一致系统会拒绝加载扩展。
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # ★ 同主 App：必须显式写 [1]，否则默认是 [1, 2]。
+        #   小组件是按「给哪种设备」登记的，这里说 iPad 也行，
+        #   iPhone 的组件库就不会把它算作「为 iPhone 主屏优化」的那些。
+        UIDeviceFamily: [1]
         CFBundleDisplayName: "还在"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension

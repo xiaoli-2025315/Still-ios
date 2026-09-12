@@ -34,14 +34,14 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v16"
+WANT_VERSION = "v17"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
 #   ⚠️ 但要说清楚：这一条是**推测**，没有实测证据。
 #   （原注释里写的那句「表现是组件加不了、重启一次好一次」是我自己编的，
 #    用户从没说过，2026-09-11 当场否认过。凡是加引号的"用户原话"，写入前必须能搜到。）
-WANT_MARKETING = "1.16.0"
-WANT_BUILD = "16"
+WANT_MARKETING = "1.17.0"
+WANT_BUILD = "17"
 
 
 def _token():
@@ -249,6 +249,21 @@ def main():
     av = plistlib.loads(z.read("Payload/Still.app/Info.plist")).get("CFBundleVersion")
     ev = plistlib.loads(z.read(ext)).get("CFBundleVersion")
     line(av == ev, f"App 与扩展的 build 号一致：{av} / {ev}")
+
+    # ---------------- ③c 设备类型：**必须是纯 iPhone（[1]）**
+    #
+    #   `settings.base` 里写 `TARGETED_DEVICE_FAMILY: "1"` **没用** —— XcodeGen 生成
+    #   Info.plist 时给的是默认值 `[1, 2]`（iPhone + iPad）。
+    #   必须在两个 target 的 `info.properties` 里显式写 `UIDeviceFamily: [1]`。
+    #
+    #   声明成 [1, 2]，系统就把这个 App 当通用 App；小组件在 iPhone 的组件库里
+    #   不会被算作「为 iPhone 主屏幕优化」的那一批 —— 表现就是搜不到、加不了。
+    print()
+    print("=== ③c 设备类型（必须是 [1] = 纯 iPhone）===")
+    for label, p in (("主 App", "Payload/Still.app/Info.plist"),
+                     ("扩展", ext)):
+        fam = plistlib.loads(z.read(p)).get("UIDeviceFamily")
+        line(fam == [1], f"{label} UIDeviceFamily = {fam}（期望 [1]）")
 
     # ---------------- ④ 视频素材：能不能解
     print()

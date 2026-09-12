@@ -35,11 +35,11 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v23"
+WANT_VERSION = "v24"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
-WANT_MARKETING = "1.23.0"
-WANT_BUILD = "23"
+WANT_MARKETING = "1.24.0"
+WANT_BUILD = "24"
 
 
 def _token():
@@ -140,7 +140,7 @@ def main():
     head = json.loads(api(f"/repos/{REPO}/git/refs/heads/master"))["object"]["sha"]
     # 版本证据 = StillWidget.swift 里写死的组件显示名（Cfg.version 从 v20 起不存在）。
     wsrc0 = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
-    got = "v23" if "还在 v23 · 猫" in wsrc0 else "?"
+    got = "v24" if "还在 v24 · 猫" in wsrc0 else "?"
     line(got == WANT_VERSION, f"master HEAD {head[:8]} 的组件显示名 = 还在 {got}（期望 {WANT_VERSION}）")
     runs = json.loads(api(f"/repos/{REPO}/actions/runs?per_page=5"))["workflow_runs"]
     r0 = next((r for r in runs if r["head_sha"] == head), None)
@@ -226,7 +226,10 @@ def main():
     wsw = json.loads(api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}"))
     line(wsw["sha"] != v9tree["Sources/Widget/StillWidget.swift"],
          "StillWidget.swift 与 v9 不同（应该的：v21 起组件 = 大猫图）")
-    line(wsrc0.count("Image(\"cat_sit\")") >= 1, "组件本体是大猫图 cat_sit")
+    line("CatImageBytes.base64" in wsrc0 and "UIImage(data:" in wsrc0,
+         "猫图走内嵌 base64（v24：资源查找不可靠，数据编进二进制）")
+    line(".never" in wsrc0 and "alwaysCatEntry" in wsrc0,
+         "timeline 恒为大猫图（单 entry + .never，不判断它在不在）")
     # ★ 数代码不数注释：断言曾被源码注释里的 "PawMark" 触发过假报警（v15 的教训）。
     wsrc_code = "\n".join(l.split("//")[0] for l in wsrc0.split("\n"))
     line("PawMark" not in wsrc_code, "小爪印已从组件代码里撤掉（v22）")
@@ -236,7 +239,7 @@ def main():
          "卡片版式的说明文字已拿掉（只剩排障组件那 1 处）")
     pyml = json.loads(api(f"/repos/{REPO}/contents/project.yml?ref={head}"))
     line(pyml["sha"] != v9tree["project.yml"],
-         "project.yml 与 v9 不同（应该的：版本号 1.23.0/23 + 扩展挂 Resources/widget）")
+         "project.yml 与 v9 不同（应该的：版本号 1.24.0/24 + 扩展挂 Resources/widget）")
     rsrc = json.loads(api(f"/repos/{REPO}/contents/Resources/widget/cat_sit.png?ref={head}"))
     line(rsrc["size"] == 46814, f"Resources/widget/cat_sit.png 在库里（{rsrc['size']} B）")
 

@@ -2,30 +2,14 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// MARK: - 真的小组件
+// MARK: - 小组件
 //
-// ★ 这个文件解决的是整个 iOS 版最难的一条要求：
-//   **同一时刻，桌面上有且只有一个组件里有猫。**
-//
-// 难点：小组件是系统渲染的静态快照，各实例刷新时刻由系统决定（一天 72 次预算），
-//       它们之间没法互相商量。
-//
-// 破法：不让它们商量，让它们各自算同一个答案。
-//
-//   · 行程表是确定性算出来的：App 和小组件各自调 Schedule.resolve()，
-//     得到逐字节相同的同一份 —— 不再依赖 App Group（自签名下它常常不通）
-//   · 每个组件按行程表预排一条 timeline，entry 精确落在「猫进出我这个房间」的时刻
-//     （一天挪窝约 11 次，所以 8 小时的 timeline 里通常只有 2~4 个 entry）
-//   · 于是任意时刻 T，所有组件的答案都来自同一个 place(T)，只有一个回答 true
-//
-// 关键取舍：timeline 末尾一律放一个「不画猫」的兜底 entry。
-//   → 失败方向必须是「看不见它」，绝不能是「两个地方都有它」。
-//
-// 实测（Tools/_uniqueness.js，16 组件 × 7 天 × 3 种子 × 1 分钟采样）：
-//   两个组件同时有猫   0.0000%      （旧做法：2%~16%）
-//   它暂时看不见       0.1% ~ 1.6%  （覆盖越短、刷新越少，越多）
-
-// MARK: - Entry
+// v24 现状（用户拍板）：
+//   · 组件 = 一整张大猫图，**永远显示，不判断它在不在**。
+//     「同一时刻只在一处」对画面的约束撤掉 —— 每个组件都直接是猫。
+//   · 猫图走内嵌 base64（CatImageData.swift），不依赖任何资源查找：
+//     v21~v23 里 Image("cat_sit") 在组件进程里从来没显示出来过（文字能变、
+//     包里也有图），资源查找这条路不可信。数据编进二进制就没有丢失的可能。
 
 enum WidgetState {
     /// 它现在就在这个房间里
@@ -36,9 +20,6 @@ enum WidgetState {
     case noHome
 }
 
-/// 它这会儿在哪儿。
-/// ★ 不管猫在不在「我」这一间，用户都有权知道 —— 「可寻址」是七条原理之一。
-///   以前只有打开 App 才说，现在每个组件上都写，扫一眼桌面就知道去哪儿找它。
 struct WhereNow {
     let label: String      // "日历" / "灵动岛"
     let isIsland: Bool
@@ -60,52 +41,29 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     typealias Intent = SelectRoomIntent
 
     func placeholder(in context: Context) -> StillWidgetEntry {
-        StillWidgetEntry(date: Date(), state: .away(lastVisit: nil), roomName: "时钟")
+        Self.alwaysCatEntry(roomId: "clock", date: Date())
     }
 
     func snapshot(for configuration: SelectRoomIntent, in context: Context) async -> StillWidgetEntry {
         RoomScope.report(roomId: configuration.room.roomId)
-        return entry(for: configuration.room.roomId, at: Date())
+        return Self.alwaysCatEntry(roomId: configuration.room.roomId, date: Date())
     }
 
     func timeline(for configuration: SelectRoomIntent, in context: Context) async -> Timeline<StillWidgetEntry> {
-        let roomId = configuration.room.roomId
-        let now = Date()
+        // 自报家门：告诉别的进程「这个房间有组件在桌面上」（App 侧要用）。
+        RoomScope.report(roomId: configuration.room.roomId)
 
-        // 自报家门：告诉别的进程「这个房间有组件在桌面上」。
-        // 它只在你摆出来的房间之间跑，靠的就是每个组件各自报这一笔（见 RoomScope）。
-        RoomScope.report(roomId: roomId)
+        // 画面不依赖行程表：一条 entry，policy .never —— 内容不变就不用刷新，
+        // 也不占用一天 72 次的刷新预算。
+        return Timeline(entries: [Self.alwaysCatEntry(roomId: configuration.room.roomId, date: Date())],
+                        policy: .never)
+    }
 
-        // ★ 不再依赖 App Group：行程表是确定性算出来的，
-        //   小组件自己和 App 算出来的必然是同一份（见 Schedule.resolve 的注释）。
-        //   以前「读不到就显示『还没接它回家』」那一支删了 ——
-        //   自签名下 App Group 常常不通，那一支会让用户在桌面永远看不见它。
-        let segs = Schedule.resolve()
-
-        // 只排「有变化」的时刻。末尾那个 false 是兜底。
-        let moments = Schedule.moments(forRoom: roomId, segs: segs, from: now)
-        let entries = moments.map { m -> StillWidgetEntry in
-            let h = m.date.timeIntervalSince1970 / 3600.0
-            let wn = whereNow(segs: segs, atHour: h)
-            if m.here {
-                let seg = Schedule.segment(segs, atHour: h)
-                let since = seg.map { Date(timeIntervalSince1970: $0.t0 * 3600.0) } ?? m.date
-                return StillWidgetEntry(date: m.date,
-                                        state: .here(pose: Self.pose(roomId: roomId, at: m.date),
-                                                     since: since),
-                                        roomName: Rooms.byId[roomId]?.name ?? "",
-                                        whereNow: wn)
-            } else {
-                return StillWidgetEntry(date: m.date,
-                                        state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                        roomName: Rooms.byId[roomId]?.name ?? "",
-                                        whereNow: wn)
-            }
-        }
-
-        // .atEnd：走完最后一条就再要一条新的。
-        // 预算用尽时它会停在最后那条（兜底的「不在这儿」）—— 这是安全的失败方向。
-        return Timeline(entries: entries, policy: .atEnd)
+    /// 每个组件、任何时刻：同一个「它在这儿」的大猫图。
+    private static func alwaysCatEntry(roomId: String, date: Date) -> StillWidgetEntry {
+        StillWidgetEntry(date: date,
+                         state: .here(pose: .sit, since: date),
+                         roomName: Rooms.byId[roomId]?.name ?? "")
     }
 
     /// 小组件库里的预置：直接给你几个现成的，不用添加完再长按编辑。
@@ -120,43 +78,6 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
         ]
         return picks.map { AppIntentRecommendation(intent: SelectRoomIntent(room: $0.0),
                                                    description: $0.1) }
-    }
-
-    private func entry(for roomId: String, at date: Date) -> StillWidgetEntry {
-        let segs = Schedule.resolve()
-        let h = date.timeIntervalSince1970 / 3600.0
-        let here = Schedule.place(segs, atHour: h) == .room(roomId)
-        let name = Rooms.byId[roomId]?.name ?? ""
-        let wn = whereNow(segs: segs, atHour: h)
-        if here, let seg = Schedule.segment(segs, atHour: h) {
-            return StillWidgetEntry(date: date,
-                                    state: .here(pose: Self.pose(roomId: roomId, at: date),
-                                                 since: Date(timeIntervalSince1970: seg.t0 * 3600.0)),
-                                    roomName: name,
-                                    whereNow: wn)
-        }
-        return StillWidgetEntry(date: date,
-                                state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                roomName: name,
-                                whereNow: wn)
-    }
-
-    /// 它这会儿在哪个房间 —— 在灵动岛里也算一间（第 17 间）。
-    private func whereNow(segs: [Segment], atHour h: Double) -> WhereNow {
-        switch Schedule.place(segs, atHour: h) {
-        case .island:
-            return WhereNow(label: "灵动岛", isIsland: true)
-        case .room(let id):
-            return WhereNow(label: Rooms.byId[id]?.name ?? "—", isIsland: false)
-        }
-    }
-
-    /// 姿势确定性决定：同一个房间的同一个时刻，看几次都是同一个姿势。
-    /// 不用随机数 —— 否则每次重绘都在抖。
-    private static func pose(roomId: String, at date: Date) -> CatPose {
-        let quarter = Int(date.timeIntervalSince1970 / 900)
-        var r = SeededRandom(seed: FNV.hash(roomId) ^ UInt32(truncatingIfNeeded: quarter))
-        return [CatPose.sleep, .sit, .groom, .look][r.int(4)]
     }
 }
 
@@ -173,8 +94,8 @@ struct StillWidget: Widget {
                 // 暖米底，猫图铺满 —— 组件本身一张图，不装卡片
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v23 · 猫")
-        .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
+        .configurationDisplayName("还在 v24 · 猫")
+        .description("它的一个房间，带猫。多摆几个，每个组件上都是它。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -196,7 +117,7 @@ struct StillTextWidget: Widget {
                 // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v23 · 字")
+        .configurationDisplayName("还在 v24 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -205,8 +126,8 @@ struct StillTextWidget: Widget {
 @main
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
-        StillWidget()          // 小组件：按行程表预排，同一时刻只有一个有猫
-        StillTextWidget()      // 排障用：同上，但只画字（定位完可删）
+        StillWidget()          // 小组件：一张大猫图，永远显示
+        StillTextWidget()      // 排障用：只画字（定位完可删）
         StillLiveActivity()    // 灵动岛 + 锁屏横幅
     }
 }
@@ -230,9 +151,8 @@ struct StillWidgetView: View {
                 plainNoHome()
             }
         } else {
-            // v23：组件 = 一整张大猫图。没有文字、没有卡片版式 —— 用户拍板
-            // 「别把它当成一张卡片，把大图放到组件里」。
-            // 「它在这儿 / 它现在在哪儿」那些说明文字从来不是他要的，整个拿掉。
+            // 组件 = 一整张大猫图。没有文字、没有卡片版式。
+            // 状态（在/不在）不参与画面 —— 任何状态都是这只猫。
             catFull()
         }
     }
@@ -241,11 +161,29 @@ struct StillWidgetView: View {
 
     private func catFull() -> some View {
         link {
-            Image("cat_sit")
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let ui = Self.catUIImage() {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // 三条加载路全失败才会走到这儿 —— 至少让屏幕上有个东西，
+                //看到它就说明「图加载失败、绘制本身是好的」。
+                Text("🐱").font(.system(size: 48))
+            }
         }
+    }
+
+    /// 加载猫图的三条路，按可靠程度排序：
+    /// ① 内嵌 base64（数据在二进制里，没有查找、没有丢包可能）
+    /// ② 包内文件路径（cat_sit.png 就躺在扩展包根目录）
+    /// ③ 资源名查找（v21~v23走的这条路，实测不可靠）
+    static func catUIImage() -> UIImage? {
+        if let d = Data(base64Encoded: CatImageBytes.base64),
+           let ui = UIImage(data: d) { return ui }
+        if let p = Bundle.main.path(forResource: "cat_sit", ofType: "png"),
+           let ui = UIImage(contentsOfFile: p) { return ui }
+        return UIImage(named: "cat_sit")
     }
 
     // MARK: 纯文字版（不画猫、不画爪印，最大限度排除绘制层）
@@ -312,8 +250,5 @@ struct StillWidgetView: View {
 #Preview(as: .systemSmall) {
     StillWidget()
 } timeline: {
-    StillWidgetEntry(date: Date(), state: .here(pose: .sleep, since: Date().addingTimeInterval(-5400)),
-                     roomName: "时钟")
-    StillWidgetEntry(date: Date().addingTimeInterval(3600), state: .away(lastVisit: Date().addingTimeInterval(-7200)),
-                     roomName: "时钟")
+    StillWidgetEntry(date: Date(), state: .here(pose: .sit, since: Date()), roomName: "时钟")
 }

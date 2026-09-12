@@ -30,9 +30,10 @@ targets:
   Still:
     type: application
     platform: iOS
-    # 显式写死，别让 XcodeGen 拿 bundleIdPrefix 去拼 —— 拼出来的名字
-    # 一改 target 就变，签名和 App Group 跟着乱。
-    productBundleIdentifier: com.stillhome.still
+    # ★ 身份的真实规则：bundle id = bundleIdPrefix（options 里）+ target 名。
+    #   即：com.stillhome.Still / com.stillhome.StillWidgetExtension。
+    #   （v19 踩坑：这里写过 `productBundleIdentifier:` —— XcodeGen 没有这个 key，
+    #   一直被静默忽略，实际身份全靠 prefix 拼。别再写它，写核验脚本认真实值。）
     sources:
       # 一个 path 就够 —— Sources/App 已经含了 Shared/、Cat/、Home/、Panel/、PiP/。
       # 别再单独列 Shared/ 和 Cat/，XcodeGen 会生成两份引用，
@@ -99,9 +100,9 @@ targets:
   StillWidgetExtension:
     type: app-extension
     platform: iOS
-    # 必须是「主 App 的 Bundle ID + 后缀」，这是 Apple 的硬规则，
-    # 写成 com.still.widget 这种平级名字，签名时直接报错。
-    productBundleIdentifier: com.stillhome.still.widget
+    # 身份 = bundleIdPrefix + target 名 = com.stillhome.StillWidgetExtension。
+    # 它天然以主 App 的 id（com.stillhome.Still）为前缀，满足 Apple 的硬规则。
+    # ★ 不存在 `productBundleIdentifier:` 这个 key —— 写了也会被静默忽略（v19 踩坑）。
     sources:
       - path: Sources/Widget
       - path: Sources/App/Island

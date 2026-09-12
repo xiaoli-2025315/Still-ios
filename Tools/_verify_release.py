@@ -301,10 +301,12 @@ def main():
     #   v19 起用全新身份，让系统当从没见过的 App 重新登记。
     #   ★ 身份是签名 / 登记 / App Group 的根，今后不许随手改；要改必须整组一起改：
     #     主 App id / 扩展 id（= 主 id + .widget）/ App Group / 核验断言。
+    # ★ 真实规则：bundle id = bundleIdPrefix + target 名（XcodeGen 拼的）。
+    #   `productBundleIdentifier:` 那种写法不存在，写了也会被静默忽略。
     print()
     print("=== ③b-2 身份（bundle id）===")
-    WANT_APPID = "com.stillhome.still"
-    WANT_EXTID = WANT_APPID + ".widget"
+    WANT_APPID = "com.stillhome.Still"
+    WANT_EXTID = "com.stillhome.StillWidgetExtension"
     for label, p, want in (("主 App", "Payload/Still.app/Info.plist", WANT_APPID),
                            ("扩展", ext, WANT_EXTID)):
         got = plistlib.loads(z.read(p)).get("CFBundleIdentifier")

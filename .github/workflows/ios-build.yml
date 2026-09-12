@@ -187,11 +187,18 @@ jobs:
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
           set -o pipefail
+          # ★ TARGETED_DEVICE_FAMILY=1（只要 iPhone）必须在这里命令行传。
+          #   project.yml 的 settings.base 和 Info.plist 里写都不作数 ——
+          #   Xcode 在 Process Info.plist 那一步会用这个 build setting 重新生成
+          #   UIDeviceFamily，不传就是默认的 [1, 2]（iPhone + iPad）。
+          #   系统一看是通用 App，iPhone 的组件库就不把它算作
+          #   「为 iPhone 主屏幕优化」的那批 —— 表现就是搜不到、加不了。
           xcodebuild \
             -scheme Still \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build-device \
+            TARGETED_DEVICE_FAMILY=1 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee build-device.log

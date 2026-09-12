@@ -230,8 +230,10 @@ def main():
     # ★ 数代码不数注释：断言曾被源码注释里的 "PawMark" 触发过假报警（v15 的教训）。
     wsrc_code = "\n".join(l.split("//")[0] for l in wsrc0.split("\n"))
     line("PawMark" not in wsrc_code, "小爪印已从组件代码里撤掉（v22）")
-    line("它现在在" not in wsrc_code and "待了" not in wsrc_code,
-         "卡片版式的说明文字已全部拿掉（v23）")
+    # 「它现在在」只允许留在排障用的文字组件里（plainAway）；
+    # 「待了」（在/here 卡）应彻底消失。组件本体（catFull）没有任何说明文字。
+    line(wsrc_code.count("它现在在") == 1 and "待了" not in wsrc_code,
+         "卡片版式的说明文字已拿掉（只剩排障组件那 1 处）")
     pyml = json.loads(api(f"/repos/{REPO}/contents/project.yml?ref={head}"))
     line(pyml["sha"] != v9tree["project.yml"],
          "project.yml 与 v9 不同（应该的：版本号 1.23.0/23 + 扩展挂 Resources/widget）")

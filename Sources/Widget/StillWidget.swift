@@ -172,7 +172,7 @@ struct StillWidget: Widget {
             StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("还在 v21 · 猫")
+        .configurationDisplayName("还在 v22 · 猫")
         .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -195,7 +195,7 @@ struct StillTextWidget: Widget {
                 // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v21 · 字")
+        .configurationDisplayName("还在 v22 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -322,9 +322,13 @@ struct StillWidgetView: View {
         link {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 5) {
-                    PawMark(color: Cfg.Palette.accent)
-                        .frame(width: 11, height: 11)
-                        .opacity(0.45)
+                    // v22：小爪印换成猫的静态图（用户要求「不要猫爪」）。
+                    // 代价：桌面上每张「不在这儿」的卡都有猫，「同一时刻只在一处」在组件层暂让位。
+                    Image("cat_sit")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 15)
+                        .opacity(0.85)
                     Text(entry.roomName)
                         .font(.system(size: 13, weight: .medium, design: .serif))
                         .foregroundStyle(.secondary)

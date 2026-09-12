@@ -35,11 +35,11 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v21"
+WANT_VERSION = "v22"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
-WANT_MARKETING = "1.21.0"
-WANT_BUILD = "21"
+WANT_MARKETING = "1.22.0"
+WANT_BUILD = "22"
 
 
 def _token():
@@ -140,7 +140,7 @@ def main():
     head = json.loads(api(f"/repos/{REPO}/git/refs/heads/master"))["object"]["sha"]
     # 版本证据 = StillWidget.swift 里写死的组件显示名（Cfg.version 从 v20 起不存在）。
     wsrc0 = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
-    got = "v21" if "还在 v21 · 猫" in wsrc0 else "?"
+    got = "v22" if "还在 v22 · 猫" in wsrc0 else "?"
     line(got == WANT_VERSION, f"master HEAD {head[:8]} 的组件显示名 = 还在 {got}（期望 {WANT_VERSION}）")
     runs = json.loads(api(f"/repos/{REPO}/actions/runs?per_page=5"))["workflow_runs"]
     r0 = next((r for r in runs if r["head_sha"] == head), None)
@@ -225,11 +225,12 @@ def main():
         line(now["sha"] == v9tree[p], f"{p.split('/')[-1]}  与 v9 相同")
     wsw = json.loads(api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}"))
     line(wsw["sha"] != v9tree["Sources/Widget/StillWidget.swift"],
-         "StillWidget.swift 与 v9 不同（应该的：v21 换了静态猫图）")
-    line(wsrc0.count("Image(\"cat_sit\")") >= 1, "组件画的是静态图 cat_sit")
+         "StillWidget.swift 与 v9 不同（应该的：v21/v22 换了静态猫图）")
+    line(wsrc0.count("Image(\"cat_sit\")") >= 2, "猫静态图出现在「在/不在」两类卡上")
+    line("PawMark" not in wsrc0, "小爪印已从组件里撤掉（v22）")
     pyml = json.loads(api(f"/repos/{REPO}/contents/project.yml?ref={head}"))
     line(pyml["sha"] != v9tree["project.yml"],
-         "project.yml 与 v9 不同（应该的：版本号 1.21.0/21 + 扩展挂 Resources/widget）")
+         "project.yml 与 v9 不同（应该的：版本号 1.22.0/22 + 扩展挂 Resources/widget）")
     rsrc = json.loads(api(f"/repos/{REPO}/contents/Resources/widget/cat_sit.png?ref={head}"))
     line(rsrc["size"] == 46814, f"Resources/widget/cat_sit.png 在库里（{rsrc['size']} B）")
 

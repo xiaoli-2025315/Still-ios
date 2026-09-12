@@ -151,7 +151,7 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
 
           echo "=== 启动主 App ==="
-          xcrun simctl launch "$UDID" com.stillhome.Still
+          xcrun simctl launch "$UDID" com.still.Still
 
           # 默认 300× 演示速度，隔几秒截一张就能看到它挪窝
           # 文件名用 ASCII，避免 runner 默认 locale 下中文名写入失败导致产物缺失
@@ -347,8 +347,8 @@ jobs:
             <key>signingStyle</key><string>manual</string>
             <key>stripSwiftSymbols</key><true/>
             <key>provisioningProfiles</key><dict>
-              <key>com.stillhome.Still</key><string>${{ steps.signprep.outputs.APP_UUID }}</string>
-              <key>com.stillhome.StillWidgetExtension</key><string>${{ steps.signprep.outputs.WIDGET_UUID }}</string>
+              <key>com.still.Still</key><string>${{ steps.signprep.outputs.APP_UUID }}</string>
+              <key>com.still.StillWidgetExtension</key><string>${{ steps.signprep.outputs.WIDGET_UUID }}</string>
             </dict>
           </dict></plist>
           PLIST

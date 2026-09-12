@@ -1,9 +1,6 @@
 import Foundation
 import WidgetKit
-// 灵动岛那一套只有 App 用得上。小组件扩展里连 ActivityKit 都不该碰。
-#if !WIDGET_EXT
 import ActivityKit
-#endif
 
 // MARK: - App 与小组件之间的通道
 //
@@ -108,7 +105,6 @@ enum WidgetReloader {
     }
 }
 
-#if !WIDGET_EXT
 // MARK: - 灵动岛桥接
 //
 // 引擎只管「它进岛了 / 出岛了」，ActivityKit 的活儿全在这后面。
@@ -127,41 +123,23 @@ final class IslandBridge {
         return ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    /// 结束**所有**还活着的活动 —— 不只是本进程内存里那一个。
-    ///
-    /// ★ 为什么必须遍历系统里的活动列表：
-    ///   `activity` 只是本进程的引用。App 一重启它就成 nil，而系统里那个活动还在跑。
-    ///   于是每次启动都新开一个、旧的永远结束不掉 —— 屏幕顶上会攒出一摞「还在」。
-    ///   实测攒到过 4 条（IslandProbe 每次启动都开一个新的）。
-    @available(iOS 16.2, *)
-    private func endAll() async {
-        speakTimer?.cancel()
-        speakTimer = nil
-        activity = nil
-        for a in await Activity<StillActivityAttributes>.activities {
-            await a.end(using: nil, dismissalPolicy: .immediate)
-        }
-    }
-
     /// 引擎按行程表把它送进岛时调用（reply = nil，按原样显示房间名）。
     func enter(roomName: String, reply: String? = nil) {
         guard #available(iOS 16.2, *), supported else { return }
+        leave()
 
         let attrs = StillActivityAttributes(roomName: roomName)
         let state = StillActivityAttributes.ContentState(phase: .inside, roomName: roomName, reply: reply)
 
-        Task { @MainActor in
-            // 先清干净再开新的。顺序不能反 —— 反了旧的与新的会短暂并存。
-            await endAll()
-            do {
-                activity = try Activity<StillActivityAttributes>.request(
-                    attributes: attrs,
-                    content: .init(state: state, staleDate: Date().addingTimeInterval(60)),
-                    pushType: nil
-                )
-            } catch {
-                // 灵动岛起不来不该影响主 App —— 静默降级
-            }
+        do {
+            let a = try Activity<StillActivityAttributes>.request(
+                attributes: attrs,
+                content: .init(state: state, staleDate: Date().addingTimeInterval(60)),
+                pushType: nil
+            )
+            activity = a
+        } catch {
+            // 灵动岛起不来不该影响主 App —— 静默降级
         }
     }
 
@@ -172,25 +150,18 @@ final class IslandBridge {
         guard #available(iOS 16.2, *), supported else { return }
         let state = StillActivityAttributes.ContentState(phase: .inside, roomName: catName, reply: reply)
 
-        Task { @MainActor in
-            // 复用现存的那一个；系统里若有多条残留，只留最早的一条，其余收掉。
-            let live = await Activity<StillActivityAttributes>.activities
-            if let a = live.first {
-                for extra in live.dropFirst() {
-                    await extra.end(using: nil, dismissalPolicy: .immediate)
-                }
+        if let a = activity as? Activity<StillActivityAttributes> {
+            Task { await a.update(using: state) }
+        } else {
+            let attrs = StillActivityAttributes(roomName: catName)
+            do {
+                let a = try Activity<StillActivityAttributes>.request(
+                    attributes: attrs,
+                    content: .init(state: state, staleDate: Date().addingTimeInterval(60)),
+                    pushType: nil)
                 activity = a
-                await a.update(using: state)
-            } else {
-                let attrs = StillActivityAttributes(roomName: catName)
-                do {
-                    activity = try Activity<StillActivityAttributes>.request(
-                        attributes: attrs,
-                        content: .init(state: state, staleDate: Date().addingTimeInterval(60)),
-                        pushType: nil)
-                } catch {
-                    // 静默降级：岛起不来不影响 Siri 回话本身（语音已经说完）
-                }
+            } catch {
+                // 静默降级：岛起不来不影响 Siri 回话本身（语音已经说完）
             }
         }
 
@@ -204,7 +175,11 @@ final class IslandBridge {
         speakTimer?.cancel()
         speakTimer = nil
         guard #available(iOS 16.2, *) else { return }
-        Task { @MainActor in await endAll() }
+        if let a = activity as? Activity<StillActivityAttributes> {
+            Task {
+                await a.end(using: nil, dismissalPolicy: .immediate)
+            }
+        }
+        activity = nil
     }
 }
-#endif

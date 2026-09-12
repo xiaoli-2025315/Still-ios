@@ -12,10 +12,6 @@ struct StatusPanelView: View {
     @State private var toast: String? = nil
     @State private var catName: String = ""
     @State private var widgetCount: Int? = nil
-    @State private var scopeLine: String = "正在问系统…"
-    @State private var notifyAuth: String = "…"
-    @State private var notifyCount: Int = -1
-    @State private var notifyNext: Date? = nil
 
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
@@ -37,22 +33,9 @@ struct StatusPanelView: View {
             return "系统里有组件，但它一次都没刷新 → 扩展没被加载，多半是重签时插件没签上。"
         }
         if let n = widgetCount, n == 0 {
-            return "系统里没登记到组件。按这个顺序试：重启手机 → 打开一次「还在」→ 再去组件库加。"
+            return "系统里没登记到组件 → 先长按桌面把旧的删掉，重新加一个。"
         }
         return ""
-    }
-
-    /// 「下一条」那半句。
-    private var notifyNextText: String {
-        guard let d = notifyNext else { return "，下一条：算不出来" }
-        let f = DateFormatter()
-        f.dateFormat = Calendar.current.isDateInToday(d) ? "HH:mm" : "M月d日 HH:mm"
-        return "，下一条 \(f.string(from: d))"
-    }
-
-    private func loadNotify() {
-        Notifier.authText { notifyAuth = $0 }
-        Notifier.pending { n, next in notifyCount = n; notifyNext = next }
     }
 
     private func loadWidgetCount() {
@@ -60,8 +43,7 @@ struct StatusPanelView: View {
         WidgetCenter.shared.getCurrentConfigurations { result in
             let n: Int
             if case .success(let infos) = result {
-                // 两 kind 都要数：探针也是真的摆在桌面上的一个实例（v13 起取代了「只写字」）
-                n = infos.filter { $0.kind == "StillWidget" || $0.kind == "StillProbeWidget" }.count
+                n = infos.filter { $0.kind == "StillWidget" }.count
             } else {
                 n = -1
             }
@@ -69,25 +51,6 @@ struct StatusPanelView: View {
         }
         // 打开 App 就催一次刷新：小组件的刷新时刻由系统定，不催可能几小时不动。
         WidgetCenter.shared.reloadAllTimelines()
-    }
-
-    /// 把「它现在只在哪几间跑」变成一段字符串。
-    ///
-    /// ★ 顺带问一次系统配置 —— 和组件走的是同一个 API、同一份答案。
-    ///   这样「来源」那三个字才有意义：写着「系统配置」就说明这条正门在你这台机器上是通的；
-    ///   写着「默认五间」就说明没问到，猫会被稀释到 16 间里去（那正是「桌上一只猫都没有」的成因）。
-    private func loadScope() {
-        scopeLine = "它只在这几间跑（来源：\(RoomScope.scopeSource)）："
-            + RoomScope.active(atHour: Schedule.hourEpoch)
-                .compactMap { Rooms.byId[$0]?.name }
-                .joined(separator: " · ")
-        Task { @MainActor in
-            await RoomScope.refreshFromSystem()
-            scopeLine = "它只在这几间跑（来源：\(RoomScope.scopeSource)）："
-                + RoomScope.active(atHour: Schedule.hourEpoch)
-                    .compactMap { Rooms.byId[$0]?.name }
-                    .joined(separator: " · ")
-        }
     }
 
     var body: some View {
@@ -148,7 +111,7 @@ struct StatusPanelView: View {
             //   刷新 > 0 还空白 = 代码跑了，是渲染层的事
             let scope = RoomScope.active(atHour: Schedule.hourEpoch)
             VStack(alignment: .leading, spacing: 3) {
-                Text(scopeLine)
+                Text(RoomScope.isLive() ? "它只在这几间跑" : "它先在默认的五间跑")
                     .font(.system(size: 12))
                 Text(scope.compactMap { Rooms.byId[$0]?.name }.joined(separator: " · "))
                     .font(.system(size: 10.5))
@@ -168,36 +131,7 @@ struct StatusPanelView: View {
                         .foregroundStyle(Cfg.Palette.accent)
                 }
             }
-            .onAppear { loadWidgetCount(); loadScope() }
-
-            Divider().opacity(0.4)
-
-            // 通知自检
-            //
-            // 「它再也不来找我」有四个完全不同的原因，在界面上长得一模一样：
-            //   ① 权限被拒　② 一条都没挂上　③ 时刻算错了（都是过去的时间，永远不会响）
-            //   ④ 挂上了但系统没送
-            // 把前三个直接写出来，就不用干等几个小时去猜。
-            VStack(alignment: .leading, spacing: 5) {
-                Text("通知：\(notifyAuth)　·　挂着 \(notifyCount < 0 ? "?" : String(notifyCount)) 条\(notifyNextText)")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(notifyAuth.contains("被拒") ? Cfg.Palette.accent : .secondary)
-
-                HStack(spacing: 8) {
-                    // 5 秒后落一条通知 —— 这一颗把「要等半天」压成 5 秒。
-                    // 收得到：整条链子（排期 → 系统 → 点开 → 小窗）就是好的，只是慢。
-                    // 收不到：问题在权限或签名那侧，跟行程表无关。
-                    Button("敲我一下（5 秒后）") {
-                        Notifier.summonNow(after: 5)
-                        toast = "5 秒后会有一条通知，现在可以锁屏等一下"
-                    }
-                    .buttonStyle(ChipButton())
-
-                    Button("刷新") { loadWidgetCount(); loadScope(); loadNotify() }
-                        .buttonStyle(ChipButton())
-                }
-            }
-            .onAppear(perform: loadNotify)
+            .onAppear(perform: loadWidgetCount)
 
             Divider().opacity(0.5)
 

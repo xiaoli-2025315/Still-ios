@@ -11,14 +11,7 @@ enum Cfg {
     // App Group：主 App 和小组件之间唯一的通道。
     // ⚠️ 上 Xcode 后必须把这个前缀换成你自己的 Team ID，
     //    并在 Signing & Capabilities 里给 App 和 Widget 两个 target 都加上 App Groups。
-    static let appGroup = "group.com.stillhome.still"
-
-    /// ★ 版本号只在这一处定义。
-    ///   App 的状态栏和小组件里的排障文字都读它 —— 装完一眼就能确认是哪个包。
-    ///   此前两边各写各的（App 写 v9、组件里躺着一个写死的 v6），
-    ///   光看版本号根本分不清扩展是不是新的。
-    ///   这个文件同时编进主 App 和 Widget Extension（见 project.yml），所以两边都读得到。
-    static let version = "v19"
+    static let appGroup = "group.com.still.app"
 
     // MARK: 纵深（v1.23：z 是引擎的第三坐标，不是渲染层的滤镜）
     static let zNear: Float = 0.04     // 它自己能走到最近的地方

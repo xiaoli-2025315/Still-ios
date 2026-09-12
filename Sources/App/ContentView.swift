@@ -8,8 +8,7 @@ import SwiftUI
 // 折腾过一整天「改了没效果」，最后发现是手机里一直装着旧包。
 
 enum AppVersion {
-    /// 唯一来源是 Cfg.version —— 别在这儿另写一个字面量
-    static let tag = Cfg.version
+    static let tag = "v9"
 }
 
 // MARK: - 主界面
@@ -79,10 +78,6 @@ struct ContentView: View {
             engine.start()
             pip.start()
             IslandProbe.run()
-            // ★ App 也问一遍「桌面上摆着哪几间」，和组件走同一个 API、拿到同一份答案。
-            //   不问的话，App 里那只猫用的还是兜底的五间，可能落在一间没有组件的房间里 ——
-            //   而桌面上写的是另一间。两边不一致，「它只在一个地方」就没法解释。
-            Task { await RoomScope.refreshFromSystem() }
             // ★ 必须等权限问完再排期。
             //   第一次打开时「问权限」和「排通知」是并发的 —— 没授权时 add 会静默失败，
             //   表现就是「第一天好好的，装完当天一条都不来」，很难归因。
@@ -108,12 +103,6 @@ struct ContentView: View {
             switch scenePhase {
             case .active:
                 engine.start()
-                // ★ 每次回到前台都重排一遍。
-                //   以前只在冷启动排一次 —— 而通知的窗口是「未来 10 天」，
-                //   人在外面待久了，那批挂完就没了，App 又醒不过来重排，
-                //   于是它再也不来找你。现在每次见面都续上。
-                //   （reschedule 是「先挂新的再清旧的」，中途被打断也不会清空，见 Notifier。）
-                Notifier.reschedule()
                 // 你回到屋里了，小窗该收 —— 不然会同时有两只猫
                 pip.backInForeground()
             case .background:

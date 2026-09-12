@@ -34,14 +34,14 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v19"
+WANT_VERSION = "v9"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
 #   ⚠️ 但要说清楚：这一条是**推测**，没有实测证据。
 #   （原注释里写的那句「表现是组件加不了、重启一次好一次」是我自己编的，
 #    用户从没说过，2026-09-11 当场否认过。凡是加引号的"用户原话"，写入前必须能搜到。）
-WANT_MARKETING = "1.19.0"
-WANT_BUILD = "19"
+WANT_MARKETING = "1.20.0"
+WANT_BUILD = "20"
 
 
 def _token():
@@ -198,50 +198,36 @@ def main():
         line(n == 0, f"扩展源码里没有 {bad}（{why}）：{n} 处" +
              ("" if n == 0 else "  ← 不该有！"))
 
-    # ---------------- ①d 扩展进程里**不许**再碰灵动岛 / 跨进程问系统（v18）
+    # ---------------- ①d 源码 = v9 逐字节（v20：整体回搬 v9 的硬校验）
     #
-    #   到这里为止，v9 与现在的包里，plist、appintents 元数据、版本号全都对上了，
-    #   唯一剩下的实质差异就是**扩展二进制里多出来的那些调用**：
-    #     · ActivityKit（`Activity.activities` / `ActivityAuthorizationInfo`）
-    #     · `WidgetCenter.currentConfigurations()`
-    #   它们全是 v10 之后才进到 Shared/ 目录的，而 Shared/ 是扩展也编译的目录 ——
-    #   于是小组件自己的进程里也会去动灵动岛、反过来问系统要组件名单。
-    #   v18 用 `WIDGET_EXT` 编译标记把这些整段隔出去，扩展侧一个都不留。
+    #   v20 的立身之本就是「原封不动 v9」——所以这里直接拿 v9 commit
+    #   （b85bea4e9b）那棵树里这 12 个文件的 blob sha 逐个比对，
+    #   有一个字节不一样就红。版本号补丁只落在 project.yml（见 ①d-2）。
     print()
-    print("=== ①d 扩展侧不碰 ActivityKit / 不问系统组件配置 ===")
-    ysrc = api(f"/repos/{REPO}/contents/project.yml?ref={head}", raw=True).decode()
-    line("WIDGET_EXT" in ysrc and "OTHER_SWIFT_FLAGS" in ysrc,
-         "扩展 target 带 WIDGET_EXT 编译标记" +
-         ("" if "WIDGET_EXT" in ysrc else "  ← 没有这个标记，隔离就形同虚设！"))
-
-    def guarded(path, needles):
-        """文件里这些调用，是否**全部**落在 `#if !WIDGET_EXT` 块内。"""
-        txt = api(f"/repos/{REPO}/contents/{path}?ref={head}", raw=True).decode()
-        depth, bad = 0, []
-        for i, l in enumerate(txt.splitlines(), 1):
-            s = l.strip()
-            if s.startswith("#if !WIDGET_EXT"):
-                depth += 1
-            elif s == "#endif" and depth:
-                depth -= 1
-            elif depth == 0 and not s.startswith("//"):
-                for nd in needles:
-                    if nd in l:
-                        bad.append(f"{path}:{i} {s[:52]}")
-        return bad
-
-    offenders = []
-    offenders += guarded("Sources/App/Shared/SharedStore.swift",
-                         ["ActivityAuthorizationInfo", "Activity<", "import ActivityKit"])
-    offenders += guarded("Sources/App/Shared/RoomScope.swift",
-                         ["currentConfigurations", "import WidgetKit"])
-    offenders += guarded("Sources/App/Shared/PetEngine.swift", ["IslandBridge"])
-    offenders += guarded("Sources/App/Shared/TalkToCatIntent.swift", ["IslandBridge"])
-    line(not offenders,
-         "隔离干净（扩展侧 0 处外露调用）" if not offenders
-         else f"★ {len(offenders)} 处没被隔住：")
-    for o in offenders:
-        print("      ", o)
+    print("=== ①d 源码与 v9（b85bea4e9b）逐字节一致 ===")
+    V9_SHA = "b85bea4e9b"
+    v9tree = {i["path"]: i["sha"] for i in
+              api(f"/repos/{REPO}/git/trees/{V9_SHA}?recursive=1")["tree"]
+              if i["type"] == "blob"}
+    V9_FILES = [
+        "Sources/App/ContentView.swift",
+        "Sources/App/Panel/StatusPanelView.swift",
+        "Sources/App/PiP/Notifier.swift",
+        "Sources/App/PiP/PiPController.swift",
+        "Sources/App/Shared/PetEngine.swift",
+        "Sources/App/Shared/RoomScope.swift",
+        "Sources/App/Shared/Schedule.swift",
+        "Sources/App/Shared/SharedStore.swift",
+        "Sources/App/Shared/StillConfig.swift",
+        "Sources/App/Shared/TalkToCatIntent.swift",
+        "Sources/Widget/StillWidget.swift",
+    ]
+    for p in V9_FILES:
+        now = api(f"/repos/{REPO}/contents/{p}?ref={head}")
+        line(now["sha"] == v9tree[p], f"{p.split('/')[-1]}  与 v9 相同")
+    pyml = api(f"/repos/{REPO}/contents/project.yml?ref={head}")
+    line(pyml["sha"] != v9tree["project.yml"],
+         "project.yml 与 v9 不同（应该的：只补了版本号 1.20.0/20）")
 
     # ---------------- ② 帧字体：**扩展里必须没有**（主 App 里有也无所谓）
     #
@@ -305,8 +291,8 @@ def main():
     #   `productBundleIdentifier:` 那种写法不存在，写了也会被静默忽略。
     print()
     print("=== ③b-2 身份（bundle id）===")
-    WANT_APPID = "com.stillhome.Still"
-    WANT_EXTID = "com.stillhome.StillWidgetExtension"
+    WANT_APPID = "com.still.Still"
+    WANT_EXTID = "com.still.StillWidgetExtension"
     for label, p, want in (("主 App", "Payload/Still.app/Info.plist", WANT_APPID),
                            ("扩展", ext, WANT_EXTID)):
         got = plistlib.loads(z.read(p)).get("CFBundleIdentifier")

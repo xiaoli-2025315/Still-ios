@@ -35,11 +35,11 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 WORK = os.path.normpath(os.path.join(ROOT, "..", ".workbuddy", "tmp"))
 TMP = os.path.join(WORK, "release_check")
 
-WANT_VERSION = "v26"
+WANT_VERSION = "v27"
 # ★ 这两个是 iOS 用来判断「这个 App / 这个扩展是哪一版」的**真**版本号（不是 Cfg.version）。
 #   必须每出一版就变 —— 不变的话，覆盖安装后系统会沿用上一次那份扩展登记。
-WANT_MARKETING = "1.26.0"
-WANT_BUILD = "26"
+WANT_MARKETING = "1.27.0"
+WANT_BUILD = "27"
 
 
 def _token():
@@ -140,7 +140,7 @@ def main():
     head = json.loads(api(f"/repos/{REPO}/git/refs/heads/master"))["object"]["sha"]
     # 版本证据 = StillWidget.swift 里写死的组件显示名（Cfg.version 从 v20 起不存在）。
     wsrc0 = api(f"/repos/{REPO}/contents/Sources/Widget/StillWidget.swift?ref={head}", raw=True).decode()
-    got = "v26" if "还在 v26 · 猫" in wsrc0 else "?"
+    got = "v27" if "还在 v27 · 猫" in wsrc0 else "?"
     line(got == WANT_VERSION, f"master HEAD {head[:8]} 的组件显示名 = 还在 {got}（期望 {WANT_VERSION}）")
     runs = json.loads(api(f"/repos/{REPO}/actions/runs?per_page=5"))["workflow_runs"]
     r0 = next((r for r in runs if r["head_sha"] == head), None)
@@ -175,22 +175,30 @@ def main():
         line(inb == should,
              f"{'有' if inb else '没有'} {name}" + ("" if inb == should else "  ← 不该是这样！"))
 
-    # ---------------- ①c 扩展侧**完全不碰**帧字体（v16 = v9 形态）
+    # ---------------- ①c 帧动画的边界（v27）
     #
-    #   v9 → v15 之间，扩展里唯一实质性的新东西就是那份自造的 sbix 字体（让猫逐帧动）。
-    #   时间线对得很整齐：**v9 没有它、能加；v11 起有它、加不了。**
-    #
-    #   v16 要先把「能加」拿回来，所以扩展这一侧连字体文件都不放
-    #   （project.yml 里也拿掉了 `Resources/fonts`）——
-    #   **不放文件，就不存在「系统解析这份字体时出事」这条路径。**
-    #   猫暂时是 v9 那套矢量静态猫（CatView）：一样有猫，只是不逐帧动。
+    #   v11~v15 的帧字体 = sbix **位图**字体 + 字体文件进扩展包 —— 那条路死了：
+    #   位图在组件进程全灭（v21~v25 五版实证），字体文件进包是 v10~v19 的头号嫌疑。
+    #   v27 的形态两样都避开：
+    #     · 字体 = **纯矢量轮廓**（glyf），与 v20 起每次都能显示的矢量同一层；
+    #     · 字体数据 **base64 编进代码**，扩展包里不出现任何 .ttf 文件；
+    #     · 运行时注册（CTFontManagerRegisterFontsForURL .process），失败降级静态猫；
+    #     · 组件库预览卡（placeholder/snapshot）不碰字体，只走静态矢量猫。
     print()
-    print("=== ①c 扩展应该是 v9 形态（不碰字体 / 没有动画代码）===")
-    for bad, why in (("CatFont", "帧字体加载器"),
-                     ("StillFrames", "字体文件名"),
-                     ("animated", "动画开关"),
-                     ("Ticking", "每秒翻页的计时器"),
-                     ("CTFontManager", "运行时注册字体"),
+    print("=== ①c 帧动画形态（v27：矢量帧字体，内嵌进代码）===")
+    for good, why in (("CatFrameFonts", "内嵌字体数据文件"),
+                      ("CatFrames", "逐帧翻页视图"),
+                      ("timerInterval", "系统每秒自翻页（不花刷新额度）"),
+                      ("CTFontManagerRegisterFontsForURL", "运行时注册（失败可降级）"),
+                      ("VectorCat", "静态矢量猫兜底")):
+        n = wsrc.count(good)
+        line(n > 0, f"扩展源码里有 {good}（{why}）：{n} 处" +
+             ("" if n > 0 else "  ← 不该没有！"))
+    line("animated" in wsrc0 and "CatFontReg.ok()" in wsrc0,
+         "动画只在桌面 timeline 开（entry.animated），预览卡不碰字体")
+    for bad, why in (("UIAppFonts", "Info.plist 注册（启动即加载，会连坐）"),
+                     ("sbix", "位图字形（组件进程里位图全灭）"),
+                     ("UIImage", "位图加载"),
                      ("currentConfigurations", "跨进程问系统要组件配置")):
         n = wsrc.count(bad)
         line(n == 0, f"扩展源码里没有 {bad}（{why}）：{n} 处" +
@@ -241,27 +249,45 @@ def main():
          "卡片版式的说明文字已拿掉（只剩排障组件那 1 处）")
     pyml = json.loads(api(f"/repos/{REPO}/contents/project.yml?ref={head}"))
     line(pyml["sha"] != v9tree["project.yml"],
-         "project.yml 与 v9 不同（应该的：版本号 1.24.0/24 + 扩展挂 Resources/widget）")
+         "project.yml 与 v9 不同（应该的：版本号 1.27.0/27 + 扩展挂 Resources/widget）")
     rsrc = json.loads(api(f"/repos/{REPO}/contents/Resources/widget/cat_sit.png?ref={head}"))
     line(rsrc["size"] == 41111, f"Resources/widget/cat_sit.png 在库里（{rsrc['size']} B，v25 压平不透明 41111）")
 
-    # ---------------- ② 帧字体：**扩展里必须没有**（主 App 里有也无所谓）
+    # ---------------- ②c 帧字体数据真的编进了扩展二进制（v27）
     #
-    #   v11~v15 这里查的是「字体在两个 target 里都在吗」。v16 反过来：
-    #   扩展那一侧**不许有** —— 有，就意味着系统启动扩展时可能去解析它，
-    #   而那正是「v9 能加、v11 起加不了」唯一对得上的变量。
-    #   主 App 里有一份不算事：主 App 不注册它（UIAppFonts 为空），不会去解析。
+    #   CatFrameFonts.swift 在库里 ≠ 字体在包里 —— 必须从最终 ipa 的
+    #   扩展可执行文件里搜到字体家族名（Swift 只内联 ≤15 字节字符串，
+    #   "StillCatFur" 10 字节可能被内联，所以 5 个名字任一命中即算过）。
     print()
-    print("=== ② 扩展包里没有帧字体（v16 形态）===")
-    wfont = "Payload/Still.app/PlugIns/StillWidgetExtension.appex/StillFrames.ttf"
-    has_w = wfont in names
-    line(not has_w, "扩展包里没有 StillFrames.ttf" +
-         ("" if not has_w else f"  ← 不该有（{len(z.read(wfont))} B）！"))
-    appfont = "Payload/Still.app/StillFrames.ttf"
-    if appfont in names:
-        print(f"  ·   主 App 里有一份（{len(z.read(appfont))} B）—— 无害，主 App 不注册它")
+    print("=== ②c 扩展二进制里编进了帧字体（v27）===")
+    ext_bin = "Payload/Still.app/PlugIns/StillWidgetExtension.appex/StillWidgetExtension"
+    if ext_bin in names:
+        bb = z.read(ext_bin)
+        hits = [nm for nm in ("StillCatFur", "StillCatCream", "StillCatDark",
+                              "StillCatInk", "StillCatSoft") if nm.encode() in bb]
+        line(len(hits) >= 3,
+             f"扩展二进制里搜到字体家族名：{len(hits)}/5 {hits}")
     else:
-        print("  ·   主 App 里也没有（字体已从打包链路摘干净）")
+        line(False, "扩展可执行文件不在包里！")
+
+    # ---------------- ② 扩展包里**没有任何字体文件**（v27）
+    #
+    #   v27 的帧字体数据 base64 编进二进制（CatFrameFonts.swift），
+    #   扩展包里不该出现任何 .ttf —— 有文件 = 系统启动扩展时可能去解析它，
+    #   那是 v10~v19「加不了组件」的头号嫌疑路径，不碰。
+    print()
+    print("=== ② 扩展包里没有任何字体文件（v27：字体编进代码，不落文件）===")
+    ttf_in_ext = [n for n in names
+                  if n.startswith("Payload/Still.app/PlugIns/") and n.endswith(".ttf")]
+    line(not ttf_in_ext, "扩展包里没有 .ttf 文件" +
+         ("" if not ttf_in_ext else f"  ← 不该有：{ttf_in_ext}！"))
+    ttf_in_app = [n for n in names
+                  if n.startswith("Payload/Still.app/") and "PlugIns" not in n
+                  and n.endswith(".ttf")]
+    if ttf_in_app:
+        print("  ·   主 App 里有:", ttf_in_app, "—— 无害，主 App 不注册它")
+    else:
+        print("  ·   主 App 里也没有（打包链路里已无字体文件）")
 
     # ---------------- ②b 静态猫图：必须真的进了扩展包（v21）
     #

@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import CoreText
 
 // MARK: - 小组件
 //
@@ -31,6 +32,9 @@ struct StillWidgetEntry: TimelineEntry {
     let roomName: String
     /// 它现在在哪儿。给默认值，旧调用点不用跟着改。
     var whereNow: WhereNow? = nil
+    /// true = 帧动画（每秒翻页）。组件库的预览卡（placeholder/snapshot）保持 false：
+    /// 预览那条路只走静态矢量猫，不碰字体（v16 立的规矩：预览路径上不放会失败的东西）。
+    var animated: Bool = false
 }
 
 // MARK: - Provider
@@ -54,16 +58,18 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
         RoomScope.report(roomId: configuration.room.roomId)
 
         // 画面不依赖行程表：一条 entry，policy .never —— 内容不变就不用刷新，
-        // 也不占用一天 72 次的刷新预算。
-        return Timeline(entries: [Self.alwaysCatEntry(roomId: configuration.room.roomId, date: Date())],
+        // 也不占用一天 72 次的刷新预算。动画靠 Text(timerInterval:) 系统每秒自翻页。
+        return Timeline(entries: [Self.alwaysCatEntry(roomId: configuration.room.roomId,
+                                                      date: Date(), animated: true)],
                         policy: .never)
     }
 
     /// 每个组件、任何时刻：同一个「它在这儿」的猫。
-    private static func alwaysCatEntry(roomId: String, date: Date) -> StillWidgetEntry {
+    private static func alwaysCatEntry(roomId: String, date: Date, animated: Bool = false) -> StillWidgetEntry {
         StillWidgetEntry(date: date,
                          state: .here(pose: .sit, since: date),
-                         roomName: Rooms.byId[roomId]?.name ?? "")
+                         roomName: Rooms.byId[roomId]?.name ?? "",
+                         animated: animated)
     }
 
     /// 小组件库里的预置：直接给你几个现成的，不用添加完再长按编辑。
@@ -93,7 +99,7 @@ struct StillWidget: Widget {
             StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v26 · 猫")
+        .configurationDisplayName("还在 v27 · 猫")
         .description("它的一个房间，带猫。多摆几个，每个组件上都是它。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -110,7 +116,7 @@ struct StillTextWidget: Widget {
             StillWidgetView(entry: entry, textOnly: true)
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v26 · 字")
+        .configurationDisplayName("还在 v27 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -148,13 +154,20 @@ struct StillWidgetView: View {
         }
     }
 
-    // MARK: 矢量猫铺满组件
+    // MARK: 猫铺满组件
 
     private func catFull() -> some View {
         link {
-            VectorCat()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(family == .systemMedium ? 10 : 4)
+            Group {
+                // 桌面上的卡走帧动画；字体没注册上就退回静态矢量猫 —— 组件照样在。
+                if entry.animated, CatFontReg.ok() {
+                    CatFrames(pt: family == .systemMedium ? 112 : 96, start: entry.date)
+                } else {
+                    VectorCat()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(family == .systemMedium ? 10 : 4)
         }
     }
 
@@ -372,6 +385,74 @@ struct VectorCat: View {
             }
             p.closeSubpath()
         }
+    }
+}
+
+// MARK: - 帧字体注册（v27）
+//
+// 字体数据在 CatFrameFonts.swift 里（base64 直接编进二进制）。
+// 运行时按需注册，任何一步失败都只是「猫不动」，静态矢量猫照常显示 ——
+// 绝不连坐组件本体。也绝不用 UIAppFonts（启动即加载，失败 = 整个扩展失败）。
+
+enum CatFontReg {
+    private static var checked = false
+    private static var usable = false
+
+    static func ok() -> Bool {
+        if checked { return usable }
+        checked = true
+        for f in CatFrameFonts.all {
+            guard let data = Data(base64Encoded: f.b64) else { return false }
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(f.name + ".ttf")
+            do { try data.write(to: url) } catch { return false }
+            // ① 先让 CoreText 验一遍 —— 它说不行就拉倒
+            guard let ds = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL)
+                    as? [CTFontDescriptor], !ds.isEmpty else { return false }
+            // ② 进程内注册（scope = .process，不需要任何权限）
+            var err: Unmanaged<CFError>?
+            guard CTFontManagerRegisterFontsForURL(url as CFURL, .process, &err) else {
+                return false
+            }
+        }
+        usable = true
+        return true
+    }
+}
+
+// MARK: - 逐帧翻页的猫（v27）
+//
+// 5 层各一套字体（同色层一个字形一种颜色），同一个计时器 → 每层同步翻页。
+// 只显示计时器文本的最后一个字符（'0'..'9' = 10 帧，每秒一帧，10 秒一循环）：
+// 先 .fixedSize() 按完整宽度排版，再 .frame(width: 1em) + .clipped() 裁到最右一位。
+
+struct CatFrames: View {
+    let pt: CGFloat
+    let start: Date
+    /// 字形高 1150 / 字宽 1000（画布 200x230，见 Tools/_cat_font_vector.py）
+    private var h: CGFloat { pt * 1.15 }
+
+    var body: some View {
+        ZStack {
+            layer("StillCatFur",   Color(red: 0.79,  green: 0.48,  blue: 0.31))
+            layer("StillCatCream", Color(red: 0.95,  green: 0.87,  blue: 0.76))
+            layer("StillCatDark",  Color(red: 0.60,  green: 0.35,  blue: 0.21))
+            layer("StillCatInk",   Color(red: 0.24,  green: 0.17,  blue: 0.12))
+            layer("StillCatSoft",  Color(red: 0.596, green: 0.373, blue: 0.243))
+        }
+    }
+
+    private func layer(_ name: String, _ color: Color) -> some View {
+        Text(timerInterval: start.addingTimeInterval(-120)
+                              ... start.addingTimeInterval(60 * 60 * 24 * 365),
+             countsDown: false)
+            .font(.custom(name, size: pt))
+            .foregroundColor(color)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(width: pt, height: h,
+                   alignment: Alignment(horizontal: .trailing, vertical: .center))
+            .clipped()
     }
 }
 

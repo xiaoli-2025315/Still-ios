@@ -196,11 +196,13 @@ def main():
              ("" if n > 0 else "  ← 不该没有！"))
     line("animated" in wsrc0 and "CatFontReg.ok()" in wsrc0,
          "动画只在桌面 timeline 开（entry.animated），预览卡不碰字体")
+    # ★ 数代码不数注释：注释里写着「绝不用 UIAppFonts」，按原文数会假报警（v15 教训）
+    wsrc_nocomment = "\n".join(l.split("//")[0] for l in wsrc0.split("\n"))
     for bad, why in (("UIAppFonts", "Info.plist 注册（启动即加载，会连坐）"),
                      ("sbix", "位图字形（组件进程里位图全灭）"),
                      ("UIImage", "位图加载"),
                      ("currentConfigurations", "跨进程问系统要组件配置")):
-        n = wsrc.count(bad)
+        n = wsrc_nocomment.count(bad)
         line(n == 0, f"扩展源码里没有 {bad}（{why}）：{n} 处" +
              ("" if n == 0 else "  ← 不该有！"))
 

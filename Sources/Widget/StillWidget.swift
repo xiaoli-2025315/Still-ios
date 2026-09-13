@@ -1,16 +1,15 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
-import CoreText
 
 // MARK: - 小组件
 //
-// v26 现状（豆包方案 1，用户拍板）：
-//   · 组件 = 暖米底上一只**纯代码画的矢量猫**。不用任何图片文件——
-//     v21~v23 资源名查找不显示、v24~v25 内嵌位图解码出来是黑/灰块，
-//     而文字、爪印这类代码直画的矢量从 v20 起每一次都显示成功。
-//     → 猫改走与爪印同一层的绘制方式（SwiftUI Canvas 矢量）。
-//   · 「同一时刻只在一处」的画面约束已撤（v24 起）：每个组件都是这只猫。
+// v28（豆包办法，用户拍板）：帧动画不走字体 —— v27 的猫不动，字体注册这条链
+// 在组件进程里不可靠，整个绕开。现在的形态：
+//   · 每一帧 = 纯 SwiftUI 矢量（v26 那套画法，参数化出尾巴摆动和眨眼）；
+//   · 画哪一帧 = entry 自带的时间算出来（Int(date.timeIntervalSince1970) % 10）；
+//   · timeline 一次给 40 条 entry、每秒一条，系统到点自己换帧。
+// 没有注册、没有字体、没有图片 —— 没有任何可能失败的步骤。
 
 enum WidgetState {
     /// 它现在就在这个房间里
@@ -32,9 +31,6 @@ struct StillWidgetEntry: TimelineEntry {
     let roomName: String
     /// 它现在在哪儿。给默认值，旧调用点不用跟着改。
     var whereNow: WhereNow? = nil
-    /// true = 帧动画（每秒翻页）。组件库的预览卡（placeholder/snapshot）保持 false：
-    /// 预览那条路只走静态矢量猫，不碰字体（v16 立的规矩：预览路径上不放会失败的东西）。
-    var animated: Bool = false
 }
 
 // MARK: - Provider
@@ -43,6 +39,10 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
 
     typealias Entry = StillWidgetEntry
     typealias Intent = SelectRoomIntent
+
+    /// 一次 timeline 派多少条 entry。每条隔 1 秒 = 猫每秒跳一帧、连动 40 秒，
+    /// 之后系统按 .atEnd 来要下一段（要不要得看刷新额度，额度内尽量接上）。
+    private static let framesPerTimeline = 40
 
     func placeholder(in context: Context) -> StillWidgetEntry {
         Self.alwaysCatEntry(roomId: "clock", date: Date())
@@ -57,19 +57,19 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
         // 自报家门：告诉别的进程「这个房间有组件在桌面上」（App 侧要用）。
         RoomScope.report(roomId: configuration.room.roomId)
 
-        // 画面不依赖行程表：一条 entry，policy .never —— 内容不变就不用刷新，
-        // 也不占用一天 72 次的刷新预算。动画靠 Text(timerInterval:) 系统每秒自翻页。
-        return Timeline(entries: [Self.alwaysCatEntry(roomId: configuration.room.roomId,
-                                                      date: Date(), animated: true)],
-                        policy: .never)
+        let now = Date()
+        let entries = (0..<Self.framesPerTimeline).map { i in
+            Self.alwaysCatEntry(roomId: configuration.room.roomId,
+                                date: now.addingTimeInterval(Double(i)))
+        }
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
     /// 每个组件、任何时刻：同一个「它在这儿」的猫。
-    private static func alwaysCatEntry(roomId: String, date: Date, animated: Bool = false) -> StillWidgetEntry {
+    private static func alwaysCatEntry(roomId: String, date: Date) -> StillWidgetEntry {
         StillWidgetEntry(date: date,
                          state: .here(pose: .sit, since: date),
-                         roomName: Rooms.byId[roomId]?.name ?? "",
-                         animated: animated)
+                         roomName: Rooms.byId[roomId]?.name ?? "")
     }
 
     /// 小组件库里的预置：直接给你几个现成的，不用添加完再长按编辑。
@@ -99,7 +99,7 @@ struct StillWidget: Widget {
             StillWidgetView(entry: entry, textOnly: false)
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v27 · 猫")
+        .configurationDisplayName("还在 v28 · 猫")
         .description("它的一个房间，带猫。多摆几个，每个组件上都是它。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -116,7 +116,7 @@ struct StillTextWidget: Widget {
             StillWidgetView(entry: entry, textOnly: true)
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v27 · 字")
+        .configurationDisplayName("还在 v28 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -139,6 +139,11 @@ struct StillWidgetView: View {
     /// true = 只写字、不画猫（排障用，见 StillTextWidget）
     var textOnly: Bool = false
 
+    /// 帧号只由 entry 自带的时间决定：同一时刻所有组件同一帧，无需任何存储。
+    static func frameIndex(_ date: Date) -> Int {
+        Int(date.timeIntervalSince1970) % 10
+    }
+
     var body: some View {
         if textOnly {
             switch entry.state {
@@ -158,16 +163,9 @@ struct StillWidgetView: View {
 
     private func catFull() -> some View {
         link {
-            Group {
-                // 桌面上的卡走帧动画；字体没注册上就退回静态矢量猫 —— 组件照样在。
-                if entry.animated, CatFontReg.ok() {
-                    CatFrames(pt: family == .systemMedium ? 112 : 96, start: entry.date)
-                } else {
-                    VectorCat()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(family == .systemMedium ? 10 : 4)
+            VectorCat(frame: Self.frameIndex(entry.date))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(family == .systemMedium ? 10 : 4)
         }
     }
 
@@ -232,17 +230,31 @@ struct StillWidgetView: View {
     }
 }
 
-// MARK: - 矢量猫
+// MARK: - 矢量猫（带帧）
 //
 // 设计坐标系 172×230（跟原来那张猫图同比例），Canvas 里按组件实际尺寸缩放。
-// 全部是 Path / 椭圆 / 直线 —— 和 v20~v22 一直能显示的爪印同一层绘制。
+// 全部是 Path / 椭圆 / 直线 —— 和 v20 起每次都能显示的爪印同一层绘制。
+//
+// frame 0..<10 = 动画的第几帧：
+//   · 尾巴按正弦左右摆，10 帧一个来回；
+//   · 第 5 帧眨眼（眼睛从圆点变成一条线）。
+// frame 缺省 0 = 静态猫（v26 原样，预览卡走这个）。
 
 struct VectorCat: View {
+    var frame: Int = 0
+
     // 配色跟随项目色板：赤陶主色 + 深一档花纹 + 深棕五官 + 奶色胸脯
     private let fur  = Color(red: 0.79, green: 0.48, blue: 0.31)  // #C97B4E 赤陶
     private let dark = Color(red: 0.60, green: 0.35, blue: 0.21)  // 花纹深档
     private let ink  = Color(red: 0.24, green: 0.17, blue: 0.12)  // 五官
     private let cream = Color(red: 0.95, green: 0.87, blue: 0.76) // 胸脯
+
+    /// 这一帧尾巴的摆幅：-1...1，帧 0 和帧 9 之间一个完整来回。
+    private var sway: Double {
+        sin(Double(frame % 10) / 10 * 2 * .pi)
+    }
+    /// 这一帧是否眨眼（每 10 秒里的第 6 秒闭眼 1 秒）。
+    private var blinking: Bool { frame % 10 == 5 }
 
     var body: some View {
         Canvas { ctx, size in
@@ -252,16 +264,17 @@ struct VectorCat: View {
                           y: (size.height - 230 * s) / 2)
             c.scaleBy(x: s, y: s)
 
-            // —— 尾巴（先画，根部被身体压住）：从右下绕上来一记弯钩
+            // —— 尾巴（先画，根部被身体压住）：从右下绕上来一记弯钩，随 sway 摆
+            let tipX = 156 + sway * 8
             var tail = Path()
             tail.move(to: CGPoint(x: 126, y: 212))
-            tail.addQuadCurve(to: CGPoint(x: 156, y: 146),
-                              control: CGPoint(x: 174, y: 198))
+            tail.addQuadCurve(to: CGPoint(x: tipX, y: 146),
+                              control: CGPoint(x: 174 + sway * 12, y: 198))
             c.stroke(tail, with: .color(fur),
                      style: StrokeStyle(lineWidth: 15, lineCap: .round))
             var tailTip = Path()
-            tailTip.move(to: CGPoint(x: 156, y: 162))
-            tailTip.addLine(to: CGPoint(x: 156, y: 146))
+            tailTip.move(to: CGPoint(x: tipX, y: 162))
+            tailTip.addLine(to: CGPoint(x: tipX, y: 146))
             c.stroke(tailTip, with: .color(dark),
                      style: StrokeStyle(lineWidth: 15, lineCap: .round))
 
@@ -307,11 +320,21 @@ struct VectorCat: View {
                 }
             }
 
-            // —— 眼睛
-            c.fill(Path(ellipseIn: CGRect(x: 61, y: 60, width: 11, height: 11)),
-                   with: .color(ink))
-            c.fill(Path(ellipseIn: CGRect(x: 100, y: 60, width: 11, height: 11)),
-                   with: .color(ink))
+            // —— 眼睛：平时圆点，眨眼那帧是一条线
+            if blinking {
+                for ex in [61.0, 100.0] {
+                    var e = Path()
+                    e.move(to: CGPoint(x: ex, y: 65.5))
+                    e.addLine(to: CGPoint(x: ex + 11, y: 65.5))
+                    c.stroke(e, with: .color(ink),
+                             style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                }
+            } else {
+                c.fill(Path(ellipseIn: CGRect(x: 61, y: 60, width: 11, height: 11)),
+                       with: .color(ink))
+                c.fill(Path(ellipseIn: CGRect(x: 100, y: 60, width: 11, height: 11)),
+                       with: .color(ink))
+            }
 
             // —— 鼻子 + 嘴
             var nose = Path()
@@ -385,74 +408,6 @@ struct VectorCat: View {
             }
             p.closeSubpath()
         }
-    }
-}
-
-// MARK: - 帧字体注册（v27）
-//
-// 字体数据在 CatFrameFonts.swift 里（base64 直接编进二进制）。
-// 运行时按需注册，任何一步失败都只是「猫不动」，静态矢量猫照常显示 ——
-// 绝不连坐组件本体。也绝不用 UIAppFonts（启动即加载，失败 = 整个扩展失败）。
-
-enum CatFontReg {
-    private static var checked = false
-    private static var usable = false
-
-    static func ok() -> Bool {
-        if checked { return usable }
-        checked = true
-        for f in CatFrameFonts.all {
-            guard let data = Data(base64Encoded: f.b64) else { return false }
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent(f.name + ".ttf")
-            do { try data.write(to: url) } catch { return false }
-            // ① 先让 CoreText 验一遍 —— 它说不行就拉倒
-            guard let ds = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL)
-                    as? [CTFontDescriptor], !ds.isEmpty else { return false }
-            // ② 进程内注册（scope = .process，不需要任何权限）
-            var err: Unmanaged<CFError>?
-            guard CTFontManagerRegisterFontsForURL(url as CFURL, .process, &err) else {
-                return false
-            }
-        }
-        usable = true
-        return true
-    }
-}
-
-// MARK: - 逐帧翻页的猫（v27）
-//
-// 5 层各一套字体（同色层一个字形一种颜色），同一个计时器 → 每层同步翻页。
-// 只显示计时器文本的最后一个字符（'0'..'9' = 10 帧，每秒一帧，10 秒一循环）：
-// 先 .fixedSize() 按完整宽度排版，再 .frame(width: 1em) + .clipped() 裁到最右一位。
-
-struct CatFrames: View {
-    let pt: CGFloat
-    let start: Date
-    /// 字形高 1150 / 字宽 1000（画布 200x230，见 Tools/_cat_font_vector.py）
-    private var h: CGFloat { pt * 1.15 }
-
-    var body: some View {
-        ZStack {
-            layer("StillCatFur",   Color(red: 0.79,  green: 0.48,  blue: 0.31))
-            layer("StillCatCream", Color(red: 0.95,  green: 0.87,  blue: 0.76))
-            layer("StillCatDark",  Color(red: 0.60,  green: 0.35,  blue: 0.21))
-            layer("StillCatInk",   Color(red: 0.24,  green: 0.17,  blue: 0.12))
-            layer("StillCatSoft",  Color(red: 0.596, green: 0.373, blue: 0.243))
-        }
-    }
-
-    private func layer(_ name: String, _ color: Color) -> some View {
-        Text(timerInterval: start.addingTimeInterval(-120)
-                              ... start.addingTimeInterval(60 * 60 * 24 * 365),
-             countsDown: false)
-            .font(.custom(name, size: pt))
-            .foregroundColor(color)
-            .lineLimit(1)
-            .fixedSize()
-            .frame(width: pt, height: h,
-                   alignment: Alignment(horizontal: .trailing, vertical: .center))
-            .clipped()
     }
 }
 

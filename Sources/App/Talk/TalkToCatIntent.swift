@@ -41,7 +41,11 @@ struct TalkToCatIntent: AppIntent {
         //   一个弹「是否继续」，一个把 App 抢到眼前。
         //   为了省你点一下，去换一次打断，不划算。
         //   通知上留了「让它过来」，那一下是你主动的，按了就到位。
-        CatTalk.say(message)
+        //
+        // ★ 这里 await 是有意的：Siri 说完那句问「说什么」的框不会马上消失，
+        //   我们正好在这口气里把回话要回来（约 1 秒），而不是先给一句假的、
+        //   过一会儿再换成真的 —— 换的那一下比等的那一下难看。
+        await CatTalk.say(message)
         return .result()
     }
 }

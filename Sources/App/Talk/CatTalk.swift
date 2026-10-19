@@ -33,16 +33,20 @@ enum CatTalk {
     }
 
     /// 说一句。返回它的回话。
+    ///
+    /// ★ 顺序是有讲究的，别调换：
+    ///   **先让猫抬头，再去问 AI 要那句回话。**
+    ///   抬头是「它听见了」，必须在你说完的那一瞬间发生 —— 等一秒再动，
+    ///   你感觉到的就不是「它在听」，是「它愣了一下」。
+    ///   而回话本来就要等模型（约 1 秒），这一秒里猫已经在看你了，刚好。
+    ///
+    /// ★ 为什么是 async：回话要去问真 AI，那一下有网络等待。
+    ///   Siri 那边能 await（Intent 的 perform 本身就是异步的），
+    ///   界面那边用 Task 包一下，都不影响「抬头」那一帧。
     @discardableResult
-    static func say(_ message: String) -> String {
+    static func say(_ message: String) async -> String {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = SharedStore.load().catName ?? "还在"
-        let reply = CatBrain.reply(to: m, catName: name)
-
-        if let d = defaults,
-           let data = try? JSONEncoder().encode(Turn(mine: m, reply: reply, at: Date())) {
-            d.set(data, forKey: key)
-        }
 
         // ① 小窗里的猫当场有反应。
         //    壳在 → 直接换画面，一秒都不用等。
@@ -53,10 +57,20 @@ enum CatTalk {
             pip.reactRegardless()
         }
 
-        // ② 回话。
+        // ② 要一句回话。真 AI 优先；问不到（断网 / 没钥匙 / 模型抽风）
+        //    就掉回本地那套 —— 它永远不会不回你。
+        let reply = await CatBrain.replyFromCloud(to: m, catName: name)
+                    ?? CatBrain.reply(to: m, catName: name)
+
+        if let d = defaults,
+           let data = try? JSONEncoder().encode(Turn(mine: m, reply: reply, at: Date())) {
+            d.set(data, forKey: key)
+        }
+
+        // ③ 回话。
         Notifier.tellReply(reply, catName: name)
 
-        // ③ 灵动岛。没有硬件时 IslandBridge 内部自己会跳过。
+        // ④ 灵动岛。没有硬件时 IslandBridge 内部自己会跳过。
         onMain { IslandBridge.shared.speak(reply: reply, catName: name) }
 
         return reply

@@ -265,9 +265,12 @@ final class PiPController: NSObject, ObservableObject {
     /// 它的答案都一样。这不是图省事 —— 它的脾气不能自相矛盾，
     /// 否则「它今天没跟」会变成「它每次都阴晴不定」。
     static func wantsToFollow(atHour h: Double = Schedule.hourEpoch) -> Bool {
+        // 100% 就直接跟，不用掷 —— 省掉「明明设了 1.0 却因为随机数刚好没中」这种鬼事。
+        if Cfg.followRate >= 1.0 { return true }
+        if Cfg.followRate <= 0.0 { return false }
         var r = SeededRandom(seed: FNV.hash("still.follow")
                              ^ UInt32(truncatingIfNeeded: Int(h)))
-        return r.next() < 0.78
+        return r.next() < Cfg.followRate
     }
 
     // MARK: - 它来找你：点通知进来

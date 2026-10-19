@@ -253,8 +253,13 @@ struct TalkBar: View {
     private func send() {
         let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !m.isEmpty else { return }
-        lastReply = CatTalk.say(m)
         text = ""
+        // 先占个位。回话要去问真 AI，约 1 秒 —— 这一秒里界面空着会被当成
+        // 「说了没反应」。写一句「它在听」，跟小窗里抬头那一下对上。
+        lastReply = "（它在听…）"
+        Task { @MainActor in
+            lastReply = await CatTalk.say(m)
+        }
     }
 }
 

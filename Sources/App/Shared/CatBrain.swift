@@ -1,13 +1,64 @@
 import Foundation
 
-// MARK: - 本地「猫脑」
+// MARK: - 「猫脑」
 //
-// 把你说的话翻成它的回话。这是 v0.1 的占位实现：
-//   规则匹配（你好 / 吃饭 / 想你 / 名字…）+ 兜底随机一句猫味的话。
-// 之后要接真 AI，只换下面这一个函数即可 —— UI / 灵动岛 / Siri 入口都不用动。
+// 把你说的话翻成它的回话。两条路：
+//
+//   ① replyFromCloud —— 真 AI（台子上的模型）。**优先走它。**
+//   ② reply          —— 本地那套规则匹配。**只在①拿不到时才用**，
+//                       不是因为它好，是因为它一定能给出一句。
+//
+// ★ 为什么留着②：断网、台子没钥匙、模型抽风，这些随时会发生。
+//   对一个「它要一直在」的东西，**不回话比回错话严重得多** ——
+//   你不知道它是没听见还是不在了。所以①失败必须静默掉到②，
+//   一句「（蹭了蹭你）」也比什么都不出现好。
 
 enum CatBrain {
 
+    /// 真 AI 住在哪儿。台子地址，跟网页壳用的是同一个。
+    ///
+    /// ★ https 是必须的不是讲究：iOS 默认不许 App 连 http。
+    private static let cloudURL = URL(
+        string: "https://still-ui-design.app.workbuddy.host/api/cat/chat")!
+
+    /// 等多久算「没等到」。
+    ///
+    /// 实测模型回一句约 1 秒；给到 8 秒是为了地铁、电梯这种弱网也能等到，
+    /// 再长就不等了 —— Siri 那边你举着手机干等，比回一句普通的更难熬。
+    private static let cloudTimeout: TimeInterval = 8
+
+    /// 问真 AI。**拿不到就返回 nil**（不是抛错）—— 调用方自己掉回本地那套。
+    static func replyFromCloud(to message: String, catName: String) async -> String? {
+        let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty else { return nil }
+
+        let payload: [String: Any] = ["msg": m, "history": []]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+
+        var req = URLRequest(url: cloudURL)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.timeoutInterval = cloudTimeout
+        req.httpBody = body
+
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            // 不是 2xx 就当没问到 —— 台子 500 / 网关拦了 / 钥匙没插，都走这条路。
+            guard let http = resp as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["ok"] as? Bool == true,
+                  let text = json["reply"] as? String else { return nil }
+            let r = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return r.isEmpty ? nil : r
+        } catch {
+            // 断网 / 超时 / 证书问题，一律当「这次没问到」，不惊动任何人。
+            return nil
+        }
+    }
+
+    /// 本地那套：规则匹配（你好 / 吃饭 / 想你 / 名字…）+ 兜底随机一句猫味的话。
     /// message：你对它说的话；catName：它现在叫什么（用于「我叫 XX」这类回话）
     static func reply(to message: String, catName: String) -> String {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)

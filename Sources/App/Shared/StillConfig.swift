@@ -23,6 +23,15 @@ enum Cfg {
     // MARK: 召回
     static let recallRate = 0.68       // 喊它，68% 概率它会来。不是 bug，是设计。
 
+    /// 你切出去的那一刻，它跟不跟你出去。
+    ///
+    /// ★ 定成 1.0（每次都跟）是他 2026-10-20 定的：
+    ///   不要掷骰子 —— 只要 App 一进后台，就默认把小窗拉起来。
+    ///   「它偶尔不跟」听着像有脾气，落到手上就是「这次它没出来，是不是坏了」。
+    ///   想让它有点脾气，改的不是这个数，是它跟出来之后做什么。
+    ///   （0.78 是原来的值，同一小时里切出去多少次答案都一样。）
+    static let followRate: Double = 1.0
+
     // MARK: 时间
     static let tickHz: Double = 30.0   // 引擎主循环 30fps（Android 是 80ms/12.5fps，iOS 上可以更细）
     static let stayHoursMin: Double = 1.0   // 在一个组件里待 1.0 ~ 3.4 小时

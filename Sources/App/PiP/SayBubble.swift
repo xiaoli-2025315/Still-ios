@@ -167,7 +167,10 @@ final class SayBubble {
 
     /// 淡入淡出。显式动画 —— 合成器是按视频帧的时间取图层树的，
     /// 隐式动画那一套在这里不可靠。
-    private func fade(_ layer: CALayer, to value: CGFloat) {
+    ///
+    /// ★ `value` 是 **Float 不是 CGFloat**：`CALayer.opacity` 是老 Core Animation
+    ///   的底子，用 Float。按 CGFloat 传直接编不过（v32 第一版就栽在这儿）。
+    private func fade(_ layer: CALayer, to value: Float) {
         layer.removeAnimation(forKey: "fade")
         let a = CABasicAnimation(keyPath: "opacity")
         a.fromValue = layer.opacity          // 先 remove 再读，拿到的是当前真实值

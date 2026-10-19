@@ -32,7 +32,15 @@ struct TalkToCatIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        // 不返回 dialog —— 猫不说话，别让 Siri 替它念。
+        // 只有一条路，而且是纯后台的：
+        //   壳挂着 → 角上那只猫当场抬头，你正在用的 App 一点都没被打断。
+        //   壳没挂 → 只落一条通知。
+        //
+        // ★ 试过「借前台把壳叫出来」，放弃了：iOS 只允许前台起小窗，
+        //   而借前台的两个口子都会打断你 ——
+        //   一个弹「是否继续」，一个把 App 抢到眼前。
+        //   为了省你点一下，去换一次打断，不划算。
+        //   通知上留了「让它过来」，那一下是你主动的，按了就到位。
         CatTalk.say(message)
         return .result()
     }

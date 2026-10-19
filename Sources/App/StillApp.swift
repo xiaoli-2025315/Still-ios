@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // 通知上的按钮得先登记，否则系统不认识那颗「让它过来」。
+        Notifier.registerCategories()
         return true
     }
 
@@ -56,6 +58,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         //   talk（它回你的话）点开 = 只是看一眼那句话，不该顺手把猫也放出来 ——
         //   否则你说一句话、点一下通知，屏幕上就多一只猫，很唐突。
         let info = response.notification.request.content.userInfo
+
+        // 「让它过来」那颗按钮：不用翻 App，直接把它放到角上。
+        // 这个 action 带 .foreground，所以 App 已经被系统拉到前台了 ——
+        // 正好，起小窗要的就是这一瞬前台。
+        if response.actionIdentifier == Notifier.raiseAction {
+            AppDelegate.pendingSummon = true
+            NotificationCenter.default.post(name: .stillSummon, object: nil)
+            completionHandler()
+            return
+        }
+
         if (info["summon"] as? Bool) == true {
             AppDelegate.pendingSummon = true
             NotificationCenter.default.post(name: .stillSummon, object: nil)

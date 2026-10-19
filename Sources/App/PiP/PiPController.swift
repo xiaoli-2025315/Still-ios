@@ -82,13 +82,29 @@ final class PiPController: NSObject, ObservableObject {
 
     /// 被叫了一声：小窗里当场动一下。
     ///
-    /// 小窗没开就什么都做不了 —— 从后台起小窗系统直接拒（曾遭 -1001）。
-    /// 这种时候只能靠通知那条路，不能指望画面。
-    func reactToTalk() {
+    /// 返回 true = 壳在，画面已经变了；false = 壳不在，得先把壳叫出来。
+    /// ★ 这一句不能自己起小窗：后台起小窗系统直接拒（曾遭 -1001），
+    ///   必须由调用方先借一次前台，见 `raiseShell()`。
+    @discardableResult
+    func reactToTalk() -> Bool {
         guard active else {
-            note = "它听见了（小窗没开，这一句只在通知里）"
-            return
+            note = "它听见了（壳没挂，这一句只在通知里）"
+            return false
         }
+        cat.react("sit_look", seconds: 6)
+        note = "它听见了"
+        return true
+    }
+
+    /// 壳还没挂上，但这句得演 —— 和起壳同一趟做。
+    ///
+    /// 为什么不等窗口出来再演：起窗要 0.6~1.4 秒，那时候猫是愣的，
+    /// 看起来就像"没听见、白说了"。先让片子在图层里切过去，
+    /// 窗口一出来接上的正好是抬头那一下。
+    func reactRegardless() {
+        // 图层还没接上（App 只是被后台唤起、界面还没起）就别动播放器：
+        // 这时候放视频会抢用户正在听的歌，而那一帧根本没有地方显示。
+        guard layer != nil else { return }
         cat.react("sit_look", seconds: 6)
         note = "它听见了"
     }
@@ -257,10 +273,28 @@ final class PiPController: NSObject, ObservableObject {
     // MARK: - 它来找你：点通知进来
 
     /// 你点了通知 —— 你同意它进来了。
-    ///
-    /// 顺序是死的：先让 App 到前台（点通知自己完成的），再把小窗放出去，
-    /// 然后立刻把自己送回后台。你看到的只是「眼前一闪，它已经在角上了」。
     func summonFromNotification() {
+        raiseShell(force: true)
+    }
+
+    /// 把壳叫出来。
+    ///
+    /// ★ 「不走 App 的链路，走壳」就是这一段：Siri 说一句、通知按一下、耳机键按一下，
+    ///   都不该先把你拽进房间界面。做法是借一次前台起小窗，小窗一出现立刻把自己送回后台。
+    ///   你看到的只是「眼前一闪，它已经在角上了」。
+    ///
+    /// ★ 为什么不直接说「后台起小窗」不行：iOS 只允许**前台**调 startPictureInPicture，
+    ///   后台调一律 -1001。所以「不经过界面」不等于「不经过前台」——
+    ///   只能是前台过路一瞬，界面来不及看清就退回去了。
+    ///
+    /// 顺序是死的：起小窗 → WillStart 里标记 → 0.35 秒后送回后台。
+    ///
+    /// `force`：点通知那一条要强来。那一次 App 到前台只是**过路的**，
+    /// 本来就要出去，不能因为「它现在是 active」就拦下。
+    func raiseShell(force: Bool = false) {
+        // ★ 人正开着 App 看着它的时候，不该另外再放一只到角上，
+        //   更不该为了放壳把人从屋里踢出去。屋顶上那只本来就在屋里。
+        if !force && UIApplication.shared.applicationState == .active { return }
         returnToBackground = true
         following = true
         cat.showHere()
@@ -362,7 +396,7 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         note = "它在小窗里"
         startTicker()
 
-        // 这一次是「点通知叫进来的」—— 小窗已经出来了，可以把 App 收回后台了。
+        // 这一次是「借前台把壳放出来」的 —— 小窗已经出来了，可以把 App 收回后台了。
         // 你原来的事不被打断。
         if returnToBackground {
             returnToBackground = false

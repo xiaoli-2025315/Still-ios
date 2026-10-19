@@ -135,6 +135,39 @@ enum Notifier {
             trigger: trigger))
     }
 
+    /// 通知上的那颗按钮。
+    ///
+    /// ★ 为什么需要它：Siri 说完话、壳又没挂着的时候，就只剩这一条通知。
+    ///   原来只能「点开通知 → 进 App」。现在按一下「让它过来」，
+    ///   它就到角上去了 —— 你要的是壳，不是那间屋子。
+    ///
+    /// ★ `[.foreground]` 是必须的，不是偷懒：系统只允许前台起小窗
+    ///   （后台调 startPictureInPicture 一律 -1001）。按下去 App 会被拉起一瞬间，
+    ///   壳一出来它就自己退回后台 —— 见 PiPController.raiseShell()。
+    static let raiseAction = "still.talk.raise"
+
+    /// 注册通知分类。
+    ///
+    /// ★ 不注册的话，通知上就只有一条光秃秃的文字，
+    ///   系统连「点开之后该往哪走」都不知道。
+    static func registerCategories() {
+        let raise = UNNotificationAction(
+            identifier: raiseAction,
+            title: "让它过来",
+            options: [.foreground])
+        let talk = UNNotificationCategory(
+            identifier: talkCategory,
+            actions: [raise],
+            intentIdentifiers: [],
+            options: [])
+        let summon = UNNotificationCategory(
+            identifier: category,
+            actions: [],
+            intentIdentifiers: [],
+            options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([talk, summon])
+    }
+
     static func clear(_ done: (() -> Void)? = nil) {
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { reqs in

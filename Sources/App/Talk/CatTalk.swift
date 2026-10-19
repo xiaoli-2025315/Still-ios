@@ -45,9 +45,13 @@ enum CatTalk {
         }
 
         // ① 小窗里的猫当场有反应。
-        //    失败也不影响后面两步 —— 它在后台被冻着的时候就收不到这一条，
-        //    这种时候只能靠通知，不能指望画面。
-        onMain { PiPController.shared?.reactToTalk() }
+        //    壳在 → 直接换画面，一秒都不用等。
+        //    壳不在 → 也让画面上那一下发生：屋里那块图层和壳是同一个播放器，
+        //             下次壳挂上来，接到的正好是「刚抬头」这一下。
+        withController { pip in
+            if pip.reactToTalk() { return }
+            pip.reactRegardless()
+        }
 
         // ② 回话。
         Notifier.tellReply(reply, catName: name)
@@ -63,5 +67,22 @@ enum CatTalk {
     private static func onMain(_ work: @escaping () -> Void) {
         if Thread.isMainThread { work() }
         else { DispatchQueue.main.async(execute: work) }
+    }
+
+    /// 等壳的就位了再动手。
+    ///
+    /// ★ 冷启动时（App 已经被系统回收）Siri 这一下会先把 App 拉起来，
+    ///   而 `PiPController.shared` 是 ContentView.onAppear 才赋值的 ——
+    ///   前台回来那一瞬它还是 nil。不重试的话，**第一句话会静默丢掉**，
+    ///   表现就是「说了没反应，反而是第二句就好了」，很难归因。
+    private static func withController(retries: Int = 8, _ work: @escaping (PiPController) -> Void) {
+        let step = {
+            if let pip = PiPController.shared { work(pip); return }
+            guard retries > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                withController(retries: retries - 1, work)
+            }
+        }
+        if Thread.isMainThread { step() } else { DispatchQueue.main.async(execute: step) }
     }
 }

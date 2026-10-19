@@ -140,7 +140,7 @@ final class SayBubble {
         let bubbleH = CGFloat(lines.count) * Self.lineH + Self.pad * 2
         let totalH = bubbleH + Self.tailH          // 含朝上的小尾巴
 
-        let img = Self.draw(lines: lines, w: bubbleW, h: totalH)
+        guard let img = Self.draw(lines: lines, w: bubbleW, h: totalH) else { return }
 
         let layer: CALayer
         if let b = bubble {
@@ -181,51 +181,55 @@ final class SayBubble {
 
     // MARK: - 画（UIKit 坐标系，左上原点，跟写界面一样）
 
-    private static func draw(lines: [String], w: CGFloat, h: CGFloat) -> UIImage {
-        let f = UIGraphicsImageRendererFormat()
-        f.scale = 1                 // ★ 必须是 1：这张图按 720 画布的点位画
-        f.opaque = false
-        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: f)
-
-        return r.image { ctx in
-            let bodyH = h - Self.tailH
-            let body = CGRect(x: 0, y: 0, width: w, height: bodyH)
-
-            // 圆角身子 + 朝上的小尾巴（指向猫）。同一条 path，一次填完。
-            let p = UIBezierPath(roundedRect: body, cornerRadius: Self.radius)
-            let cx = w / 2
-            p.move(to: CGPoint(x: cx - Self.tailW / 2, y: bodyH))
-            p.addLine(to: CGPoint(x: cx, y: 0))
-            p.addLine(to: CGPoint(x: cx + Self.tailW / 2, y: bodyH))
-            p.close()
-
-            // 投影给白气泡勾个边。房间是极浅的暖白，没这道边气泡会「融」进墙里。
-            let c = ctx.cgContext
-            c.saveGState()
-            c.setShadow(offset: CGSize(width: 0, height: 2),
-                        blur: 8,
-                        color: UIColor.black.withAlphaComponent(0.18).cgColor)
-            UIColor.white.withAlphaComponent(0.97).setFill()
-            p.fill()
-            c.restoreGState()
-
-            // 字：逐行画，行内在行高里垂直居中，整行水平居中
-            let para = NSMutableParagraphStyle()
-            para.alignment = .center
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: ink,
-                .paragraphStyle: para
-            ]
-            var y = Self.pad
-            for line in lines {
-                let size = (line as NSString).size(withAttributes: attrs)
-                let ty = y + (Self.lineH - size.height) / 2
-                (line as NSString).draw(in: CGRect(x: 0, y: ty, width: w, height: size.height),
-                                        withAttributes: attrs)
-                y += Self.lineH
-            }
+    /// 画成一张 `w×h` **像素**的图（scale 写死 1：一个点换一个像素，正好对上 720 画布）。
+    /// 用老接口 `UIGraphicsBeginImageContextWithOptions` 而不是 `UIGraphicsImageRenderer` ——
+    /// 后者的 Format 初始化在不同 SDK 上口径不稳，没必要在这儿赌。
+    private static func draw(lines: [String], w: CGFloat, h: CGFloat) -> UIImage? {
+        UIGraphicsBeginImageContextWithOptions(CGSize(width: w, height: h), false, 1)
+        guard let c = UIGraphicsGetCurrentContext() else {
+            UIGraphicsEndImageContext()
+            return nil
         }
+        defer { UIGraphicsEndImageContext() }
+
+        let bodyH = h - Self.tailH
+        let body = CGRect(x: 0, y: 0, width: w, height: bodyH)
+
+        // 圆角身子 + 朝上的小尾巴（指向猫）。同一条 path，一次填完。
+        let p = UIBezierPath(roundedRect: body, cornerRadius: Self.radius)
+        let cx = w / 2
+        p.move(to: CGPoint(x: cx - Self.tailW / 2, y: bodyH))
+        p.addLine(to: CGPoint(x: cx, y: 0))
+        p.addLine(to: CGPoint(x: cx + Self.tailW / 2, y: bodyH))
+        p.close()
+
+        // 投影给白气泡勾个边。房间是极浅的暖白，没这道边气泡会「融」进墙里。
+        c.saveGState()
+        c.setShadow(offset: CGSize(width: 0, height: 2),
+                    blur: 8,
+                    color: UIColor.black.withAlphaComponent(0.18).cgColor)
+        UIColor.white.withAlphaComponent(0.97).setFill()
+        p.fill()
+        c.restoreGState()
+
+        // 字：逐行画，行内在行高里垂直居中，整行水平居中
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: ink,
+            .paragraphStyle: para
+        ]
+        var y = Self.pad
+        for line in lines {
+            let size = (line as NSString).size(withAttributes: attrs)
+            let ty = y + (Self.lineH - size.height) / 2
+            (line as NSString).draw(in: CGRect(x: 0, y: ty, width: w, height: size.height),
+                                    withAttributes: attrs)
+            y += Self.lineH
+        }
+
+        return UIGraphicsGetImageFromCurrentImageContext()
     }
 
     // MARK: - 折行

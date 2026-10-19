@@ -56,6 +56,11 @@ final class CatPlayer {
     private var currentObs: NSKeyValueObservation?
     private var endObs: NSObjectProtocol?
     private var refilling = false
+
+    /// 被叫了一声：这一刻不轮播，只播指定的那一段。
+    /// 没有这个开关，`refill()` 会在切段的瞬间把队列又补满，指定的那段被挤掉。
+    private var pinned = false
+    private var pinTimer: DispatchWorkItem?
     private var rng = SeededRandom(seed: UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970)))
 
     // MARK: 生
@@ -76,8 +81,18 @@ final class CatPlayer {
         endObs = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification,
             object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.refill()
+        ) { [weak self] note in
+            guard let self else { return }
+            // 指定播放期间片段会播到头 —— 循环它，别让猫定在最后一帧上。
+            // 出去交给 refill 的话，这一趟就变成轮播了，反应就断了。
+            if self.pinned {
+                if let item = note.object as? AVPlayerItem, item === self.player.currentItem {
+                    self.player.seek(to: .zero)
+                    self.player.play()
+                }
+                return
+            }
+            self.refill()
         }
     }
 
@@ -98,6 +113,10 @@ final class CatPlayer {
     func showEmpty() {
         guard isHere == true else { return }
         isHere = false
+        // 被叫了一声还没演完就要走：先把指定播放撤掉，否则空房会被那段顶住。
+        pinTimer?.cancel()
+        pinTimer = nil
+        pinned = false
         restart()
     }
 
@@ -105,6 +124,42 @@ final class CatPlayer {
     func startIfNeeded() {
         if player.items().isEmpty { refill() }
         if player.rate == 0 { player.play() }
+    }
+
+    /// 被叫了一声：立刻停下手里的事，看着你。
+    ///
+    /// 为什么要 `removeAllItems` 而不是「往队尾插一段」：
+    /// 队尾插要等当前这段播完才轮到它，而当前这段可能是「睡觉」，一等就是十几秒 ——
+    /// 你刚说完话，它十几秒后才抬头，那就不叫反应了。
+    ///
+    /// seconds 到了就回轮播，观感是「它看了你一会儿，又自己忙去了」。
+    func react(_ clip: String = "sit_look", seconds: Double = 6) {
+        guard let url = Self.url(for: clip) else {
+            // 素材没进包。别静默 —— 记下来给界面上的缺失提示用。
+            if !missing.contains(clip) { missing.append(clip) }
+            return
+        }
+
+        pinTimer?.cancel()
+
+        // 被叫一声，它一定在（不在的话小窗里只有空房，抬头给谁看）
+        isHere = true
+        pinned = true
+        currentClip = clip
+
+        player.pause()
+        player.removeAllItems()
+        player.insert(AVPlayerItem(url: url), after: nil)
+        player.play()
+
+        let t = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pinned = false
+            self.pinTimer = nil
+            self.restart()
+        }
+        pinTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: t)
     }
 
     // MARK: 内部
@@ -120,6 +175,8 @@ final class CatPlayer {
     /// 为什么是 2 而不是 1：一条播完队列就空了，AVQueuePlayer 会停在原地 ——
     /// 留一条在队里，切歌才是无缝的。
     private func refill() {
+        // 指定播放期间不许补队列 —— 补了就会把「看着你」这一段挤掉。
+        guard !pinned else { return }
         guard !refilling else { return }
         refilling = true
         defer { refilling = false }

@@ -11,3 +11,5 @@ dist/
 # 素材流水线的中间产物（几十张抽帧图 + 4K 中间片段，动辄上百 MB）
 # 真正要入库的是 Resources/pip/ 里合成好的成品。
 Tools/out/
+Tools/__pycache__/
+Tools/_frames_tmp/

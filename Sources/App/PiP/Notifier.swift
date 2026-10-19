@@ -24,6 +24,11 @@ enum Notifier {
     static let category = "still.summon"
     private static let idPrefix = "still.summon."
 
+    /// 「它回你的话」。跟 summon 分开两类，是为了点开时能分辨：
+    /// 点 summon = 叫它出来（起小窗）；点 talk = 只是看一眼它回了什么。
+    static let talkCategory = "still.talk"
+    private static let talkPrefix = "still.talk."
+
     /// 最多挂多少条待发通知。
     /// iOS 对本地待发通知的硬上限是 64 条 —— 留一半余量给以后别的通知（留痕、提醒）。
     static let maxPending = 32
@@ -99,6 +104,35 @@ enum Notifier {
             timeInterval: max(1, seconds), repeats: false)
         UNUserNotificationCenter.current().add(UNNotificationRequest(
             identifier: idPrefix + "test", content: content, trigger: trigger))
+    }
+
+    /// 它回你的话。
+    ///
+    /// ★ 为什么回话必须走通知：小窗里是一段 mp4，屏幕是系统在放带子，
+    ///   我们插不进手 —— 视频上贴不了字。想让字长在小窗里，
+    ///   只能把画面改成「自己一帧帧画」，那是换地基，不是加个功能。
+    ///
+    /// 即时送（1 秒后），不需要 App 活着：系统会自己按时间送。
+    static func tellReply(_ reply: String, catName: String, after seconds: Double = 1.0) {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = catName
+        content.body = text
+        content.sound = .default
+        content.categoryIdentifier = talkCategory
+        content.userInfo = ["talk": true]
+        // 你刚跟它说完话，这条是你等着的 —— 钻一下专注模式。
+        content.interruptionLevel = .timeSensitive
+        content.threadIdentifier = talkCategory
+
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, seconds), repeats: false)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: talkPrefix + UUID().uuidString,
+            content: content,
+            trigger: trigger))
     }
 
     static func clear(_ done: (() -> Void)? = nil) {

@@ -8,7 +8,7 @@ import SwiftUI
 // 折腾过一整天「改了没效果」，最后发现是手机里一直装着旧包。
 
 enum AppVersion {
-    static let tag = "v8"
+    static let tag = "v29"
 }
 
 // MARK: - 主界面
@@ -49,6 +49,12 @@ struct ContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
 
+                // 跟它说句话。
+                // Siri 走的是同一个入口（CatTalk.say），所以「打字说的」和「嘴上说的」
+                // 反应完全一样 —— 不会出现两套行为要分别调。
+                TalkBar()
+                    .padding(.bottom, 8)
+
                 // 诊断默认收起来。
                 // 你打开的应该是它的房间，不是一个调试台 —— 但排障的时候得够得着。
                 Button {
@@ -75,6 +81,9 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            // ★ Siri 在后台唤起 App 跑 Intent 时够不到界面上的实例，只能靠这个口子。
+            //   小窗在播 = App 进程活着 = 这里一定是那个正在跑的控制器。
+            PiPController.shared = pip
             engine.start()
             pip.start()
             IslandProbe.run()
@@ -190,6 +199,62 @@ struct BatteryGlyph: View {
                 .padding(.leading, 1.6)
         }
         .frame(width: 20, height: 10)
+    }
+}
+
+// MARK: - 跟它说句话
+
+/// App 里的输入框。
+///
+/// 为什么要有它：Siri 那条路好，但有时候你就是不想说话 ——
+/// 在地铁上、在开会、半夜。打字必须有个地方。
+///
+/// 走的是跟 Siri 完全同一个函数，所以小窗里那一下、通知里那句话，都一样。
+struct TalkBar: View {
+
+    @State private var text = ""
+    @State private var lastReply: String?
+
+    var body: some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 8) {
+                TextField("跟它说句话", text: $text)
+                    .font(.system(size: 13))
+                    .textFieldStyle(.plain)
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(.white.opacity(0.72)))
+
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Cfg.Palette.accent))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+
+            // 它刚回的那一句。通知里也有，这里留一份是为了不用切出去看。
+            if let r = lastReply {
+                Text(r)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Cfg.Palette.faint)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 22)
+            }
+        }
+    }
+
+    private func send() {
+        let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty else { return }
+        lastReply = CatTalk.say(m)
+        text = ""
     }
 }
 

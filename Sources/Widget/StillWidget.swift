@@ -2,30 +2,14 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// MARK: - 真的小组件
+// MARK: - 小组件
 //
-// ★ 这个文件解决的是整个 iOS 版最难的一条要求：
-//   **同一时刻，桌面上有且只有一个组件里有猫。**
-//
-// 难点：小组件是系统渲染的静态快照，各实例刷新时刻由系统决定（一天 72 次预算），
-//       它们之间没法互相商量。
-//
-// 破法：不让它们商量，让它们各自算同一个答案。
-//
-//   · 行程表是确定性算出来的：App 和小组件各自调 Schedule.resolve()，
-//     得到逐字节相同的同一份 —— 不再依赖 App Group（自签名下它常常不通）
-//   · 每个组件按行程表预排一条 timeline，entry 精确落在「猫进出我这个房间」的时刻
-//     （一天挪窝约 11 次，所以 8 小时的 timeline 里通常只有 2~4 个 entry）
-//   · 于是任意时刻 T，所有组件的答案都来自同一个 place(T)，只有一个回答 true
-//
-// 关键取舍：timeline 末尾一律放一个「不画猫」的兜底 entry。
-//   → 失败方向必须是「看不见它」，绝不能是「两个地方都有它」。
-//
-// 实测（Tools/_uniqueness.js，16 组件 × 7 天 × 3 种子 × 1 分钟采样）：
-//   两个组件同时有猫   0.0000%      （旧做法：2%~16%）
-//   它暂时看不见       0.1% ~ 1.6%  （覆盖越短、刷新越少，越多）
-
-// MARK: - Entry
+// v28（豆包办法，用户拍板）：帧动画不走字体 —— v27 的猫不动，字体注册这条链
+// 在组件进程里不可靠，整个绕开。现在的形态：
+//   · 每一帧 = 纯 SwiftUI 矢量（v26 那套画法，参数化出尾巴摆动和眨眼）；
+//   · 画哪一帧 = entry 自带的时间算出来（Int(date.timeIntervalSince1970) % 10）；
+//   · timeline 一次给 40 条 entry、每秒一条，系统到点自己换帧。
+// 没有注册、没有字体、没有图片 —— 没有任何可能失败的步骤。
 
 enum WidgetState {
     /// 它现在就在这个房间里
@@ -36,9 +20,6 @@ enum WidgetState {
     case noHome
 }
 
-/// 它这会儿在哪儿。
-/// ★ 不管猫在不在「我」这一间，用户都有权知道 —— 「可寻址」是七条原理之一。
-///   以前只有打开 App 才说，现在每个组件上都写，扫一眼桌面就知道去哪儿找它。
 struct WhereNow {
     let label: String      // "日历" / "灵动岛"
     let isIsland: Bool
@@ -59,53 +40,36 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
     typealias Entry = StillWidgetEntry
     typealias Intent = SelectRoomIntent
 
+    /// 一次 timeline 派多少条 entry。每条隔 1 秒 = 猫每秒跳一帧、连动 40 秒，
+    /// 之后系统按 .atEnd 来要下一段（要不要得看刷新额度，额度内尽量接上）。
+    private static let framesPerTimeline = 40
+
     func placeholder(in context: Context) -> StillWidgetEntry {
-        StillWidgetEntry(date: Date(), state: .away(lastVisit: nil), roomName: "时钟")
+        Self.alwaysCatEntry(roomId: "clock", date: Date())
     }
 
     func snapshot(for configuration: SelectRoomIntent, in context: Context) async -> StillWidgetEntry {
         RoomScope.report(roomId: configuration.room.roomId)
-        return entry(for: configuration.room.roomId, at: Date())
+        return Self.alwaysCatEntry(roomId: configuration.room.roomId, date: Date())
     }
 
     func timeline(for configuration: SelectRoomIntent, in context: Context) async -> Timeline<StillWidgetEntry> {
-        let roomId = configuration.room.roomId
+        // 自报家门：告诉别的进程「这个房间有组件在桌面上」（App 侧要用）。
+        RoomScope.report(roomId: configuration.room.roomId)
+
         let now = Date()
-
-        // 自报家门：告诉别的进程「这个房间有组件在桌面上」。
-        // 它只在你摆出来的房间之间跑，靠的就是每个组件各自报这一笔（见 RoomScope）。
-        RoomScope.report(roomId: roomId)
-
-        // ★ 不再依赖 App Group：行程表是确定性算出来的，
-        //   小组件自己和 App 算出来的必然是同一份（见 Schedule.resolve 的注释）。
-        //   以前「读不到就显示『还没接它回家』」那一支删了 ——
-        //   自签名下 App Group 常常不通，那一支会让用户在桌面永远看不见它。
-        let segs = Schedule.resolve()
-
-        // 只排「有变化」的时刻。末尾那个 false 是兜底。
-        let moments = Schedule.moments(forRoom: roomId, segs: segs, from: now)
-        let entries = moments.map { m -> StillWidgetEntry in
-            let h = m.date.timeIntervalSince1970 / 3600.0
-            let wn = whereNow(segs: segs, atHour: h)
-            if m.here {
-                let seg = Schedule.segment(segs, atHour: h)
-                let since = seg.map { Date(timeIntervalSince1970: $0.t0 * 3600.0) } ?? m.date
-                return StillWidgetEntry(date: m.date,
-                                        state: .here(pose: Self.pose(roomId: roomId, at: m.date),
-                                                     since: since),
-                                        roomName: Rooms.byId[roomId]?.name ?? "",
-                                        whereNow: wn)
-            } else {
-                return StillWidgetEntry(date: m.date,
-                                        state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                        roomName: Rooms.byId[roomId]?.name ?? "",
-                                        whereNow: wn)
-            }
+        let entries = (0..<Self.framesPerTimeline).map { i in
+            Self.alwaysCatEntry(roomId: configuration.room.roomId,
+                                date: now.addingTimeInterval(Double(i)))
         }
-
-        // .atEnd：走完最后一条就再要一条新的。
-        // 预算用尽时它会停在最后那条（兜底的「不在这儿」）—— 这是安全的失败方向。
         return Timeline(entries: entries, policy: .atEnd)
+    }
+
+    /// 每个组件、任何时刻：同一个「它在这儿」的猫。
+    private static func alwaysCatEntry(roomId: String, date: Date) -> StillWidgetEntry {
+        StillWidgetEntry(date: date,
+                         state: .here(pose: .sit, since: date),
+                         roomName: Rooms.byId[roomId]?.name ?? "")
     }
 
     /// 小组件库里的预置：直接给你几个现成的，不用添加完再长按编辑。
@@ -121,43 +85,6 @@ struct StillWidgetProvider: AppIntentTimelineProvider {
         return picks.map { AppIntentRecommendation(intent: SelectRoomIntent(room: $0.0),
                                                    description: $0.1) }
     }
-
-    private func entry(for roomId: String, at date: Date) -> StillWidgetEntry {
-        let segs = Schedule.resolve()
-        let h = date.timeIntervalSince1970 / 3600.0
-        let here = Schedule.place(segs, atHour: h) == .room(roomId)
-        let name = Rooms.byId[roomId]?.name ?? ""
-        let wn = whereNow(segs: segs, atHour: h)
-        if here, let seg = Schedule.segment(segs, atHour: h) {
-            return StillWidgetEntry(date: date,
-                                    state: .here(pose: Self.pose(roomId: roomId, at: date),
-                                                 since: Date(timeIntervalSince1970: seg.t0 * 3600.0)),
-                                    roomName: name,
-                                    whereNow: wn)
-        }
-        return StillWidgetEntry(date: date,
-                                state: .away(lastVisit: Schedule.lastVisit(segs, roomId: roomId, before: h)),
-                                roomName: name,
-                                whereNow: wn)
-    }
-
-    /// 它这会儿在哪个房间 —— 在灵动岛里也算一间（第 17 间）。
-    private func whereNow(segs: [Segment], atHour h: Double) -> WhereNow {
-        switch Schedule.place(segs, atHour: h) {
-        case .island:
-            return WhereNow(label: "灵动岛", isIsland: true)
-        case .room(let id):
-            return WhereNow(label: Rooms.byId[id]?.name ?? "—", isIsland: false)
-        }
-    }
-
-    /// 姿势确定性决定：同一个房间的同一个时刻，看几次都是同一个姿势。
-    /// 不用随机数 —— 否则每次重绘都在抖。
-    private static func pose(roomId: String, at date: Date) -> CatPose {
-        let quarter = Int(date.timeIntervalSince1970 / 900)
-        var r = SeededRandom(seed: FNV.hash(roomId) ^ UInt32(truncatingIfNeeded: quarter))
-        return [CatPose.sleep, .sit, .groom, .look][r.int(4)]
-    }
 }
 
 // MARK: - 小组件本体
@@ -170,20 +97,15 @@ struct StillWidget: Widget {
                                intent: SelectRoomIntent.self,
                                provider: StillWidgetProvider()) { entry in
             StillWidgetView(entry: entry, textOnly: false)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v8 · 猫")
-        .description("它的一个房间，带猫。多摆几个，它就会在它们之间穿梭。")
+        .configurationDisplayName("还在 v28 · 猫")
+        .description("它的一个房间，带猫。多摆几个，每个组件上都是它。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
-/// 同一个房间、同一份数据，**只画字、不画猫**。
-///
-/// 存在的唯一目的：把「小组件扩展整体没渲染」和「画猫的那段代码崩了」一分为二。
-///   · 它也是空白  → 扩展层面就没画出来，跟画猫无关
-///   · 它有字、带猫的那个空白 → 画猫那段代码在小组件进程里崩了，修它就行
-/// 定位完可以删掉这个组件。
+/// 同一个房间、同一份数据，**只画字、不画猫**（排障用，定位完可删）。
 struct StillTextWidget: Widget {
     let kind = "StillTextWidget"
 
@@ -192,10 +114,9 @@ struct StillTextWidget: Widget {
                                intent: SelectRoomIntent.self,
                                provider: StillWidgetProvider()) { entry in
             StillWidgetView(entry: entry, textOnly: true)
-                // 用写死的颜色，不用语义色 —— 排除「背景渲染不出来看着像空白」
                 .containerBackground(Color(red: 0.98, green: 0.96, blue: 0.93), for: .widget)
         }
-        .configurationDisplayName("还在 v8 · 字")
+        .configurationDisplayName("还在 v28 · 字")
         .description("排障用：同一个房间，但只写字不画猫。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -204,8 +125,8 @@ struct StillTextWidget: Widget {
 @main
 struct StillWidgetBundle: WidgetBundle {
     var body: some Widget {
-        StillWidget()          // 小组件：按行程表预排，同一时刻只有一个有猫
-        StillTextWidget()      // 排障用：同上，但只画字（定位完可删）
+        StillWidget()          // 小组件：一只矢量猫
+        StillTextWidget()      // 排障用：只画字（定位完可删）
         StillLiveActivity()    // 灵动岛 + 锁屏横幅
     }
 }
@@ -215,21 +136,40 @@ struct StillWidgetBundle: WidgetBundle {
 struct StillWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: StillWidgetEntry
-    /// true = 只写字，不碰 CatView / PawMark（排障用，见 StillTextWidget）
+    /// true = 只写字、不画猫（排障用，见 StillTextWidget）
     var textOnly: Bool = false
 
+    /// 帧号只由 entry 自带的时间决定：同一时刻所有组件同一帧，无需任何存储。
+    static func frameIndex(_ date: Date) -> Int {
+        Int(date.timeIntervalSince1970) % 10
+    }
+
     var body: some View {
-        switch entry.state {
-        case .here(let pose, let since):
-            textOnly ? AnyView(plainHere()) : AnyView(here(pose: pose, since: since))
-        case .away(let last):
-            textOnly ? AnyView(plainAway()) : AnyView(away(lastVisit: last))
-        case .noHome:
-            textOnly ? AnyView(plainNoHome()) : AnyView(noHome)
+        if textOnly {
+            switch entry.state {
+            case .here:
+                plainHere()
+            case .away:
+                plainAway()
+            case .noHome:
+                plainNoHome()
+            }
+        } else {
+            catFull()
         }
     }
 
-    // MARK: 纯文字版（不画猫、不画爪印，最大限度排除绘制层）
+    // MARK: 猫铺满组件
+
+    private func catFull() -> some View {
+        link {
+            VectorCat(frame: Self.frameIndex(entry.date))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(family == .systemMedium ? 10 : 4)
+        }
+    }
+
+    // MARK: 纯文字版（不画猫，最大限度排除绘制层）
 
     private func plainHere() -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -285,99 +225,194 @@ struct StillWidgetView: View {
         .padding(13)
     }
 
-    // MARK: 它在这儿
-
-    private func here(pose: CatPose, since: Date) -> some View {
-        link {
-            HStack(spacing: 10) {
-                CatView(pose: pose, width: family == .systemMedium ? 66 : 50)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("在").font(.system(size: 9)).foregroundStyle(.secondary)
-                    Text(entry.roomName)
-                        .font(.system(size: family == .systemMedium ? 19 : 15,
-                                      weight: .medium, design: .serif))
-                        .lineLimit(1)
-                    Text("待了 \(since, format: .relative(presentation: .numeric))")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(family == .systemMedium ? 15 : 13)
-        }
-    }
-
-    // MARK: 它不在这儿
-    //
-    // 留痕照留，但**要说清楚它现在在哪儿**。
-    // 以前是「找不到它是正常的，自己翻别的组件去」—— 结果用户摆的房间里
-    // 一只也看不见，等于它消失了。现在每个组件上都写「它现在在 ××」，
-    // 扫一眼桌面就知道去哪儿找（可寻址）。
-
-    private func away(lastVisit: Date?) -> some View {
-        link {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 5) {
-                    PawMark(color: Cfg.Palette.accent)
-                        .frame(width: 11, height: 11)
-                        .opacity(0.45)
-                    Text(entry.roomName)
-                        .font(.system(size: 13, weight: .medium, design: .serif))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if let w = entry.whereNow {
-                    Text("它现在在")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                    Text(w.label)
-                        .font(.system(size: 12, weight: .medium, design: .serif))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                } else if let last = lastVisit {
-                    Text("上次来")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                    Text(last, format: .relative(presentation: .named))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("它还没来过")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    // MARK: 还没接它回家
-
-    private var noHome: some View {
-        link {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("还没接它回家")
-                    .font(.system(size: 12, weight: .medium, design: .serif))
-                Text("打开「还在」，再回来添加组件")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
     private func link<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content().widgetURL(URL(string: "still://open"))
+    }
+}
+
+// MARK: - 矢量猫（带帧）
+//
+// 设计坐标系 172×230（跟原来那张猫图同比例），Canvas 里按组件实际尺寸缩放。
+// 全部是 Path / 椭圆 / 直线 —— 和 v20 起每次都能显示的爪印同一层绘制。
+//
+// frame 0..<10 = 动画的第几帧：
+//   · 尾巴按正弦左右摆，10 帧一个来回；
+//   · 第 5 帧眨眼（眼睛从圆点变成一条线）。
+// frame 缺省 0 = 静态猫（v26 原样，预览卡走这个）。
+
+struct VectorCat: View {
+    var frame: Int = 0
+
+    // 配色跟随项目色板：赤陶主色 + 深一档花纹 + 深棕五官 + 奶色胸脯
+    private let fur  = Color(red: 0.79, green: 0.48, blue: 0.31)  // #C97B4E 赤陶
+    private let dark = Color(red: 0.60, green: 0.35, blue: 0.21)  // 花纹深档
+    private let ink  = Color(red: 0.24, green: 0.17, blue: 0.12)  // 五官
+    private let cream = Color(red: 0.95, green: 0.87, blue: 0.76) // 胸脯
+
+    /// 这一帧尾巴的摆幅：-1...1，帧 0 和帧 9 之间一个完整来回。
+    private var sway: Double {
+        sin(Double(frame % 10) / 10 * 2 * .pi)
+    }
+    /// 这一帧是否眨眼（每 10 秒里的第 6 秒闭眼 1 秒）。
+    private var blinking: Bool { frame % 10 == 5 }
+
+    var body: some View {
+        Canvas { ctx, size in
+            let s = min(size.width / 172, size.height / 230)
+            var c = ctx
+            c.translateBy(x: (size.width - 172 * s) / 2,
+                          y: (size.height - 230 * s) / 2)
+            c.scaleBy(x: s, y: s)
+
+            // —— 尾巴（先画，根部被身体压住）：从右下绕上来一记弯钩，随 sway 摆
+            let tipX = 156 + sway * 8
+            var tail = Path()
+            tail.move(to: CGPoint(x: 126, y: 212))
+            tail.addQuadCurve(to: CGPoint(x: tipX, y: 146),
+                              control: CGPoint(x: 174 + sway * 12, y: 198))
+            c.stroke(tail, with: .color(fur),
+                     style: StrokeStyle(lineWidth: 15, lineCap: .round))
+            var tailTip = Path()
+            tailTip.move(to: CGPoint(x: tipX, y: 162))
+            tailTip.addLine(to: CGPoint(x: tipX, y: 146))
+            c.stroke(tailTip, with: .color(dark),
+                     style: StrokeStyle(lineWidth: 15, lineCap: .round))
+
+            // —— 身体（坐姿钟形）
+            c.fill(Path(ellipseIn: CGRect(x: 38, y: 106, width: 96, height: 118)),
+                   with: .color(fur))
+            // 胸脯
+            c.fill(Path(ellipseIn: CGRect(x: 64, y: 128, width: 44, height: 66)),
+                   with: .color(cream))
+
+            // —— 耳朵（外层毛色 + 内层深色）
+            c.fill(ear(left: true), with: .color(fur))
+            c.fill(ear(left: false), with: .color(fur))
+            c.fill(earInner(left: true), with: .color(dark))
+            c.fill(earInner(left: false), with: .color(dark))
+
+            // —— 头
+            c.fill(Path(ellipseIn: CGRect(x: 42, y: 26, width: 88, height: 86)),
+                   with: .color(fur))
+
+            // —— 头顶花纹（三道短竖纹）
+            for dx in [-15.0, 0.0, 15.0] {
+                var st = Path()
+                st.move(to: CGPoint(x: 86 + dx, y: 32))
+                st.addQuadCurve(to: CGPoint(x: 86 + dx * 1.5, y: 48),
+                                control: CGPoint(x: 86 + dx, y: 42))
+                c.stroke(st, with: .color(dark),
+                         style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
+
+            // —— 身体两侧纹（左右各两道短弧）
+            for sx in [0.0, 1.0] {
+                let x0 = sx == 0 ? 40.0 : 132.0
+                let dir: Double = sx == 0 ? 1 : -1
+                for i in 0..<2 {
+                    var st = Path()
+                    let y = 148.0 + Double(i) * 22
+                    st.move(to: CGPoint(x: x0, y: y))
+                    st.addQuadCurve(to: CGPoint(x: x0 + 14 * dir, y: y + 8),
+                                    control: CGPoint(x: x0 + 2 * dir, y: y + 8))
+                    c.stroke(st, with: .color(dark),
+                             style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                }
+            }
+
+            // —— 眼睛：平时圆点，眨眼那帧是一条线
+            if blinking {
+                for ex in [61.0, 100.0] {
+                    var e = Path()
+                    e.move(to: CGPoint(x: ex, y: 65.5))
+                    e.addLine(to: CGPoint(x: ex + 11, y: 65.5))
+                    c.stroke(e, with: .color(ink),
+                             style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                }
+            } else {
+                c.fill(Path(ellipseIn: CGRect(x: 61, y: 60, width: 11, height: 11)),
+                       with: .color(ink))
+                c.fill(Path(ellipseIn: CGRect(x: 100, y: 60, width: 11, height: 11)),
+                       with: .color(ink))
+            }
+
+            // —— 鼻子 + 嘴
+            var nose = Path()
+            nose.move(to: CGPoint(x: 80, y: 79))
+            nose.addLine(to: CGPoint(x: 92, y: 79))
+            nose.addLine(to: CGPoint(x: 86, y: 86))
+            nose.closeSubpath()
+            c.fill(nose, with: .color(dark))
+            var mouth = Path()
+            mouth.move(to: CGPoint(x: 86, y: 86))
+            mouth.addQuadCurve(to: CGPoint(x: 78, y: 92), control: CGPoint(x: 81, y: 91))
+            mouth.move(to: CGPoint(x: 86, y: 86))
+            mouth.addQuadCurve(to: CGPoint(x: 94, y: 92), control: CGPoint(x: 91, y: 91))
+            c.stroke(mouth, with: .color(ink),
+                     style: StrokeStyle(lineWidth: 2, lineCap: .round))
+
+            // —— 胡须（左右各两根，淡）
+            let whiskerColor = Color(ink.opacity(0.35))
+            for (x0, y0, x1, y1) in [(58.0, 82.0, 30.0, 78.0),
+                                     (58.0, 89.0, 32.0, 96.0),
+                                     (114.0, 82.0, 142.0, 78.0),
+                                     (114.0, 89.0, 140.0, 96.0)] {
+                var w = Path()
+                w.move(to: CGPoint(x: x0, y: y0))
+                w.addLine(to: CGPoint(x: x1, y: y1))
+                c.stroke(w, with: .color(whiskerColor),
+                         style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
+
+            // —— 前爪（两只 + 脚趾缝）
+            c.fill(Path(ellipseIn: CGRect(x: 54, y: 206, width: 30, height: 19)),
+                   with: .color(fur))
+            c.fill(Path(ellipseIn: CGRect(x: 88, y: 206, width: 30, height: 19)),
+                   with: .color(fur))
+            for px in [62.0, 70.0, 96.0, 104.0] {
+                var t = Path()
+                t.move(to: CGPoint(x: px, y: 212))
+                t.addLine(to: CGPoint(x: px, y: 222))
+                c.stroke(t, with: .color(dark.opacity(0.45)),
+                         style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
+        }
+        .aspectRatio(172.0 / 230.0, contentMode: .fit)
+    }
+
+    private func ear(left: Bool) -> Path {
+        Path { p in
+            if left {
+                p.move(to: CGPoint(x: 50, y: 50))
+                p.addLine(to: CGPoint(x: 59, y: 6))
+                p.addLine(to: CGPoint(x: 84, y: 32))
+            } else {
+                p.move(to: CGPoint(x: 122, y: 50))
+                p.addLine(to: CGPoint(x: 113, y: 6))
+                p.addLine(to: CGPoint(x: 88, y: 32))
+            }
+            p.closeSubpath()
+        }
+    }
+
+    private func earInner(left: Bool) -> Path {
+        Path { p in
+            if left {
+                p.move(to: CGPoint(x: 58, y: 42))
+                p.addLine(to: CGPoint(x: 63, y: 17))
+                p.addLine(to: CGPoint(x: 77, y: 31))
+            } else {
+                p.move(to: CGPoint(x: 114, y: 42))
+                p.addLine(to: CGPoint(x: 109, y: 17))
+                p.addLine(to: CGPoint(x: 95, y: 31))
+            }
+            p.closeSubpath()
+        }
     }
 }
 
 #Preview(as: .systemSmall) {
     StillWidget()
 } timeline: {
-    StillWidgetEntry(date: Date(), state: .here(pose: .sleep, since: Date().addingTimeInterval(-5400)),
-                     roomName: "时钟")
-    StillWidgetEntry(date: Date().addingTimeInterval(3600), state: .away(lastVisit: Date().addingTimeInterval(-7200)),
-                     roomName: "时钟")
+    StillWidgetEntry(date: Date(), state: .here(pose: .sit, since: Date()), roomName: "时钟")
 }

@@ -51,8 +51,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        AppDelegate.pendingSummon = true
-        NotificationCenter.default.post(name: .stillSummon, object: nil)
+        // ★ 必须先分辨是哪一种通知。
+        //   summon（它来找你）点开 = 叫小窗，是整条链子的转折点。
+        //   talk（它回你的话）点开 = 只是看一眼那句话，不该顺手把猫也放出来 ——
+        //   否则你说一句话、点一下通知，屏幕上就多一只猫，很唐突。
+        let info = response.notification.request.content.userInfo
+        if (info["summon"] as? Bool) == true {
+            AppDelegate.pendingSummon = true
+            NotificationCenter.default.post(name: .stillSummon, object: nil)
+        }
         completionHandler()
     }
 }

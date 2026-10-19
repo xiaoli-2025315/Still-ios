@@ -1,0 +1,30 @@
+# ── 二进制素材：绝不做换行转换 ────────────────────────────────
+#
+# 为什么必须有这个文件：
+#   仓库跑在 Windows（core.autocrlf=true），而构建在 macOS。
+#   任何一次「顺手把 CRLF 规范成 LF」的操作，作用在 mp4/png 这类文件上，
+#   都会吃掉它二进制数据里恰好出现的 0x0D 0x0A 字节。
+#
+#   这类损坏**极其隐蔽**：文件还在、体积只差十几个字节、编译零报错、
+#   装到手机上日志什么都没有 —— 只有画面是黑的（播放器解不开）。
+#   实测踩过：11 个 mp4 全被吃掉几十字节，App 里那间房整个空掉。
+#
+#   `binary` 是 git 内置宏，等价于 -text -diff -merge：
+#   既不转换换行，也不参与 diff/merge。文本文件不受影响。
+
+*.mp4   binary
+*.mov   binary
+*.m4v   binary
+*.webp  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
+*.ipa   binary
+*.dSYM  binary

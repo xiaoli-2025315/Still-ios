@@ -64,7 +64,34 @@ final class PiPController: NSObject, ObservableObject {
     /// 这一次是「点通知叫进来的」—— 小窗一出来就要把自己送回后台。
     private var returnToBackground = false
 
+    /// 小窗上要不要留系统按键。
+    /// 他要的是「一块会动的画面」，不是播放器 —— 进度条、播放键、快进键一冒出来就出戏。
+    /// false = 留关闭 / 全屏，其余（进度条、播放、前后跳）全去掉。
+    /// 关闭不能藏：全藏之后小窗上就没有收它的入口了，只能回 App。
+    private let bareWindow = false
+
+    /// 全局口子。
+    ///
+    /// ★ 为什么需要：Siri 在后台唤起 App 跑 Intent 时，拿到的不是界面上那个
+    ///   `@StateObject` —— Intent 没有 View，够不到 ContentView 里的实例。
+    ///   只有 PiP 在播的时候这个引用才有意义（那时 App 进程是活的）。
+    ///   weak：小窗关了、界面销毁了，这里自己变 nil，不会把控制器拴住。
+    static weak var shared: PiPController?
+
     // MARK: - 接口
+
+    /// 被叫了一声：小窗里当场动一下。
+    ///
+    /// 小窗没开就什么都做不了 —— 从后台起小窗系统直接拒（曾遭 -1001）。
+    /// 这种时候只能靠通知那条路，不能指望画面。
+    func reactToTalk() {
+        guard active else {
+            note = "它听见了（小窗没开，这一句只在通知里）"
+            return
+        }
+        cat.react("sit_look", seconds: 6)
+        note = "它听见了"
+    }
 
     /// App 起来时接一次：把图层交出来，并把屋子里的画面推起来。
     func attach(layer: AVPlayerLayer) {
@@ -118,6 +145,7 @@ final class PiPController: NSObject, ObservableObject {
         //（可失败的只有老的 `init?(playerLayer:)`）。写成 guard let 编不过。
         let c = AVPictureInPictureController(contentSource: source)
         c.delegate = self
+        applyBareControls(c)
 
         // ★ 自动跟随必须关掉。
         //   我们要的是「它自己决定这次跟不跟」；开着这个开关就等于每次都跟，
@@ -147,6 +175,21 @@ final class PiPController: NSObject, ObservableObject {
                 }
             }
         ]
+    }
+
+    // MARK: - 小窗上不要按键
+
+    /// 把小窗里的系统控件藏干净。
+    ///
+    /// 两条路：
+    /// ① `requiresLinearPlayback` —— 官方口子，去掉「前进 / 后退 15 秒」。
+    /// ② `controlsStyle` —— 私有 KVC。1 = 只留关闭 / 全屏，2 = 一个不留。
+    ///    这条链路是自签侧载、不进 App Store，所以私有 KVC 没有审核风险；
+    ///    但系统改版可能把这个 key 抹掉 —— 先问一句 `responds(to:)`，没有就静默跳过，绝不崩。
+    private func applyBareControls(_ c: AVPictureInPictureController) {
+        c.requiresLinearPlayback = true
+        guard c.responds(to: NSSelectorFromString("setControlsStyle:")) else { return }
+        c.setValue(bareWindow ? 2 : 1, forKey: "controlsStyle")
     }
 
     // MARK: - 手动开关（App 里那两颗按钮）
@@ -314,6 +357,8 @@ extension PiPController: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerWillStartPictureInPicture(_ c: AVPictureInPictureController) {
         active = true
+        // 窗口真正出现时系统会把控件重建一遍，这里再压一次。
+        applyBareControls(c)
         note = "它在小窗里"
         startTicker()
 

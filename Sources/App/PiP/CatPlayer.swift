@@ -117,6 +117,8 @@ final class CatPlayer {
         pinTimer?.cancel()
         pinTimer = nil
         pinned = false
+        // 它都走了，别让一句旧话留在空房里飘着。
+        SayBubble.shared.hide()
         restart()
     }
 
@@ -149,7 +151,7 @@ final class CatPlayer {
 
         player.pause()
         player.removeAllItems()
-        player.insert(AVPlayerItem(url: url), after: nil)
+        player.insert(makeItem(url), after: nil)
         player.play()
 
         let t = DispatchWorkItem { [weak self] in
@@ -163,6 +165,16 @@ final class CatPlayer {
     }
 
     // MARK: 内部
+
+    /// 建一条片段。**必须走这个口子** ——
+    /// 小窗里那行字是挂在 item 的 `videoComposition` 上的，
+    /// 直接 `AVPlayerItem(url:)` 建出来的那一条不带字（而且不报错，
+    /// 表现就是「别的地方有字、就这段没有」，极难查）。
+    private func makeItem(_ url: URL) -> AVPlayerItem {
+        let it = AVPlayerItem(url: url)
+        it.videoComposition = SayBubble.shared.composition
+        return it
+    }
 
     private func restart() {
         player.pause()
@@ -190,7 +202,7 @@ final class CatPlayer {
                 if !missing.contains(name) { missing.append(name) }
                 return
             }
-            let item = AVPlayerItem(url: url)
+            let item = makeItem(url)
             if player.items().isEmpty { currentClip = name }
             player.insert(item, after: nil)
         }

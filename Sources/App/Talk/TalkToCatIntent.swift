@@ -9,10 +9,10 @@ import Foundation
 //   好处是以后改名，Siri 认的短语跟着变，不用回来改代码。
 //   App 显示名见 project.yml 的 CFBundleDisplayName。
 //
-// ★ 两句短语是有意给两种用法的：
-//   「跟还在说 今天好累」 —— 一句话说完，不用等它追问
-//   「跟还在说」          —— 不带内容，Siri 会自己问「说什么？」，那个框就是输入框
-//   苹果不允许第三方 App 在通知里放输入框，所以「Siri 追问」是唯一不用打开 App 的输入口。
+// ★ 说法只有一种：先说「跟还在说句话」，Siri 会自己问「说什么？」，
+//   你说完它就送进来。那个追问的框就是输入框 ——
+//   苹果不允许第三方 App 在通知里放输入框，所以这是唯一不用打开 App 的输入口。
+//   （想让一句话直接说完做不到：短语槽位只收 AppEntity/AppEnum，String 收不了，见文件末尾。）
 //
 // openAppWhenRun = false：在后台跑，前台不发生任何切换。
 
@@ -54,7 +54,12 @@ struct StillShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: TalkToCatIntent(),
             phrases: [
-                "跟\(.applicationName)说\(\.$message)",
+                // ★ 这里不能写 "跟\(.applicationName)说\(\.$message)"。
+                //   试过，编译直接报：
+                //   Invalid parameter type. AppEntity and AppEnum are the only allowed
+                //   types for message
+                //   —— 短语槽位只收 AppEntity / AppEnum，String 收不了。
+                //   所以只能给「不带内容」的短语，剩下那半句交给 Siri 追问。
                 "跟\(.applicationName)说句话",
                 "对\(.applicationName)说句话"
             ],

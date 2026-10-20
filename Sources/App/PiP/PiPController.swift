@@ -43,7 +43,16 @@ final class PiPController: NSObject, ObservableObject {
     let cat = CatPlayer()
 
     /// App 里那间房和小窗里那间，是**同一块图层**的两种呈现，不是两份。
+    ///
+    /// `layer` 是 v34 的老房型（系统直接放 mp4）；
+    /// `displayLayer` 是 v35 的实时流房型（画面我们自己喂）。
+    /// 按 `Cfg.liveFramePiP` 只会有其中一块被接上。
     private var layer: AVPlayerLayer?
+    private var displayLayer: AVSampleBufferDisplayLayer?
+
+    /// 实时流的帧泵：把播放器的帧取出来 → 画字 → 喂给上面那块图层。
+    /// 只在实时流模式下才起。
+    private lazy var pump = LiveFramePump(player: cat.player)
 
     private var pip: AVPictureInPictureController?
     private var observations: [NSKeyValueObservation] = []
@@ -104,16 +113,36 @@ final class PiPController: NSObject, ObservableObject {
     func reactRegardless() {
         // 图层还没接上（App 只是被后台唤起、界面还没起）就别动播放器：
         // 这时候放视频会抢用户正在听的歌，而那一帧根本没有地方显示。
-        guard layer != nil else { return }
+        guard hasSurface else { return }
         cat.react("sit_look", seconds: 6)
         note = "它听见了"
     }
 
+    /// 房间那块图层接上没有（两种房型任一）。
+    private var hasSurface: Bool { layer != nil || displayLayer != nil }
+
     /// App 起来时接一次：把图层交出来，并把屋子里的画面推起来。
     func attach(layer: AVPlayerLayer) {
+        // ★ 幂等：SwiftUI 每次刷新都会调过来。重复接会把播放器重新挂一遍，
+        //   画面闪一下不说，还可能把正在播的那一帧抖掉。
+        if self.layer === layer, layer.player === cat.player { return }
         self.layer = layer
         layer.player = cat.player
         layer.videoGravity = .resizeAspect
+        DispatchQueue.main.async { [weak self] in self?.prepare() }
+    }
+
+    /// 实时流那条路：接上一块「我们自己喂帧」的图层。
+    ///
+    /// ★ 这里**不给** layer 设 player —— sample buffer 图层没有 player 这个概念，
+    ///   画面全靠帧泵往里喂。播放器仍然在播（解码 + 时间轴），
+    ///   但它不再直接连到屏幕上。
+    /// ★ 同样幂等：重复 attach 会 flush，画面立刻黑一下 —— 别让它发生。
+    func attach(live: AVSampleBufferDisplayLayer) {
+        if displayLayer === live { return }
+        displayLayer = live
+        pump.attach(live)
+        pump.start()
         DispatchQueue.main.async { [weak self] in self?.prepare() }
     }
 
@@ -137,10 +166,27 @@ final class PiPController: NSObject, ObservableObject {
             note = "这台设备/系统不支持画中画"
             return
         }
-        guard let layer else {
+        guard hasSurface else {
             note = "房间还没就位"
             return
         }
+
+        // ② 内容源 —— 两条路二选一，选不出来就别建（建了也是坏的）。
+        //
+        // ★ 实时流那条：给的是 `AVSampleBufferDisplayLayer` + 一个「播放状态」
+        //   委托。系统读不到播放器（这层根本没有 player），所以时间轴、
+        //   在播/暂停、快进都得由委托告诉它 —— 见本文件末尾的扩展。
+        let source: AVPictureInPictureController.ContentSource
+        if Cfg.liveFramePiP, let dl = displayLayer {
+            source = AVPictureInPictureController.ContentSource(
+                sampleBufferDisplayLayer: dl, playbackDelegate: self)
+        } else if let pl = layer {
+            source = AVPictureInPictureController.ContentSource(playerLayer: pl)
+        } else {
+            note = "房间的图层类型对不上（开关是\(Cfg.liveFramePiP ? "实时流" : "播片")）"
+            return
+        }
+
         didPrepare = true
 
         // ① 音频会话 —— 必须在建 controller 之前。
@@ -153,9 +199,6 @@ final class PiPController: NSObject, ObservableObject {
         } catch {
             note = "音频会话没起来：\(error.localizedDescription)"
         }
-
-        // ② 内容源 = 那块播放器图层本身。
-        let source = AVPictureInPictureController.ContentSource(playerLayer: layer)
 
         // 注意签名：`init(contentSource:)` 是**非可失败**的
         //（可失败的只有老的 `init?(playerLayer:)`）。写成 guard let 编不过。
@@ -430,5 +473,67 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler handler: @escaping (Bool) -> Void) {
         // 用户点小窗上的「还原」—— 不拦，交给系统把 App 带回前台。
         handler(true)
+    }
+}
+
+// MARK: - 实时流的「播放状态」委托（v35）
+//
+// ★ 为什么需要这一整块：sample buffer 那一层里**没有播放器对象**，
+//   系统无从得知「有多长、在播还是停了」，所以全靠这里告诉它。
+//   少实现一个，小窗要么起不来，要么按键一直转圈。
+//
+// ★ 这一套的定位是「直播」：无限时长、没有暂停、不能跳。
+//   正好就是我们要的 —— 猫在过日子，不是一段可以快进的视频。
+
+extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
+
+    /// 直播没有尽头。返回无限时长 ⇒ 系统不画进度条、不显示剩余时间。
+    func pictureInPictureControllerTimeRangeForPlayback(
+        _ controller: AVPictureInPictureController
+    ) -> CMTimeRange {
+        CMTimeRange(start: .zero, duration: .positiveInfinity)
+    }
+
+    /// 系统会定期来问「现在是暂停状态吗」。永远答「在播」。
+    func pictureInPictureControllerIsPlaybackPaused(
+        _ controller: AVPictureInPictureController
+    ) -> Bool {
+        false
+    }
+
+    /// 用户在小窗上点了暂停。
+    ///
+    /// ★ 不给暂停：这是猫在过日子，不是视频。点了就当场恢复，
+    ///   免得他以为猫卡死了。（真停了的话，画面会定格在某一帧上不动。）
+    func pictureInPictureController(
+        _ controller: AVPictureInPictureController, setPlaying playing: Bool
+    ) {
+        if !playing { cat.player.play() }
+    }
+
+    /// 小窗被捏大捏小了。
+    /// 素材只有 720×720 这一档，没有更清晰的可换 —— 什么也不用做，
+    /// 系统自己缩放。空实现是协议要求的（不实现编不过）。
+    func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        didTransitionToRenderSize newRenderSize: CMVideoDimensions
+    ) {}
+
+    /// 用户点了「向前/向后跳」。
+    /// 直播里没有这回事 —— 直接回报完成。
+    /// ★ 一定要调 completionHandler，不调按键会一直转圈。
+    func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        skipByInterval skipInterval: CMTime,
+        completion completionHandler: @escaping () -> Void
+    ) {
+        completionHandler()
+    }
+
+    /// 不要掐掉后台音频 —— 小窗能一直在后台活着，靠的就是这个资格。
+    func pictureInPictureControllerShouldProhibitBackgroundAudioPlayback(
+        _ controller: AVPictureInPictureController
+    ) -> Bool {
+        false
     }
 }

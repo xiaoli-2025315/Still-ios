@@ -6,33 +6,57 @@ import UIKit
 //
 // ★ 为什么必须真的摆出来，不能只喂给播放器：
 //   画中画要的那块图层**必须真的在屏幕上**（否则 isPictureInPicturePossible
-//   恒为 false，起不来还不报错）。而 AVPlayerLayer 只能有一个父 layer ——
-//   所以 App 里的这间房和小窗里那间，是**同一块图层的两种呈现**，不是两份。
+//   恒为 false，起不来还不报错）。
+//
+// ★ v35 起这里有两套（按 `Cfg.liveFramePiP` 选一套，不是两套同时跑）：
+//   · 实时流（默认）：一块 `AVSampleBufferDisplayLayer`，画面是我们
+//     一帧一帧自己喂进去的 —— 字就画在帧上，所以小窗里也能看见。
+//     整个 App 只要两块图层都指向同一块，前景和小窗就不会「一个有字一个没有」。
+//   · 播片（v34 的形态，退路）：一块 `AVPlayerLayer`，系统直接放 mp4。
+//     稳，但插不进任何东西 —— 小窗里就没有字。
 
 final class PlayerLayerView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
 
+final class LiveStageView: UIView {
+    override class var layerClass: AnyClass { AVSampleBufferDisplayLayer.self }
+    var displayLayer: AVSampleBufferDisplayLayer { layer as! AVSampleBufferDisplayLayer }
+}
+
+/// 两种房型共用的样子。**必须共用** —— 否则换开关时房间的圆角、底色会变，
+/// 看起来像另一个 App。
+private func styleStage(_ v: UIView) {
+    v.backgroundColor = UIColor(Cfg.Palette.bg)
+    v.layer.cornerRadius = 16
+    v.layer.cornerCurve = .continuous
+    v.layer.masksToBounds = true
+    v.isUserInteractionEnabled = false
+}
+
 struct RoomStage: UIViewRepresentable {
 
     let controller: PiPController
 
-    func makeUIView(context: Context) -> PlayerLayerView {
+    func makeUIView(context: Context) -> UIView {
+        if Cfg.liveFramePiP {
+            let v = LiveStageView()
+            styleStage(v)
+            controller.attach(live: v.displayLayer)
+            return v
+        }
         let v = PlayerLayerView()
-        v.backgroundColor = UIColor(Cfg.Palette.bg)
-        v.playerLayer.videoGravity = .resizeAspect
-        v.layer.cornerRadius = 16
-        v.layer.cornerCurve = .continuous
-        v.layer.masksToBounds = true
-        v.isUserInteractionEnabled = false
+        styleStage(v)
         controller.attach(layer: v.playerLayer)
         return v
     }
 
-    func updateUIView(_ v: PlayerLayerView, context: Context) {
-        if v.playerLayer.player !== controller.cat.player {
-            controller.attach(layer: v.playerLayer)
+    func updateUIView(_ v: UIView, context: Context) {
+        if let live = v as? LiveStageView {
+            controller.attach(live: live.displayLayer)
+        } else if let pl = v as? PlayerLayerView {
+            controller.attach(layer: pl.playerLayer)
         }
     }
 }

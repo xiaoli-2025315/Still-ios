@@ -107,6 +107,45 @@ final class SayBubble {
     private var hideWork: DispatchWorkItem?
     private var showing = false
 
+    // MARK: - 实时流要读的「此刻该显示什么」
+    //
+    // ★ v35 起这是**唯一**真正的显示来源：帧泵每一帧都来问一次
+    //   「现在该不该有话、透明度多少」，然后把字画进那一帧里。
+    //   下面那套 CALayer / 合成器是 v32/v33 的老路，留着但默认关着。
+    //
+    // 为什么要加锁：帧泵在后台队列上跑（30 次/秒），say() 在主线程。
+    // 不加锁迟早读到半截数据 —— 表现是偶尔闪出一句错字或空白。
+
+    private let lock = NSLock()
+    private var liveLines: [String] = []
+    private var liveShowAt: Date?
+    private var liveHideAt: Date?
+
+    /// 淡入淡出时长（秒）。跟老路那个 CALayer 动画对齐。
+    private static let fade: Double = 0.22
+
+    /// 一帧里「该显示什么」。没有话可说时返回空。
+    struct Face {
+        var lines: [String] = []
+        var alpha: Double = 0
+    }
+
+    /// 帧泵每一帧调一次。**必须快** —— 它在一秒里被调 30 次。
+    func face(at now: Date = Date()) -> Face {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !liveLines.isEmpty, let s = liveShowAt else { return Face() }
+
+        var a = min(1, max(0, now.timeIntervalSince(s) / Self.fade))
+        if let h = liveHideAt {
+            let out = min(1, max(0, now.timeIntervalSince(h) / Self.fade))
+            a *= (1 - out)
+        }
+        if a <= 0.001 { return Face() }
+        return Face(lines: liveLines, alpha: a)
+    }
+
     private init() {}
 
     // MARK: - 合成器（每个 item 调一次）
@@ -152,7 +191,8 @@ final class SayBubble {
     ///   播放链已经不挂合成器了，画了也没地方显示。
     @discardableResult
     func say(_ text: String, seconds: Double = 9) -> Bool {
-        guard Cfg.bubbleInPiP else { return false }
+        // 两条路任一开着，这句话就演得出来（实时流 / 老的合成器）
+        guard Cfg.liveFramePiP || Cfg.bubbleInPiP else { return false }
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = Self.wrap(t)
         // 空话不占地方 —— 返回 false 让调用方知道「这句没演」
@@ -160,6 +200,20 @@ final class SayBubble {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+
+            // ① 记下「从现在起该显示什么」。
+            //    实时流那条路不需要任何定时器 —— 淡出时间直接算在 hideAt 里，
+            //    帧泵每一帧拿当前时间去比。这样即使 App 被冻住一会儿，
+            //    回来也是对的（定时器那套会漂）。
+            let now = Date()
+            self.lock.lock()
+            self.liveLines = lines
+            self.liveShowAt = now
+            self.liveHideAt = now.addingTimeInterval(seconds)
+            self.lock.unlock()
+
+            // ② 老路（合成器）还开着才去动图层。v35 起这条默认不走。
+            guard Cfg.bubbleInPiP else { return }
             self.hideWork?.cancel()
             self.hideWork = nil
             self.show(lines)
@@ -173,7 +227,14 @@ final class SayBubble {
     }
 
     /// 收起来。换片段、它走了，都调一次 —— 别让一句旧话留在空房里。
+    ///
+    /// ★ 实时流这边只是把「淡出起点」设成现在：字会在 0.22 秒里化掉，
+    ///   而不是啪一下消失。lines 故意不清 —— 清了就是硬切。
     func hide() {
+        lock.lock()
+        if liveShowAt != nil { liveHideAt = Date() }
+        lock.unlock()
+
         guard showing else { return }
         showing = false
         hideWork?.cancel()
@@ -323,5 +384,127 @@ final class SayBubble {
 
     private static func width(of s: String) -> CGFloat {
         (s as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    // MARK: - 实时流：把字画进一帧里
+    //
+    // ★ 跟上面那套 CALayer 完全无关，别混着看。
+    //   上面那一套是「在图层树里摆一块」，只有合成器认；
+    //   这一套是「直接把像素画上去」，字和画面本来就是同一张图，
+    //   所以小窗拿到什么就显示什么，没有中间层。
+
+    /// 帧泵每帧调一次。有话就画，没话原样放过。
+    /// **在后台队列上被调用**，这里一个字都别碰 UI。
+    func paint(on pb: CVPixelBuffer) {
+        let f = face()
+        guard !f.lines.isEmpty else { return }
+        guard let img = cachedImage(lines: f.lines, alpha: f.alpha) else { return }
+
+        CVPixelBufferLockBaseAddress(pb, [])
+        defer { CVPixelBufferUnlockBaseAddress(pb, []) }
+
+        let w = CVPixelBufferGetWidth(pb)
+        let h = CVPixelBufferGetHeight(pb)
+        let bpr = CVPixelBufferGetBytesPerRow(pb)
+        guard let base = CVPixelBufferGetBaseAddress(pb), w > 0, h > 0 else { return }
+
+        // 32BGRA：小端下就是 premultipliedFirst + byteOrder32Little。
+        // 写错这个不会崩，表现是**颜色全乱**（红蓝对调）。
+        let info = CGImageAlphaInfo.premultipliedFirst.rawValue
+                 | CGBitmapInfo.byteOrder32Little.rawValue
+        guard let ctx = CGContext(data: base, width: w, height: h,
+                                  bitsPerComponent: 8, bytesPerRow: bpr,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: info) else { return }
+
+        // 按实际帧宽缩放。现在素材固定 720 ⇒ 比例是 1，画出来是原始像素；
+        // 哪天换了分辨率也不用改这里（气泡会跟着缩放，位置不会跑）。
+        let k = CGFloat(w) / Self.render.width
+        let size = Self.bubbleSize(lines: f.lines)
+        let bw = size.width * k
+        let bh = size.height * k
+
+        // CGContext 的原点在左下、y 向上 —— 正好和「离底部多远」对得上，
+        // 不用翻转。draw 出来的图是正的。
+        let rect = CGRect(x: (CGFloat(w) - bw) / 2,
+                          y: Self.bottom * k,
+                          width: bw, height: bh)
+        ctx.draw(img, in: rect)
+    }
+
+    /// 气泡占多大（含朝上的小尾巴）。
+    private static func bubbleSize(lines: [String]) -> CGSize {
+        let textW = lines.map { width(of: $0) }.max() ?? 0
+        let bw = min(maxW, textW) + pad * 2
+        let bh = CGFloat(lines.count) * lineH + pad * 2
+        return CGSize(width: bw, height: bh + tailH)
+    }
+
+    // 最近画好的一张（透明背景的小图，带当前透明度）。
+    // 只有帧泵一个线程用，不用加锁。
+    private var cacheKey = ""
+    private var cacheImage: CGImage?
+
+    /// 透明度量化到 5% 再重画 —— 淡入淡出 0.22 秒里只重画四五次，
+    /// 其余二十几帧直接复用同一张图。不量化的话每帧都要重画一次小图。
+    private func cachedImage(lines: [String], alpha: Double) -> CGImage? {
+        let q = (alpha * 20).rounded() / 20
+        let key = lines.joined(separator: "\u{1}") + "#\(q)"
+        if key == cacheKey, let img = cacheImage { return img }
+        guard let img = Self.renderBubble(lines: lines, alpha: q) else { return nil }
+        cacheKey = key
+        cacheImage = img
+        return img
+    }
+
+    /// 把整块气泡（圆角身子 + 朝上的小尾巴 + 字）画成一张透明底的图。
+    /// 画法跟老路**逐字一样** —— 长相是他看过的那版，不许在这儿改设计。
+    private static func renderBubble(lines: [String], alpha: Double) -> CGImage? {
+        let size = bubbleSize(lines: lines)
+        UIGraphicsBeginImageContextWithOptions(size, false, 1)
+        guard let c = UIGraphicsGetCurrentContext() else {
+            UIGraphicsEndImageContext()
+            return nil
+        }
+        defer { UIGraphicsEndImageContext() }
+
+        c.setAlpha(CGFloat(alpha))
+
+        let bodyH = size.height - tailH
+        let body = CGRect(x: 0, y: 0, width: size.width, height: bodyH)
+
+        let p = UIBezierPath(roundedRect: body, cornerRadius: radius)
+        let cx = size.width / 2
+        p.move(to: CGPoint(x: cx - tailW / 2, y: bodyH))
+        p.addLine(to: CGPoint(x: cx, y: 0))
+        p.addLine(to: CGPoint(x: cx + tailW / 2, y: bodyH))
+        p.close()
+
+        // 投影给白气泡勾个边。房间是极浅的暖白，没这道边气泡会「融」进墙里。
+        c.saveGState()
+        c.setShadow(offset: CGSize(width: 0, height: 2),
+                    blur: 8,
+                    color: UIColor.black.withAlphaComponent(0.18).cgColor)
+        UIColor.white.withAlphaComponent(0.97).setFill()
+        p.fill()
+        c.restoreGState()
+
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: ink,
+            .paragraphStyle: para
+        ]
+        var y = pad
+        for line in lines {
+            let s = (line as NSString).size(withAttributes: attrs)
+            let ty = y + (lineH - s.height) / 2
+            (line as NSString).draw(in: CGRect(x: 0, y: ty, width: size.width, height: s.height),
+                                    withAttributes: attrs)
+            y += lineH
+        }
+
+        return UIGraphicsGetImageFromCurrentImageContext()?.cgImage
     }
 }

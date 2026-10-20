@@ -93,9 +93,9 @@ struct StatusPanelView: View {
             //   先关掉保「App 能开」。装上新版先看这行写的是「开」还是「关」，
             //   别靠猜 —— 之前版本号停在 v30 三个版本，就是没人看得见装的是什么。
             HStack(spacing: 6) {
-                Image(systemName: Cfg.bubbleInPiP ? "bubble.right.fill" : "bubble.right")
+                Image(systemName: Cfg.liveFramePiP ? "dot.radiowaves.left.and.right" : "bubble.right")
                     .font(.system(size: 11))
-                    .foregroundStyle(Cfg.bubbleInPiP ? .green : .orange)
+                    .foregroundStyle(Cfg.liveFramePiP ? .green : .orange)
                 Text(Cfg.bubbleStatusText)
                     .font(.system(size: 11, weight: .medium))
                 Spacer()

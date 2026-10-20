@@ -123,6 +123,11 @@ struct TalkField: UIViewRepresentable {
     /// 一上屏就抢。全屏对话页用它 —— 打开就该能打字。
     var autoFocus: Bool = false
     var onSubmit: () -> Void
+    /// ★ v44：拿到焦点 / 丢掉焦点。主页输入条用它来「让位」
+    ///   （停喂帧、停播放、把音频会话交还系统）—— 让位要在聚焦这一刻做，
+    ///   等键盘通知到的时候，键盘动画已经在跟画面抢主线程了。
+    var onBeginEdit: () -> Void = {}
+    var onEndEdit: () -> Void = {}
 
     func makeCoordinator() -> Coord { Coord(self) }
 
@@ -171,6 +176,14 @@ struct TalkField: UIViewRepresentable {
         func textFieldShouldReturn(_ f: UITextField) -> Bool {
             parent.onSubmit()
             return false
+        }
+
+        func textFieldDidBeginEditing(_ f: UITextField) {
+            parent.onBeginEdit()
+        }
+
+        func textFieldDidEndEditing(_ f: UITextField) {
+            parent.onEndEdit()
         }
     }
 }

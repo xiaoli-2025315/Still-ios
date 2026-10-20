@@ -136,7 +136,10 @@ struct TalkPage: View {
     private var inputBar: some View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
-                TalkField(text: $text, focusPulse: pulse, autoFocus: true, onSubmit: send)
+                TalkField(text: $text, focusPulse: pulse, autoFocus: true,
+                          onSubmit: send,
+                          onBeginEdit: { PiPController.shared?.quiesceForTyping() },
+                          onEndEdit: { PiPController.shared?.resumeAfterTyping() })
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .background(
@@ -214,6 +217,10 @@ struct TalkPage: View {
         TalkFocus.shared.resign()
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
+        // ★ v44：这一页也「让位」了（停喂帧、停播放、松开音频会话），
+        //   视图被移除时不一定走 didEndEditing —— 这里显式还回去，
+        //   否则进过一次聊天记录，猫的画和声音就一直停着。
+        PiPController.shared?.resumeAfterTyping()
         dismiss()
     }
 

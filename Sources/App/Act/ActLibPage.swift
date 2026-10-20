@@ -151,7 +151,7 @@ struct ActLibPage: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    Text(c.isPaid ? "付费" : "免费")
+                    Text(chanLabel(c))
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(c.isPaid ? Tw.red600 : Tw.gray500)
                         .padding(.horizontal, 6)
@@ -181,6 +181,16 @@ struct ActLibPage: View {
                         .stroke(Tw.gray200, lineWidth: 1)
                 )
         )
+    }
+
+    /// 通道标签：台子上有三种值 —— official（台子自带样板）/ free / paid。
+    /// 一开始只写了「免费/付费」，样板猫就被标成「免费 · 12/12 条」，看着像用户自己传的。
+    private func chanLabel(_ c: ActLab.Char) -> String {
+        switch (c.channel ?? "free") {
+        case "official": return "官方"
+        case "paid":     return "付费"
+        default:         return "免费"
+        }
     }
 
     private func avatar(_ c: ActLab.Char) -> some View {

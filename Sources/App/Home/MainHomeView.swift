@@ -167,9 +167,18 @@ struct MainHomeView: View {
         hit()
         showMe = false
         TalkPrompt.ask(onFallback: {
-            // 键盘这条路真走不通时，自动换成通知输入（那条已经验过能用）。
-            // 必须明说一句，不能让他对着一个没反应的框猜。
-            lastReply = "键盘起不来，已经给你发了一条通知 —— 从上面那条通知上打字，一样的。"
+            // ★ v42：不再"自动换成通知"了（他明确说不要这个兜底）。
+            //   键盘没起来就如实说一句，让他知道现在卡在哪、能看哪儿。
+            let kb = KeyboardProbe.shared
+            if kb.kbHeight > 0 {
+                lastReply = "键盘只上来一条建议条（\(Int(kb.kbHeight)) 点高），本体没画出来。上面「输入体检」里有四个数。"
+            } else if !kb.foreground {
+                lastReply = "App 不是前台，键盘要不到。上面「输入体检」里第二行会写「不是」。"
+            } else if kb.lagMS > 150 {
+                lastReply = "主线程堵着（滞后 \(kb.lagMS) 毫秒），键盘画不出来。上面「输入体检」里有这一项。"
+            } else {
+                lastReply = "键盘没起来。上面「输入体检」点开看四个数，把那一行念给我就行。"
+            }
         }, onSend: { m in
             send(m)
         })
@@ -487,6 +496,10 @@ struct MainHomeView: View {
             Text(pip.note)
                 .font(.system(size: 11))
                 .foregroundStyle(Tw.gray400)
+
+            // ★ v42：输入体检。装一次就能看出键盘为什么起不来 ——
+            //   它自己管自己的刷新，不会把这一屏带着每秒重建。
+            KeyboardDiagStrip()
         }
     }
 

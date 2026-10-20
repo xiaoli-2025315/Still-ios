@@ -57,6 +57,10 @@ final class PiPController: NSObject, ObservableObject {
     private var pip: AVPictureInPictureController?
     private var observations: [NSKeyValueObservation] = []
     private var didPrepare = false
+    /// 图层换了，但要等小窗收掉才能重绑
+    private var pendingRebuild = false
+    /// 连败几次了（起窗失败后重建控制器用）
+    private var failCount = 0
     private var ticker: Timer?
     private var clipPoll: Timer?
 
@@ -74,6 +78,9 @@ final class PiPController: NSObject, ObservableObject {
 
     /// 小窗什么时候自己收 —— 就是它「想出去别的房间」了。
     private var closesAt: Date?
+
+    /// 上一次因为「小窗上按了一下」发通知的时间（节流用）
+    private var lastAskSentAt = Date.distantPast
 
     /// 这一次是「点通知叫进来的」—— 小窗一出来就要把自己送回后台。
     private var returnToBackground = false
@@ -124,11 +131,18 @@ final class PiPController: NSObject, ObservableObject {
     func attach(layer: AVPlayerLayer) {
         // ★ 幂等：SwiftUI 每次刷新都会调过来。重复接会把播放器重新挂一遍，
         //   画面闪一下不说，还可能把正在播的那一帧抖掉。
-        if self.layer === layer, layer.player === cat.player { return }
+        if self.layer === layer, layer.player === cat.player {
+            DispatchQueue.main.async { [weak self] in self?.prepare() }
+            return
+        }
+        // ★★★ v42：图层换**实例**了（界面结构一变，SwiftUI 就会造一块新的）。
+        //   控制器如果还指着旧那块，小窗就再也起不来 —— 见 rebuild(hint:)。
+        let had = pip != nil
         self.layer = layer
+        self.displayLayer = nil
         layer.player = cat.player
         layer.videoGravity = .resizeAspect
-        DispatchQueue.main.async { [weak self] in self?.prepare() }
+        rebuild(hint: had)
     }
 
     /// 实时流那条路：接上一块「我们自己喂帧」的图层。
@@ -138,10 +152,48 @@ final class PiPController: NSObject, ObservableObject {
     ///   但它不再直接连到屏幕上。
     /// ★ 同样幂等：重复 attach 会 flush，画面立刻黑一下 —— 别让它发生。
     func attach(live: AVSampleBufferDisplayLayer) {
-        if displayLayer === live { return }
+        if displayLayer === live {
+            DispatchQueue.main.async { [weak self] in self?.prepare() }
+            return
+        }
+        let had = pip != nil
         displayLayer = live
+        layer = nil
         pump.attach(live)
         pump.start()
+        rebuild(hint: had)
+    }
+
+    /// ★★★ v42 修的那个硬 bug。
+    ///
+    ///   原来的写法只有一个 `guard !didPrepare`：控制器**一生只建一次**，
+    ///   绑在第一块交进来的图层上。可界面结构一变（切屏、从别的页面回来、
+    ///   回前台），SwiftUI 会造一块新的图层顶上，旧那块就没人显示了。
+    ///   控制器还指着旧的 ⇒ 系统判断「画面没在屏幕上」⇒ `isPictureInPicturePossible`
+    ///   恒为 false ⇒ 起小窗必失败，报的就是他看到的那个
+    ///   `Failed to start picture in picture`。
+    ///
+    ///   这一个 bug 能完整解释他说的「只有第一次打开 App 是 100% 成功」。
+    ///
+    ///   所以：图层换实例 = 控制器整个重来（旧 delegate 摘掉、observations 作废、
+    ///   `didPrepare` 复位），下一次 `prepare()` 会拿新图层重新建一个。
+    private func rebuild(hint: Bool) {
+        // 小窗正开着的时候不拆 —— 拆了窗会当场消失。
+        // 等它自己收掉时再重建（didStop 里会补一刀）。
+        if let p = pip, p.isPictureInPictureActive {
+            pendingRebuild = true
+            DispatchQueue.main.async { [weak self] in self?.prepare() }
+            return
+        }
+        observations.forEach { $0.invalidate() }
+        observations.removeAll()
+        pip?.delegate = nil
+        pip = nil
+        didPrepare = false
+        pendingRebuild = false
+        active = false
+        possible = false
+        if !hint { note = "房间换地方了，小窗重新准备中…" }
         DispatchQueue.main.async { [weak self] in self?.prepare() }
     }
 
@@ -299,7 +351,11 @@ final class PiPController: NSObject, ObservableObject {
     func unparkAfterTyping(_ wasOpen: Bool) {
         guard wasOpen else { return }
         guard let p = pip, !p.isPictureInPictureActive else { return }
-        startWithRetry([0.4, 1.0, 1.8],
+        // ★ v42：起步从 0.4 秒改成 1.2 秒。
+        //   `stopPictureInPicture()` 之后系统有一段恢复期，0.4 秒就重起是
+        //   必然失败 —— 而且失败一次之后同一个控制器更难再起来。
+        //   宁可多等一秒，也不要"试三次全失败、从此废掉"。
+        startWithRetry([1.2, 2.2, 3.4],
                        failNote: "小窗没叫回来 —— 回 App 点一下「放进小窗」")
     }
 
@@ -479,6 +535,14 @@ final class PiPController: NSObject, ObservableObject {
     //   整个方案不会作废。
 
     private func sendSelfToBackground() {
+        // ★★★ v42：默认**不做了**。理由见 `Cfg.selfSuspendHome`：
+        //   用私有 suspend 挂起过的 App，回来之后键盘服务可能没重连 ——
+        //   这正解释了他「第一次打开能打字，之后全不行」。
+        //   这一版先把这条嫌疑摘掉，看键盘是不是就好了。
+        guard Cfg.selfSuspendHome else {
+            note = "它在角上了 —— 你按 Home 走，它就在那儿"
+            return
+        }
         let sel = NSSelectorFromString("suspend")
         guard UIApplication.shared.responds(to: sel) else { return }
         UIControl().sendAction(sel, to: UIApplication.shared, for: nil)
@@ -504,6 +568,7 @@ extension PiPController: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerWillStartPictureInPicture(_ c: AVPictureInPictureController) {
         active = true
+        failCount = 0
         pipStartedAt = Date()
         // 窗口真正出现时系统会把控件重建一遍，这里再压一次。
         applyBareControls(c)
@@ -524,6 +589,8 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         active = false
         stopTicker()
         note = possible ? "就绪 · 切出去它就跟上" : "画中画暂时不可用"
+        // 停着的时候图层被换了：现在可以安全重绑了。
+        if pendingRebuild { rebuild(hint: true) }
     }
 
     func pictureInPictureController(_ c: AVPictureInPictureController,
@@ -534,6 +601,15 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         returnToBackground = false
         // 最常见的两条：后台起不来（-1001），和画面还没准备好。
         note = "起不来：\(error.localizedDescription)"
+
+        // ★ v42：同一个控制器失败过一次之后，大概率会**继续失败**
+        //   （它内部已经记住了那次失败的原因）。所以失败就整个重绑一次。
+        //   上限两次，防止「一直失败 → 一直重建」把界面刷成跑马灯。
+        failCount += 1
+        if failCount <= 2 {
+            rebuild(hint: true)
+            note = "起不来，正在重新准备房间…（第 \(failCount) 次）"
+        }
     }
 
     func pictureInPictureController(
@@ -590,8 +666,24 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
         guard !playing else { return }
         guard Date().timeIntervalSince(pipStartedAt) > 1.5 else { return }
 
-        Notifier.askInput()
-        note = "小窗上按了一下 —— 通知里等你说一句"
+        // ★★★ v42：这里原来直接 `Notifier.askInput()`，导致他说的
+        //   「只要小窗一关就弹通知」。
+        //
+        //   根因：系统在**关窗**、**切回 App**、**窗口消失**的时候，
+        //   同样会调一次 `setPlaying(false)`。原代码没有分辨，
+        //   一律当成「他按了那个说话键」。
+        //
+        //   判据其实很简单：真按了那个键，**小窗还在**；关窗引起的，小窗就没了。
+        //   所以延后 0.7 秒再看一眼 —— 窗还在才发。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            guard let self else { return }
+            guard self.pip?.isPictureInPictureActive == true else { return }  // 关窗 → 不发
+            // 节流：连着按也只发一条
+            guard Date().timeIntervalSince(self.lastAskSentAt) > 2.0 else { return }
+            self.lastAskSentAt = Date()
+            Notifier.askInput()
+            self.note = "小窗上按了一下 —— 通知里等你说一句"
+        }
     }
 
     /// 小窗被捏大捏小了。

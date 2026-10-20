@@ -37,6 +37,20 @@ final class LiveFramePump {
     /// 素材固定 30fps（12 段逐段解析过 mp4 的 mdhd/stts）。
     static let fps: Int32 = 30
 
+    /// ★★★ v42：喂帧频率降到 15。
+    ///
+    ///   原来按素材原速 30 帧/秒往图层里塞。视觉上 30 → 15 几乎看不出差别
+    ///   （猫的动作本来就慢，坐着、舔毛、睡觉），但**每秒少 15 次唤醒**。
+    ///
+    ///   为什么这跟「打不了字」有关：键盘弹出来不是瞬间就位的，是一段 0.25 秒的
+    ///   动画，每秒要跟主线程要几十次布局和刷新。屏幕这边同时有 30 帧/秒的
+    ///   画面在推，两边抢同一段时间 —— 表现就是**只画出最上面一层**（建议条），
+    ///   键盘本体没渲染出来。这正是他看到的「只有一个 AutoFill」。
+    ///
+    ///   ⇒ 这一版先把帧率让出来，用来验证「主线程被占」是不是真凶。
+    ///     如果键盘因此起来了，那就不用再往下查了。
+    static let feedHz: Int32 = 15
+
     private let player: AVQueuePlayer
     /// 全部活儿都在这个串行队列上 —— 取帧、画字、喂帧同一条道，不用加锁。
     private let queue = DispatchQueue(label: "still.live.frame", qos: .userInitiated)
@@ -83,7 +97,7 @@ final class LiveFramePump {
         queue.async { [weak self] in
             guard let self, self.timeObserver == nil else { return }
             self.timeObserver = self.player.addPeriodicTimeObserver(
-                forInterval: CMTime(value: 1, timescale: Self.fps),
+                forInterval: CMTime(value: 1, timescale: Self.feedHz),
                 queue: self.queue
             ) { [weak self] _ in
                 self?.tick()
@@ -173,8 +187,8 @@ final class LiveFramePump {
         guard let fmt = format else { return nil }
 
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: Self.fps),
-            presentationTimeStamp: CMTime(value: pts, timescale: Self.fps),
+            duration: CMTime(value: 1, timescale: Self.feedHz),
+            presentationTimeStamp: CMTime(value: pts, timescale: Self.feedHz),
             decodeTimeStamp: .invalid)
         pts += 1
 

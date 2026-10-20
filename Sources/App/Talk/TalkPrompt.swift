@@ -18,6 +18,14 @@ import UIKit
 //     ③ 盯 1.5 秒：键盘还是没起，就**自动转成那条已经能用的路**（发通知去打字），
 //        不再出现「弹出来、打不了、也没人说一句」。
 //
+// ★★★ v42：③ 这条**删掉了**。
+//   他原话：「点 APP 里面这个也是弹出通知，我不要这样子」。
+//   兜底本身没错，错在兜底做的事是「把问题挪到别处」——
+//   他看到的不是"键盘没起来"，而是"又弹了一条通知"，问题被藏起来了。
+//   现在改成：键盘没起来就**什么都不替你做**，只在首页那行字里如实写出来。
+//   判断依据也从「有没有收到 keyboardWillShow」换成「键盘实际有多高」——
+//   他说的 AutoFill 那种情况，通知会到、键盘高度却是 0，用通知会误判成"起来了"。
+//
 // ★ 一个坑：`becomeFirstResponder()` 必须在 **present 的 completion** 里调。
 //   在 present 之前调，视图还没上屏，系统直接忽略（又是静默失败）。
 
@@ -135,17 +143,24 @@ enum TalkPrompt {
                 }
             }
 
-            // ③ 盯键盘：起来了就撤掉这个哨兵；没起来就自动转通知。
+            // ③ 盯键盘：起来了就撤掉这个哨兵；没起来就**如实告诉他**，不发通知。
             watch = NotificationCenter.default.addObserver(
-                forName: UIResponder.keyboardWillShowNotification,
+                forName: UIResponder.keyboardWillChangeFrameNotification,
                 object: nil, queue: .main
             ) { _ in
-                MainActor.assumeIsolated { self.clearWatch() }
+                MainActor.assumeIsolated {
+                    // ★ 判据是「高度」，不是「有没有这个通知」。
+                    //   AutoFill 那种情况通知照样会到，但键盘高度是 0 ——
+                    //   用通知判断会把「只上了一条建议条」误判成「键盘来了」。
+                    if KeyboardProbe.shared.kbHeight > 120 { self.clearWatch() }
+                }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 guard self.watch != nil, !self.closed else { return }
                 self.clearWatch()
-                self.fallback(reason: "键盘没起来")
+                // 弹窗留着不动：他自己点框里、换输入法、或者关掉。
+                // 我们不替他做任何「看起来像是解决了」的动作。
+                self.onFallback?()
             }
         }
 

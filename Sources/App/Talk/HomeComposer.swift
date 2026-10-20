@@ -48,16 +48,26 @@ struct HomeComposer: View {
                 conversation
             }
 
-            bar
+            // 白底只包输入区，气泡留在上面的灰底上 —— 气泡一起被包进白板，
+            // 看起来像「一条白条里塞了聊天」，很乱。
+            VStack(spacing: 6) {
+                bar
 
-            // 键盘真起不来时的那行 —— 他不该再遇到「点了，什么都没发生」
-            if !focus.keyboardUp, focus.status != "还没试过" {
-                fallbackRow
+                // 键盘真起不来时的那行 —— 他不该再遇到「点了，什么都没发生」
+                if !focus.keyboardUp, focus.status != "还没试过" {
+                    fallbackRow
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+            .background(
+                Tw.white
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(Tw.gray200).frame(height: 0.5)
+                    }
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
     }
 
     // MARK: - 输入条本体
@@ -67,12 +77,12 @@ struct HomeComposer: View {
             TalkField(text: $text,
                       focusPulse: pulse,
                       autoFocus: false,
+                      placeholder: "跟它还说话…",
                       onSubmit: send,
                       onBeginEdit: beginTyping,
                       onEndEdit: endTyping)
-                .frame(height: 22)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .frame(height: 42)
                 .background(
                     Capsule()
                         .fill(Tw.white)
@@ -137,6 +147,7 @@ struct HomeComposer: View {
                 }
             }
         }
+        .padding(.horizontal, 16)
         .transition(.opacity)
     }
 

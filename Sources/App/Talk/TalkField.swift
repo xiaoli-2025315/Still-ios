@@ -122,6 +122,8 @@ struct TalkField: UIViewRepresentable {
     var focusPulse: Int
     /// 一上屏就抢。全屏对话页用它 —— 打开就该能打字。
     var autoFocus: Bool = false
+    /// 框里那句灰字
+    var placeholder: String = "说点什么…"
     var onSubmit: () -> Void
     /// ★ v44：拿到焦点 / 丢掉焦点。主页输入条用它来「让位」
     ///   （停喂帧、停播放、把音频会话交还系统）—— 让位要在聚焦这一刻做，
@@ -134,7 +136,7 @@ struct TalkField: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextField {
         let f = AutoField()
         f.autoFocus = autoFocus
-        f.placeholder = "说点什么…"
+        f.placeholder = placeholder
         f.font = .systemFont(ofSize: 14)
         f.textColor = UIColor(red: 0x11 / 255.0, green: 0x18 / 255.0, blue: 0x27 / 255.0, alpha: 1)
         f.tintColor = UIColor(red: 0xDC / 255.0, green: 0x26 / 255.0, blue: 0x26 / 255.0, alpha: 1)

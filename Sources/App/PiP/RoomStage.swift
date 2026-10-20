@@ -28,7 +28,10 @@ final class LiveStageView: UIView {
 /// 两种房型共用的样子。**必须共用** —— 否则换开关时房间的圆角、底色会变，
 /// 看起来像另一个 App。
 private func styleStage(_ v: UIView) {
-    v.backgroundColor = UIColor(Cfg.Palette.bg)
+    // ★ v41：房间换成毛玻璃了（素材本身就是雾面玻璃底），
+    //   这层底色只在片子和窗口比例对不上时露出来 —— 也跟着换成同一块冷白，
+    //   否则边上会露出一圈旧暖色，看着像贴了两张底。
+    v.backgroundColor = UIColor(red: 0xEE / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
     v.layer.cornerRadius = 16
     v.layer.cornerCurve = .continuous
     v.layer.masksToBounds = true

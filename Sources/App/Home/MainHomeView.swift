@@ -9,7 +9,8 @@ import UIKit
 //
 //   为什么这件事拖到现在才做：iOS 这边原来是「假状态栏 + 一个方房间 + 三个胶囊 +
 //   一条常驻输入框」，安卓是「顶栏 + 三屏 + 底栏」。两套壳子从没对齐过。
-//   现在先把壳子和三屏对齐，角色 / 陪伴 / 酒馆那三层下一版再搬。
+//   现在先把壳子和三屏对齐；v41 起「角色」那一层搬过来了（Act/ 目录），
+//   陪伴 / 酒馆那两层还差。
 
 // MARK: - 色板（Tailwind 官方默认值，一个都没自己调）
 
@@ -151,6 +152,8 @@ struct MainHomeView: View {
     @State private var lastReply = ""
     /// 正在等它回话
     @State private var thinking = false
+    /// 角色（动作库）那一页开着没有
+    @State private var actOpen = false
 
     private func hit() { taps += 1 }
 
@@ -207,6 +210,10 @@ struct MainHomeView: View {
         //   有自己完整的视图树和生命周期 —— 键盘在这里不会像飘在主页上那样被吞掉。
         .fullScreenCover(isPresented: $talkOpen) {
             TalkPage()
+        }
+        // 角色（动作库）：安卓那边是「它」这屏上的「角色」格子点进去的那一页
+        .fullScreenCover(isPresented: $actOpen) {
+            ActLibPage()
         }
         .onAppear(perform: boot)
         .onDisappear {
@@ -301,7 +308,8 @@ struct MainHomeView: View {
             case 0: HerPane(pip: pip, talkOpen: $talkOpen, openMe: { showMe = true },
                             onHit: hit, taps: taps,
                             lastReply: lastReply, thinking: thinking,
-                            onTalk: { saySomething() })
+                            onTalk: { saySomething() },
+                            onRole: { actOpen = true })
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }
@@ -515,6 +523,8 @@ struct HerPane: View {
     var lastReply: String = ""
     var thinking: Bool = false
     var onTalk: () -> Void = {}
+    /// 点「角色」那一格 —— 打开动作库（安卓 RoleActivity／ActActivity 那一层）
+    var onRole: () -> Void = {}
     /// 键盘到底起来没有，要跟着变，所以得观察
     @ObservedObject private var focus = TalkFocus.shared
 
@@ -622,6 +632,13 @@ struct HerPane: View {
                     )
                     .padding(.bottom, 10)
                 }
+
+                // 角色：安卓「它」这屏上的第一格入口 —— 点进去才是下一层
+                // （一张卡一只它 · 右上「＋」登记新角色 · 点开看这套动作好了几条）
+                HStack(spacing: 10) {
+                    tile("角色", "一只它 · 这套动作好了几条", "cat.fill") { onRole() }
+                }
+                .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
                     tile("放进小窗", pip.active ? "收回" : "切出去它就跟着",

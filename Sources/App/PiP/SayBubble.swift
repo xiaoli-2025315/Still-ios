@@ -18,10 +18,10 @@ import UIKit
 //
 // ★ 代价：每一帧都要过一次合成器（720×720@30）。换来的是「字真的在小窗里」，
 //   没有第二条路。实测这个量级可以接受；真机上要是发现掉帧/发烫，
-//   第一嫌疑人就是这里，第二是 `composition` 被换成了不匹配的 renderSize。
+//   第一嫌疑人就是这里，第二是 `renderSize` 被换成了不匹配的值。
 //
 // ★ 安全：`renderSize` 必须跟片段**完全一致**（720×720，12 段全一样，
-//   实测过，见 Tools/out/pip）。不一致不报错、不崩溃，
+//   逐段解析过 mp4，见 Tools/out/pip）。不一致不报错、不崩溃，
 //   表现是**整片黑** —— 所以这个值要改，必须连素材一起换。
 //
 // ★ 为什么气泡是「画成一张图」而不是几个 CALayer 拼：
@@ -33,6 +33,27 @@ import UIKit
 //   只是从 384×216 的横条搬到 720×720 的方画布上：
 //   猫占正中间、头顶在 y≈173，所以气泡改蹲在**底下**，
 //   猫的脸始终露着，尾巴朝上指着它。
+//
+// ─────────────────────────────────────────────────────────────────────────
+// ★★★ v32 闪退的真凶，记在这儿别再犯（2026-10-21）：
+//
+//   `AVMutableVideoComposition()` 建出来时 **instructions 是空的**。
+//   空的 instructions 配 animationTool，**播第一帧就抛异常**。
+//   App 一启动猫就开始播，所以表现是「点开就闪退」——
+//   重装、重签、换证书都好不了，一度被误判成「全能签的签名问题」。
+//
+//   解法：**必须补一条「原样透传」的 instruction**，把源轨和合成器连起来：
+//       let ins = AVMutableVideoCompositionInstruction()
+//       ins.timeRange = CMTimeRange(start: .zero, duration: .positiveInfinity)
+//       ins.layerInstructions = [AVMutableVideoCompositionLayerInstruction(assetTrack: track)]
+//       composition.instructions = [ins]
+//
+//   两个连带坑（同一条链，一起踩过）：
+//    ① instruction 里的 layerInstruction 跟**具体那条视频轨**绑死，
+//       所以合成器**不能共享**，必须一条片段建一个 —— 挂到别的 asset 上就崩。
+//    ② 附加层（root）同理：一个 CALayer 不能同时待在两棵图层树里，
+//       后挂的那棵会把它从前面那棵里摘走。
+// ─────────────────────────────────────────────────────────────────────────
 
 final class SayBubble {
 
@@ -43,9 +64,8 @@ final class SayBubble {
     /// 所有片段都是 720×720（Tools/_pip_compose.py 的 CANVAS）。
     static let render = CGSize(width: 720, height: 720)
 
-    /// 所有片段都是 30fps、单轨、trackID = 1（逐段解析过 mp4 的 tkhd/mdhd）。
+    /// 所有片段都是 30fps（逐段解析过 mp4 的 mdhd/stts）。
     private static let fps: Int32 = 30
-    private static let trackID: CMPersistentTrackID = 1
 
     // MARK: 长相（一排常量，真机上觉得小就改 font 这一个数）
 
@@ -70,29 +90,57 @@ final class SayBubble {
 
     // MARK: 图层
 
-    /// 挂给 videoComposition 的那一层。里面空着 = 什么都不叠。
-    private let root = CALayer()
+    /// 所有活着的附加层：**一条片段一个**，弱引用。
+    ///
+    /// 为什么不是一个共享的根：合成器跟视频轨绑死（见文件头 ①），
+    /// 而 AVQueuePlayer 手里同时有好几条 item（正在播的 + 预填的下一条）。
+    /// 只往最后建的那条根上挂字，字会等切段才冒出来 —— 说话那一下是空的。
+    /// 所以每建一条合成器就登记一个根，说话时给**每一根**都挂一张。
+    ///
+    /// 弱引用：片段被换掉 → item 释放 → 合成器释放 → 根自己消失，不用手动清。
+    private let roots = NSHashTable<CALayer>.weakObjects()
 
-    /// 气泡本体（一整张图）。只有这一层，不拆形状层 + 文字层。
-    private var bubble: CALayer?
-
-    /// 建好的合成器。**每个 AVPlayerItem 都要挂上它**，见 CatPlayer.makeItem。
-    private(set) var composition: AVMutableVideoComposition?
+    /// 每根上挂着的气泡。跟 `roots` 同步增删（不同根上的 layer 是不同对象，
+    /// 但 contents 是同一张图，不重复解码）。
+    private var bubbles: [CALayer] = []
 
     private var hideWork: DispatchWorkItem?
     private var showing = false
 
-    private init() {
-        // CoreAnimation 默认 y 轴朝上（原点在左下）。这里**不翻**，
-        // 气泡那一层的 frame 自己从底部算 —— 少一层「到底翻没翻」的不确定性。
+    private init() {}
+
+    // MARK: - 合成器（每个 item 调一次）
+
+    /// 给一条片段建它的合成器。**不能共享、不能缓存** —— 原因见文件头 ①②。
+    ///
+    /// 拿不到视频轨就返回 nil：调用方别挂合成器。
+    /// 宁可这句话不出字，也不能让 App 打不开。
+    func composition(for asset: AVAsset) -> AVMutableVideoComposition? {
+        // 本地 bundle 里的文件，tracks 同步就取得到；取不到说明这段素材有问题，
+        // 那种片段本来就播不出画面，不挂合成器正好。
+        guard let track = asset.tracks(withMediaType: .video).first else { return nil }
+
+        let root = CALayer()
         root.frame = CGRect(origin: .zero, size: Self.render)
 
         let c = AVMutableVideoComposition()
         c.renderSize = Self.render
         c.frameDuration = CMTime(value: 1, timescale: Self.fps)
+
+        // ★ 这条 instruction 是保命的：空 instructions + animationTool = 播即崩。
+        //   内容就是「源轨原样透传」—— 我们只往上叠层，不改画面本身。
+        let ins = AVMutableVideoCompositionInstruction()
+        ins.timeRange = CMTimeRange(start: .zero, duration: .positiveInfinity)
+        ins.layerInstructions = [AVMutableVideoCompositionLayerInstruction(assetTrack: track)]
+        c.instructions = [ins]
+
+        // asTrackID 用**这条轨自己的号**，不写死 1 —— 写死万一哪段素材轨号变了，
+        // 表现是崩，而且查不到原因。
         c.animationTool = AVVideoCompositionCoreAnimationTool(
-            additionalLayer: root, asTrackID: Self.trackID)
-        composition = c
+            additionalLayer: root, asTrackID: track.trackID)
+
+        roots.add(root)
+        return c
     }
 
     // MARK: - 对外
@@ -127,12 +175,19 @@ final class SayBubble {
         hideWork?.cancel()
         hideWork = nil
         DispatchQueue.main.async { [weak self] in
-            guard let self, let b = self.bubble else { return }
-            self.fade(b, to: 0)
+            guard let self else { return }
+            // 先把引用交出去，再淡出 —— 这期间又 say() 的话建的是新的一批，互不干扰。
+            let old = self.bubbles
+            self.bubbles = []
+            for b in old { self.fade(b, to: 0) }
+            // 淡出完了才从图层树上摘掉，不然是「瞬间消失」不是「淡出」。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                old.forEach { $0.removeFromSuperlayer() }
+            }
         }
     }
 
-    // MARK: - 内部
+    // MARK: 内部
 
     private func show(_ lines: [String]) {
         let textW = lines.map { Self.width(of: $0) }.max() ?? 0
@@ -142,27 +197,23 @@ final class SayBubble {
 
         guard let img = Self.draw(lines: lines, w: bubbleW, h: totalH) else { return }
 
-        let layer: CALayer
-        if let b = bubble {
-            layer = b
-        } else {
+        // 上一批先撤掉（可能挂在已经废弃的根上，也可能根换过了）
+        for b in bubbles { b.removeFromSuperlayer() }
+        bubbles.removeAll()
+
+        // 每一根都挂一张 —— 正在播的那条和下一条，说话那一下都出字。
+        for case let root as CALayer in roots.allObjects {
             let l = CALayer()
             l.contentsScale = 1        // 图就是按 720 画布的点位画的，1 点 = 1 像素
             l.opacity = 0
-            root.addSublayer(l)
-            bubble = l
-            layer = l
-        }
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)      // 换话不要有位置/尺寸的补间
-        layer.contents = img.cgImage
-        // frame 用画面底部往上算（CoreAnimation 原点在左下）
-        layer.frame = CGRect(x: (Self.render.width - bubbleW) / 2, y: Self.bottom,
+            l.contents = img.cgImage
+            // frame 用画面底部往上算（CoreAnimation 原点在左下）
+            l.frame = CGRect(x: (Self.render.width - bubbleW) / 2, y: Self.bottom,
                              width: bubbleW, height: totalH)
-        CATransaction.commit()
-
-        fade(layer, to: 1)
+            root.addSublayer(l)
+            bubbles.append(l)
+            fade(l, to: 1)
+        }
     }
 
     /// 淡入淡出。显式动画 —— 合成器是按视频帧的时间取图层树的，

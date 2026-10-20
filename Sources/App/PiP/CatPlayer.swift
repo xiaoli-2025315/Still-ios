@@ -170,9 +170,15 @@ final class CatPlayer {
     /// 小窗里那行字是挂在 item 的 `videoComposition` 上的，
     /// 直接 `AVPlayerItem(url:)` 建出来的那一条不带字（而且不报错，
     /// 表现就是「别的地方有字、就这段没有」，极难查）。
+    ///
+    /// ★ 合成器是**每条片段各建一个**的，不能共享 —— 它跟这条片段的视频轨
+    ///   绑死，挂到别的 asset 上会直接崩。详见 SayBubble.swift 文件头。
+    /// ★ 拿不到视频轨就不挂：没字只是难看，崩了是 App 打不开。
     private func makeItem(_ url: URL) -> AVPlayerItem {
         let it = AVPlayerItem(url: url)
-        it.videoComposition = SayBubble.shared.composition
+        if let c = SayBubble.shared.composition(for: it.asset) {
+            it.videoComposition = c
+        }
         return it
     }
 

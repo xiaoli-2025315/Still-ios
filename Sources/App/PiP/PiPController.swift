@@ -280,6 +280,29 @@ final class PiPController: NSObject, ObservableObject {
         startWithRetry([0.0, 0.25, 0.6, 1.2], failNote: "画中画这会儿起不来 —— 房间画面还没在屏幕上稳住")
     }
 
+    // MARK: - 打字的时候先把小窗收起来
+    //
+    // ★★★ v40：他报「App 里弹出来了但键盘拉不出来，屏幕外那个通知能打」。
+    //   两者的差别只有一个：通知那条输入框在**系统进程**里，App 内这条在我们自己的进程里，
+    //   而那一刻小窗正开着。小窗在跑的时候，系统会把我们这一侧的键盘压住 ——
+    //   要得到键盘，得先让小窗退出去。所以：先收、打完再还。
+
+    /// 收起来去打字。返回「刚才到底开着没有」，打完照这个还回去。
+    func parkForTyping() -> Bool {
+        guard let p = pip, p.isPictureInPictureActive else { return false }
+        p.stopPictureInPicture()
+        note = "打字的时候小窗先收一下，打完还给你"
+        return true
+    }
+
+    /// 打完字把它叫回来。刚才没开就什么都不做。
+    func unparkAfterTyping(_ wasOpen: Bool) {
+        guard wasOpen else { return }
+        guard let p = pip, !p.isPictureInPictureActive else { return }
+        startWithRetry([0.4, 1.0, 1.8],
+                       failNote: "小窗没叫回来 —— 回 App 点一下「放进小窗」")
+    }
+
     /// 反复尝试起小窗。
     ///
     /// `isPictureInPicturePossible` 是个「会自己变真」的值：图层刚上屏那一两拍

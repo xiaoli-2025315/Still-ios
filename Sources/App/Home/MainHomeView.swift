@@ -163,9 +163,13 @@ struct MainHomeView: View {
     private func saySomething() {
         hit()
         showMe = false
-        TalkPrompt.ask { m in
+        TalkPrompt.ask(onFallback: {
+            // 键盘这条路真走不通时，自动换成通知输入（那条已经验过能用）。
+            // 必须明说一句，不能让他对着一个没反应的框猜。
+            lastReply = "键盘起不来，已经给你发了一条通知 —— 从上面那条通知上打字，一样的。"
+        }, onSend: { m in
             send(m)
-        }
+        })
     }
 
     private func send(_ m: String) {

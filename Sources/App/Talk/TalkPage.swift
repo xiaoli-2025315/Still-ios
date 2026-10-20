@@ -163,13 +163,26 @@ struct TalkPage: View {
                 .disabled(busy)
             }
 
-            // 键盘真起不来的时候，把卡在哪一步写在这儿。
+            // 键盘真起不来的时候，把卡在哪一步写在这儿，并且给一条能走的路。
             // 他不该再遇到「点了，什么都没发生，也不知道为什么」。
             if !focus.keyboardUp && focus.status != "还没试过" {
-                Text("键盘：\(focus.status)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Tw.gray400)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    Text("键盘：\(focus.status)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Tw.gray400)
+                    Spacer(minLength: 0)
+                    Button {
+                        // 这条一定能用：通知上那个输入框在系统进程里，跟键盘无关。
+                        Notifier.askInput(after: 0.2)
+                        close()
+                    } label: {
+                        Text("改用通知打字")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Tw.red600)
+                    }
+                    .buttonStyle(PressStyle(scale: 0.94))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 12)

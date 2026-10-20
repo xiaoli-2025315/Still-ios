@@ -46,6 +46,12 @@ enum TalkPrompt {
 
         // ① 小窗先收 —— 它在跑的时候，我们这边要不到键盘。
         let pipWasOpen = PiPController.shared?.parkForTyping() ?? false
+        // ①·5（v43）画面和声音也停 —— 这两样是这台 App 一直在占的资源，
+        //      键盘动画和按键声都要用。之前只停了小窗，没停这两样。
+        PiPController.shared?.quiesceForTyping()
+        // 直接把这一刻的现场传回去（这一步不带弹窗信息，是"底"）
+        Diag.report("① 点了跟它说话")
+
         // 收小窗要一小会儿（系统那个窗口是淡出的），等它退干净再弹，别抢时间。
         let delay: TimeInterval = pipWasOpen ? 0.5 : 0.0
 
@@ -158,6 +164,14 @@ enum TalkPrompt {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 guard self.watch != nil, !self.closed else { return }
                 self.clearWatch()
+                // ★ v43：这一刻的现场自动传回台子 —— 他不用念任何数字。
+                let f = self.alert.textFields?.first
+                Diag.report("② 弹窗后 2 秒（键盘没上来）", extra: [
+                    "输入框是第一个响应者": f?.isFirstResponder ?? false,
+                    "输入框高": Int(f?.bounds.height ?? 0),
+                    "输入框在窗口里": f?.window != nil,
+                    "键盘高": KeyboardProbe.shared.kbHeight,
+                ])
                 // 弹窗留着不动：他自己点框里、换输入法、或者关掉。
                 // 我们不替他做任何「看起来像是解决了」的动作。
                 self.onFallback?()
@@ -210,8 +224,10 @@ enum TalkPrompt {
         }
 
         private func restorePiP(after seconds: TimeInterval) {
-            guard pipWasOpen else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                // 先恢复画面和声音，再叫小窗 —— 反过来的话小窗会起在一块停住的画面上
+                PiPController.shared?.resumeAfterTyping()
+                guard self.pipWasOpen else { return }
                 PiPController.shared?.unparkAfterTyping(true)
             }
         }

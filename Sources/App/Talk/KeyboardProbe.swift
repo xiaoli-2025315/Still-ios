@@ -66,11 +66,20 @@ final class KeyboardProbe: ObservableObject {
             MainActor.assumeIsolated {
                 self?.kbEverShown = true
                 self?.readFrame(n)
+                // ★ v43：真起来了这件事也要传回去 —— 不然我只知道「没起来」，
+                //   不知道有几条路是自己好的。
+                Diag.noteKeyboard("起", height: self?.kbHeight ?? 0)
+                if let h = self?.kbHeight, h > 120 {
+                    Diag.report("④ 键盘真的出现了")
+                }
             }
         }
         c.addObserver(forName: UIResponder.keyboardWillHideNotification,
                       object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.kbHeight = 0 }
+            MainActor.assumeIsolated {
+                self?.kbHeight = 0
+                Diag.noteKeyboard("收", height: 0)
+            }
         }
 
         stateObs = UIApplication.shared.observe(
@@ -122,6 +131,7 @@ final class KeyboardProbe: ObservableObject {
         let visible = max(0, bottom - frame.minY)
         kbHeight = visible < 1 ? 0 : visible
         if kbHeight > 1 { kbEverShown = true }
+        Diag.noteKeyboard("变", height: kbHeight)
     }
 }
 

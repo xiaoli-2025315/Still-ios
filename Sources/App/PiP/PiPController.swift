@@ -61,6 +61,9 @@ final class PiPController: NSObject, ObservableObject {
     private var pendingRebuild = false
     /// 连败几次了（起窗失败后重建控制器用）
     private var failCount = 0
+    /// v43：打字态 —— 画面泵和音频都停了，打完再恢复
+    private var quiesced = false
+    private var wasPlayingBeforeTyping = false
     private var ticker: Timer?
     private var clipPoll: Timer?
 
@@ -243,13 +246,7 @@ final class PiPController: NSObject, ObservableObject {
         // ① 音频会话 —— 必须在建 controller 之前。
         //    ★ .mixWithOthers：别把用户正在听的歌掐掉。
         //      小窗自己就有后台资格，不需要靠抢音频通道来续命。
-        do {
-            let s = AVAudioSession.sharedInstance()
-            try s.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
-            try s.setActive(true)
-        } catch {
-            note = "音频会话没起来：\(error.localizedDescription)"
-        }
+        activateAudio()
 
         // 注意签名：`init(contentSource:)` 是**非可失败**的
         //（可失败的只有老的 `init?(playerLayer:)`）。写成 guard let 编不过。
@@ -345,6 +342,53 @@ final class PiPController: NSObject, ObservableObject {
         p.stopPictureInPicture()
         note = "打字的时候小窗先收一下，打完还给你"
         return true
+    }
+
+    // MARK: - 打字时把占资源的东西全停掉（v43）
+    //
+    // ★ 为什么：这台 App 从起来那一刻就在干两件一直不停的事 ——
+    //   每秒 15 帧往屏幕上喂画面（占主线程），和一直占着音频会话（占音频通道）。
+    //   键盘弹出是一段动画 + 一个带声音的窗口，两样都缺。
+    //   之前只停了小窗，**画面和声音没停** —— 这可能是键盘"来了却站不起来"的原因。
+    //   停 2 秒不吃亏：弹窗盖着屏幕，本来就看不见猫。
+
+    /// 进打字态。返回是不是真的停下来了（已经停过就返回 false，别重复）。
+    @discardableResult
+    func quiesceForTyping() -> Bool {
+        guard !quiesced else { return false }
+        quiesced = true
+        wasPlayingBeforeTyping = cat.player.rate > 0
+        pump.stop()
+        cat.player.pause()
+        // 音频会话交还给系统 —— 键盘的按键声要用它
+        do {
+            try AVAudioSession.sharedInstance()
+                .setActive(false, options: [.notifyOthersOnDeactivation])
+        } catch {
+            // 交不还也无所谓，别让这条挡住打字
+        }
+        note = "打字时画面和声音先停了，给键盘让路"
+        return true
+    }
+
+    /// 打完字恢复。
+    func resumeAfterTyping() {
+        guard quiesced else { return }
+        quiesced = false
+        activateAudio()
+        if wasPlayingBeforeTyping { cat.player.play() }
+        pump.start()
+    }
+
+    /// 音频会话（建小窗之前和打完字之后都要用同一套参数）
+    private func activateAudio() {
+        do {
+            let s = AVAudioSession.sharedInstance()
+            try s.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            try s.setActive(true)
+        } catch {
+            note = "音频会话没起来：\(error.localizedDescription)"
+        }
     }
 
     /// 打完字把它叫回来。刚才没开就什么都不做。

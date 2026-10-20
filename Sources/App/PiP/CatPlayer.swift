@@ -174,8 +174,12 @@ final class CatPlayer {
     /// ★ 合成器是**每条片段各建一个**的，不能共享 —— 它跟这条片段的视频轨
     ///   绑死，挂到别的 asset 上会直接崩。详见 SayBubble.swift 文件头。
     /// ★ 拿不到视频轨就不挂：没字只是难看，崩了是 App 打不开。
+    /// ★★★ v34：`Cfg.bubbleInPiP` 关着时**根本不碰 videoComposition**。
+    ///   连着两版（v32/v33）都因为这条链「点开就闪退」，先退回 v31 的播法。
+    ///   开关一开，这里的代码原样生效 —— 上面的三条注意事项都还有效。
     private func makeItem(_ url: URL) -> AVPlayerItem {
         let it = AVPlayerItem(url: url)
+        guard Cfg.bubbleInPiP else { return it }
         if let c = SayBubble.shared.composition(for: it.asset) {
             it.videoComposition = c
         }

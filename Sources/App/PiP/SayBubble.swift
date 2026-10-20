@@ -147,8 +147,12 @@ final class SayBubble {
 
     /// 让它说这句话。`seconds` 后自己淡出。
     /// 重复调用会顶掉上一句（连没播完的「它听见了…」一起换掉）。
+    ///
+    /// ★ v34：开关关着时直接返回 false，连图都不画 ——
+    ///   播放链已经不挂合成器了，画了也没地方显示。
     @discardableResult
     func say(_ text: String, seconds: Double = 9) -> Bool {
+        guard Cfg.bubbleInPiP else { return false }
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = Self.wrap(t)
         // 空话不占地方 —— 返回 false 让调用方知道「这句没演」

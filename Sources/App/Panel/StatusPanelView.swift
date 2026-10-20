@@ -88,6 +88,25 @@ struct StatusPanelView: View {
                     .buttonStyle(ChipButton())
             }
 
+            // 小窗气泡开关。
+            // ★ 这一行是排障的眼睛：字进小窗连着两版闪退（v32/v33），
+            //   先关掉保「App 能开」。装上新版先看这行写的是「开」还是「关」，
+            //   别靠猜 —— 之前版本号停在 v30 三个版本，就是没人看得见装的是什么。
+            HStack(spacing: 6) {
+                Image(systemName: Cfg.bubbleInPiP ? "bubble.right.fill" : "bubble.right")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Cfg.bubbleInPiP ? .green : .orange)
+                Text(Cfg.bubbleStatusText)
+                    .font(.system(size: 11, weight: .medium))
+                Spacer()
+                Text(AppVersion.tag)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Cfg.Palette.faint)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(Capsule().fill(Cfg.Palette.accent.opacity(0.08)))
+
             Divider().opacity(0.5)
 
             // 撞见概率

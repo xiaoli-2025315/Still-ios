@@ -322,6 +322,8 @@ struct ActWallSheet: View {
     @State private var labDone = 0
     /// 点「一键做整套」前的确认
     @State private var askGen = false
+    /// 只为了让「点我翻过来」那颗按钮的字刷新一下
+    @State private var flipNote = false
 
     private let cols = [GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8),
@@ -479,14 +481,40 @@ struct ActWallSheet: View {
     }
 
     private var footNote: some View {
-        Text(pack == nil
-             ? "这一只的动作还没取下来。灰格子＝台子上还没有这一条。"
-             : "点一格就看它怎么动。这台子上没有的动作会是灰的。")
-            .font(.system(size: 11))
-            .foregroundStyle(Tw.gray400)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(pack == nil
+                 ? "这一只的动作还没取下来。灰格子＝台子上还没有这一条。"
+                 : "点一格就看它怎么动。这台子上没有的动作会是灰的。")
+                .font(.system(size: 11))
+                .foregroundStyle(Tw.gray400)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 自救口：换上去的猫在小窗里倒过来时，点这一下就翻正。
+            // ★ 常驻，不按条件藏 —— 翻错了这件事，只有他眼睛能判，不该等一个版本。
+            Button {
+                let k = "still.catFlipY"
+                UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: k), forKey: k)
+                flipNote.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(UserDefaults.standard.bool(forKey: "still.catFlipY")
+                         ? "已经翻过来了 · 再点一下翻回去"
+                         : "换上去的猫在小窗里是倒的？点我翻过来")
+                        .font(.system(size: 10.5, weight: .medium))
+                }
+                .foregroundStyle(Tw.gray500)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule().fill(Tw.gray100)
+                )
+            }
+            .buttonStyle(PressStyle(scale: 0.96))
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
     }
 
     // MARK: 制作（这一版新接的两条路）

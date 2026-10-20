@@ -348,6 +348,12 @@ final class LiveFramePump {
     /// ★ 房间看不出问题，是因为它是毛玻璃色块，上下翻一模一样 ——
     ///   所以这个 bug 只在猫身上露出来，别去怀疑素材。
     private func drawUpright(_ img: CGImage, in r: CGRect, _ ctx: CGContext) {
+        // 自救口：动作墙底部那颗「点我翻过来」会把这个开关打开。
+        // 翻转方向这种事不该让他等一个版本 —— 点一下就该好。
+        if UserDefaults.standard.bool(forKey: "still.catFlipY") {
+            ctx.draw(img, in: r)
+            return
+        }
         ctx.saveGState()
         // 把这一段局部翻回 y 朝上：y' = (minY + maxY) - y，区间还是它自己，位置不动。
         ctx.translateBy(x: 0, y: r.minY + r.maxY)

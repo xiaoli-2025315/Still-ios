@@ -77,6 +77,11 @@ targets:
       - path: Sources/Widget
       - path: Sources/App/Island
       - path: Sources/App/Shared
+        # ★ v43：现场上报要读 UIApplication.shared / 键盘状态 —— 这些在扩展里是
+        #   **不可用**的（编译直接报 'shared' is unavailable in application extensions）。
+        #   组件用不上它，排除掉最干净。
+        excludes:
+          - "Diag.swift"
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
       # 组件里那张静态猫图。★ 显式写 buildPhase：png 是资源不是源码，

@@ -146,6 +146,62 @@ enum Notifier {
     ///   壳一出来它就自己退回后台 —— 见 PiPController.raiseShell()。
     static let raiseAction = "still.talk.raise"
 
+    // MARK: - 在通知上打字
+    //
+    // ★★★ 这是 iPhone 上**唯一**能在别人 App 里打字的地方。
+    //   安卓那边靠「悬浮窗」权限，能在别的 App 上面画一个输入框；iOS 不给这个权限，
+    //   任何 App 都没法凭空弹自己的界面。但系统**允许通知自带一个输入框** ——
+    //   `UNTextInputNotificationAction`，iOS 9 就有，到今天还能用。
+    //   你把通知往下拉开，系统自己在上面画一个输入框，你打完字点「说」，
+    //   文字交回我们，全程不用切 App。
+    //
+    // ★ 代价（说清楚，别让人以为是缺功能）：通知得**先出现**，还得**拉开**才看得见输入框。
+    //   所以是「下拉 + 打字」两下，做不到「一下就到打字状态」。
+
+    static let askCategory = "still.ask"
+    static let askAction = "still.ask.type"
+    private static let askPrefix = "still.ask."
+
+    /// 立刻发一条带输入框的通知。
+    /// 小窗上那两个键按下去就是走这里 —— 你在别的 App 里，只能这么叫你。
+    static func askInput(after seconds: Double = 0.3) {
+        let name = SharedStore.load().catName ?? "还在"
+
+        let content = UNMutableNotificationContent()
+        content.title = name
+        content.body = "它在这儿。拉开这条，写一句给它。"
+        content.sound = .default
+        content.categoryIdentifier = askCategory
+        content.userInfo = ["ask": true]
+        content.interruptionLevel = .timeSensitive
+        content.threadIdentifier = askCategory
+
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(0.2, seconds), repeats: false)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: askPrefix + UUID().uuidString,
+            content: content,
+            trigger: trigger))
+    }
+
+    /// 用户在通知上打完字，系统把文字交回来了。
+    ///
+    /// ★ 这里**不许**碰任何界面：他可能还在别的 App 里，App 是在后台被叫起来的。
+    ///   能做的只有一件 —— 把这句话送出去，回话交回给画中画或再发一条通知。
+    static func handleTyped(_ text: String) {
+        let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty else { return }
+
+        Task {
+            let name = SharedStore.load().catName ?? "还在"
+            let reply = await CatTalk.say(m)
+            let inPiP = await MainActor.run { PiPController.shared?.active ?? false }
+            // 小窗在放：字会直接画进画面里，不用再弹一条。
+            // 小窗不在：只能靠通知把这句话送到他眼前。
+            if !inPiP { tellReply(reply, catName: name) }
+        }
+    }
+
     /// 注册通知分类。
     ///
     /// ★ 不注册的话，通知上就只有一条光秃秃的文字，
@@ -155,17 +211,30 @@ enum Notifier {
             identifier: raiseAction,
             title: "让它过来",
             options: [.foreground])
+        // 输入框那颗。`options` 留空 = 在后台处理，不把 App 拉到前台 ——
+        // 他正在别的 App 里，拉走就是打断。
+        let type = UNTextInputNotificationAction(
+            identifier: askAction,
+            title: "跟它说句话",
+            options: [],
+            textInputButtonTitle: "说",
+            textInputPlaceholder: "写一句…")
         let talk = UNNotificationCategory(
             identifier: talkCategory,
-            actions: [raise],
+            actions: [raise, type],
             intentIdentifiers: [],
             options: [])
         let summon = UNNotificationCategory(
             identifier: category,
-            actions: [],
+            actions: [type],
             intentIdentifiers: [],
             options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([talk, summon])
+        let ask = UNNotificationCategory(
+            identifier: askCategory,
+            actions: [type],
+            intentIdentifiers: [],
+            options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([talk, summon, ask])
     }
 
     static func clear(_ done: (() -> Void)? = nil) {

@@ -160,24 +160,21 @@ struct MainHomeView: View {
                 bottomBar
             }
 
-            // 输入条：从顶上滑下来，跟安卓 TalkBar 同一个位置。
-            // ★ 加 ignoresSafeArea(.keyboard) 是为了让它**不被键盘推走** ——
-            //   它在屏幕顶上，键盘从下面起来，本来就不该影响它。
-            if talkOpen {
-                VStack(spacing: 0) {
-                    TalkSheet(open: $talkOpen)
-                    Spacer(minLength: 0)
-                }
-                .ignoresSafeArea(.keyboard, edges: .bottom)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(3)
-            }
+            // 输入条：v38 起不再飘在这里了。
+            // ★ 顶部那条从 v36 折腾到 v37 都死在「键盘不弹」，根子是浮动视图 + 转场动画 +
+            //   顶部贴边，每一环都可能被系统静默吞掉。现在改成**一整页对话页**
+            //   （见 Talk/TalkPage.swift），输入条钉在页面底部 —— 那是最不容易出错的布局。
 
             if showMe {
                 meSheet
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(4)
             }
+        }
+        // ★ 对话页用 fullScreenCover 展示：它是**独立的一层呈现**，
+        //   有自己完整的视图树和生命周期 —— 键盘在这里不会像飘在主页上那样被吞掉。
+        .fullScreenCover(isPresented: $talkOpen) {
+            TalkPage()
         }
         .onAppear(perform: boot)
         .onDisappear {

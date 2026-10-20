@@ -59,6 +59,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         //   否则你说一句话、点一下通知，屏幕上就多一只猫，很唐突。
         let info = response.notification.request.content.userInfo
 
+        // ★★ 通知上那个输入框：系统把字交回来了。
+        //   这一刻他多半还在别的 App 里，我们是在后台被叫起来的 ——
+        //   所以这里**什么都不弹**，只把话送到，回话走小窗或下一条通知。
+        if response.actionIdentifier == Notifier.askAction {
+            let typed = (response as? UNTextNotificationResponse)?.userText ?? ""
+            Notifier.handleTyped(typed)
+            completionHandler()
+            return
+        }
+
         // 「让它过来」那颗按钮：不用翻 App，直接把它放到角上。
         // 这个 action 带 .foreground，所以 App 已经被系统拉到前台了 ——
         // 正好，起小窗要的就是这一瞬前台。

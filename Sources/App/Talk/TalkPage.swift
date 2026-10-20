@@ -1,0 +1,225 @@
+import SwiftUI
+import UIKit
+
+// MARK: - 对话页（全屏）
+//
+// ★★★ v38 为什么把它从「一条飘在顶上的输入条」改成**一整页**：
+//
+//   顶部那条从 v36 折腾到 v37，两个版本都死在「键盘不弹」。复盘下来，
+//   它踩的全是同一类坑：浮动视图 + 转场动画 + 顶部贴边 + 外部推焦点 ——
+//   每一环都可能被系统静默吞掉，而且吞掉之后**什么都不报**，只能靠猜。
+//
+//   一整页没有这些坑：标准页面、输入条钉在底部、键盘升起时系统自己顶上来。
+//   这是 iOS 上最不会出错的一种布局，做了十几年都是这么做的。
+//
+//   顺带，安卓那边本来也有一整个 `TalkActivity`（聊天页）——
+//   这一页正好把它补上，两边对齐。
+
+struct TalkPage: View {
+
+    @Environment(\.dismiss) private var dismiss
+
+    @ObservedObject private var focus = TalkFocus.shared
+
+    @State private var text = ""
+    @State private var lines: [Line] = []
+    @State private var busy = false
+    /// 外面推这个数 = 再抢一次焦点
+    @State private var pulse = 0
+
+    struct Line: Identifiable {
+        let id = UUID()
+        let mine: Bool
+        let text: String
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            dialog
+        }
+        .background(Tw.gray50.ignoresSafeArea())
+        // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
+        //   不用自己算键盘高度，也不会被挡住。
+        .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
+        .onAppear(perform: boot)
+    }
+
+    // MARK: - 顶栏
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button {
+                close()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Tw.gray500)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Tw.gray100))
+            }
+            .buttonStyle(PressStyle(scale: 0.9))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("跟它还说话")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Tw.gray900)
+                Text(busy ? "它在想…" : "说一句，它就应一句")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray400)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+    }
+
+    // MARK: - 聊天记录
+
+    private var dialog: some View {
+        ScrollViewReader { sp in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if lines.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("说点什么吧。")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Tw.gray900)
+                            Text("它听得懂人话，也记得你上次说的那句。")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Tw.gray400)
+                        }
+                        .padding(.top, 18)
+                    }
+                    ForEach(lines) { l in
+                        bubble(l).id(l.id)
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: lines.count) {
+                withAnimation(.easeOut(duration: 0.18)) { sp.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    private func bubble(_ l: Line) -> some View {
+        HStack {
+            if l.mine { Spacer(minLength: 40) }
+            Text(l.text)
+                .font(.system(size: 14))
+                .foregroundStyle(l.mine ? Tw.white : Tw.gray900)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(l.mine ? Tw.red600 : Tw.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(l.mine ? Color.clear : Tw.gray200, lineWidth: 1)
+                )
+                .textSelection(.enabled)
+            if !l.mine { Spacer(minLength: 40) }
+        }
+    }
+
+    // MARK: - 底部输入条
+    //
+    // 形态照安卓 `TalkBar`：白底圆角 + 右边一块红的「说」。
+
+    private var inputBar: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                TalkField(text: $text, focusPulse: pulse, autoFocus: true, onSubmit: send)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Tw.white)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(Tw.gray200, lineWidth: 1)
+                            )
+                    )
+
+                Button(action: send) {
+                    Text("说")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Tw.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 11)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(busy ? Tw.red600.opacity(0.45) : Tw.red600)
+                        )
+                }
+                .buttonStyle(PressStyle(scale: 0.94))
+                .disabled(busy)
+            }
+
+            // 键盘真起不来的时候，把卡在哪一步写在这儿。
+            // 他不该再遇到「点了，什么都没发生，也不知道为什么」。
+            if !focus.keyboardUp && focus.status != "还没试过" {
+                Text("键盘：\(focus.status)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Tw.gray400)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background(
+            Tw.white
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Tw.gray200).frame(height: 0.5)
+                }
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
+    // MARK: - 起
+
+    private func boot() {
+        // 上次那一轮：进来就能看见刚才说了什么、它怎么回的。
+        if let t = CatTalk.last() {
+            lines = [Line(mine: true, text: t.mine), Line(mine: false, text: t.reply)]
+        }
+        // AutoField 一上屏会自己抢；这几下是补刀，间隔拉开、不跟系统抢。
+        for d in [0.25, 0.7, 1.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + d) { pulse += 1 }
+        }
+    }
+
+    private func close() {
+        TalkFocus.shared.resign()
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
+        dismiss()
+    }
+
+    // MARK: - 发
+
+    private func send() {
+        let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty, !busy else { return }
+
+        text = ""
+        busy = true
+        lines.append(Line(mine: true, text: m))
+        pulse += 1                     // 发完还留在输入态，想接着说就接着打
+
+        Task { @MainActor in
+            let reply = await CatTalk.say(m)
+            lines.append(Line(mine: false, text: reply))
+            busy = false
+            pulse += 1
+        }
+    }
+}

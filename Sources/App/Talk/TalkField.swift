@@ -92,18 +92,43 @@ final class TalkFocus: ObservableObject {
 }
 
 // MARK: - 输入框本体
+//
+// ★★ v38 又加了一条兜底：`AutoField.didMoveToWindow`。
+//   前面那套「外面按节奏推 pulse、里面连抢 8 次」是外部驱动 —— 只要中间有一环没跑，
+//   键盘就还是不弹。`didMoveToWindow` 是**系统自己来通知**「我现在真的在屏幕上了」，
+//   在那一刻抢，是整条链上唯一不依赖我们自己计时的时机。
+//   两条都留着：它先进，外部推的几次就当补刀。
+
+final class AutoField: UITextField {
+
+    /// 一上屏就自己抢焦点。真正的「不用点」。
+    var autoFocus = false
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard autoFocus, window != nil else { return }
+        // 同一轮 runloop 里抢会被系统吞掉（视图还没完成布局），推到下一轮。
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil, !self.isFirstResponder else { return }
+            self.becomeFirstResponder()
+        }
+    }
+}
 
 struct TalkField: UIViewRepresentable {
 
     @Binding var text: String
     /// 每次自增 = 再抢一次焦点（外面按节奏推这个数）
     var focusPulse: Int
+    /// 一上屏就抢。全屏对话页用它 —— 打开就该能打字。
+    var autoFocus: Bool = false
     var onSubmit: () -> Void
 
     func makeCoordinator() -> Coord { Coord(self) }
 
     func makeUIView(context: Context) -> UITextField {
-        let f = UITextField()
+        let f = AutoField()
+        f.autoFocus = autoFocus
         f.placeholder = "说点什么…"
         f.font = .systemFont(ofSize: 14)
         f.textColor = UIColor(red: 0x11 / 255.0, green: 0x18 / 255.0, blue: 0x27 / 255.0, alpha: 1)

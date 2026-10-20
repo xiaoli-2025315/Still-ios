@@ -67,8 +67,10 @@ final class PiPController: NSObject, ObservableObject {
     ///   所以这不是一个可以随时反悔的开关，是「它这次没跟」。
     private(set) var following = true
 
-    /// 用户在小窗上按了暂停。★ v37：这个键现在是真的。
-    private var pausedByUser = false
+    /// 小窗是什么时候起来的。
+    /// ★ 系统在起窗那一刻会顺手调一次 `setPlaying(false)` 来同步状态。
+    ///   那是「对表」，不是「他按了」—— 不挡住的话，每次小窗一出来就白弹一条通知。
+    private var pipStartedAt = Date.distantPast
 
     /// 小窗什么时候自己收 —— 就是它「想出去别的房间」了。
     private var closesAt: Date?
@@ -483,7 +485,7 @@ extension PiPController: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerWillStartPictureInPicture(_ c: AVPictureInPictureController) {
         active = true
-        pausedByUser = false
+        pipStartedAt = Date()
         // 窗口真正出现时系统会把控件重建一遍，这里再压一次。
         applyBareControls(c)
         note = "它在小窗里"
@@ -542,32 +544,35 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
     }
 
     /// 系统会定期来问「现在是暂停状态吗」。
-    /// ★ v37：照实答。以前恒返回 false、点暂停又偷偷 play 回来 ——
-    ///   那正是他说的「里面的按钮都是假的」：按了没变化。
+    ///
+    /// ★ v38 起恒答「在播」。因为那个键已经不是暂停了 —— 是「跟它说话」。
+    ///   答 false，系统就一直画同一个键面（❚❚），按下去永远只做一件事，
+    ///   不会出现「按一次是暂停、按两次是播放」这种两个意思混在一个键上。
     func pictureInPictureControllerIsPlaybackPaused(
         _ controller: AVPictureInPictureController
     ) -> Bool {
-        pausedByUser
+        false
     }
 
-    /// 用户在小窗上点了暂停 / 播放。
+    /// 用户在小窗上按了那个键。
     ///
-    /// ★ 系统那几个键我们藏不干净（私有 KVC 会随系统版本失效），
-    ///   既然藏不掉，就让它**真的有用**：暂停就真停（帧泵也停，省电），
-    ///   播放就真播。不再出现「按下去什么都不发生」。
+    /// ★★ v38：它不再是暂停，是**叫它说话**。
+    ///
+    ///   为什么不能真暂停：真按暂停之后，系统会把键面换成「播放」，
+    ///   再按一下就成了「播放」—— 同一个位置两个意思，越用越乱。
+    ///   而且他要的就是「按一下能打字」，不是「按一下停住」。
+    ///
+    ///   按下去之后**画面照常走**，只在后台发一条带输入框的通知：
+    ///   拉下来、写一句、点「说」，全程不离开你正在用的 App。
     func pictureInPictureController(
         _ controller: AVPictureInPictureController, setPlaying playing: Bool
     ) {
-        pausedByUser = !playing
-        if playing {
-            pump.start()
-            cat.player.play()
-            note = "它在小窗里"
-        } else {
-            cat.player.pause()
-            pump.stop()
-            note = "它停住了（不是你按的？再点一下就继续）"
-        }
+        // 起窗那一下系统会调一次 false 来对表，这不是他按的。
+        guard !playing else { return }
+        guard Date().timeIntervalSince(pipStartedAt) > 1.5 else { return }
+
+        Notifier.askInput()
+        note = "小窗上按了一下 —— 通知里等你说一句"
     }
 
     /// 小窗被捏大捏小了。
@@ -579,13 +584,19 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
     ) {}
 
     /// 用户点了「向前/向后跳」。
-    /// 直播里没有这回事 —— 直接回报完成。
+    ///
+    /// ★ v38：这两个键本来是**删掉的**（`requiresLinearPlayback = true`，官方口子，
+    ///   见 applyBareControls）。万一某版系统还是把它们画出来，按下去也不能白按 ——
+    ///   走同一条路：发一条带输入框的通知。所以他按哪个键，结果都一样。
+    ///
     /// ★ 一定要调 completionHandler，不调按键会一直转圈。
     func pictureInPictureController(
         _ controller: AVPictureInPictureController,
         skipByInterval skipInterval: CMTime,
         completion completionHandler: @escaping () -> Void
     ) {
+        Notifier.askInput()
+        note = "小窗上按了一下 —— 通知里等你说一句"
         completionHandler()
     }
 

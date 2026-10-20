@@ -153,6 +153,12 @@ struct MainHomeView: View {
 
     private func hit() { taps += 1 }
 
+    /// 屏幕的点尺寸。有刘海的机器不会出现 320x480 —— 出现就是还跑在兼容模式里。
+    static var screenTag: String {
+        let b = UIScreen.main.bounds
+        return "\(Int(b.width))x\(Int(b.height))"
+    }
+
     // MARK: - 说一句
     //
     // ★ v44：这里不再有任何「跟它说话」的入口函数。
@@ -528,11 +534,14 @@ struct HerPane: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(Capsule().fill(Tw.gray300))
-                    Text("\(AppVersion.tag) · 点击 \(taps) · 键盘\(focus.keyboardUp ? "已起" : "未起") · 小窗\(pip.possible ? "可起" : "不可起")")
+                    // ★ v45：把**屏幕点尺寸**摆在这儿。
+                    //   要是这一行还是 320x480，就说明 UILaunchScreen 没写进包里的 plist，
+                    //   一眼就能看出来，不用再等我猜一轮。
+                    Text("\(AppVersion.tag) · 屏\(MainHomeView.screenTag) · 键盘\(focus.keyboardUp ? "已起" : "未起") · 小窗\(pip.possible ? "可起" : "不可起")")
                         .font(.system(size: 9.5, design: .monospaced))
                         .foregroundStyle(Tw.gray400)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.75)
                 }
                 .padding(.horizontal, 4)
                 .padding(.bottom, 16)

@@ -189,6 +189,18 @@ final class CatPack {
         }
     }
 
+    /// 从某个偏移读一段。
+    /// ★ `FileHandle.read(from:length:)` 只有 macOS 有，iOS 上没有 ——
+    ///   第一版用了它，CI 直接报 "extra arguments at positions #1, #2"。
+    ///   iOS 上只能 seek + read(upToCount:)。
+    private static func readAt(_ fh: FileHandle, at off: UInt64, len: Int) -> Data? {
+        guard len > 0 else { return Data() }
+        do {
+            try fh.seek(toOffset: off)
+            return try fh.read(upToCount: len)
+        } catch { return nil }
+    }
+
     private static func readCentralDirectory(_ url: URL) -> DirTable? {
         guard let fh = try? FileHandle(forReadingFrom: url),
               let end = try? fh.seekToEnd() else { return nil }
@@ -196,7 +208,7 @@ final class CatPack {
 
         // EOCD 在最后 22 字节起，可能带最多 64KB 注释 —— 往回找签名
         let tailLen: UInt64 = min(end, 66560)
-        guard let tail = try? fh.read(from: end - tailLen, length: Int(tailLen)) else { return nil }
+        guard let tail = Self.readAt(fh, at: end - tailLen, len: Int(tailLen)) else { return nil }
 
         var eocd: Int? = nil
         var i = tail.count - 22
@@ -209,7 +221,7 @@ final class CatPack {
         let count = Int(tail.u16(e + 10))
         let cdSize = UInt64(tail.u32(e + 12))
         let cdOff = UInt64(tail.u32(e + 16))
-        guard cdOff + cdSize <= end, let cd = try? fh.read(from: cdOff, length: Int(cdSize)) else { return nil }
+        guard cdOff + cdSize <= end, let cd = Self.readAt(fh, at: cdOff, len: Int(cdSize)) else { return nil }
 
         var t = DirTable()
         t.zipURL = url

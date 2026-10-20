@@ -307,7 +307,7 @@ final class LiveFramePump {
         ctx.scaleBy(x: 1, y: -1)
 
         let full = CGRect(x: 0, y: 0, width: CGFloat(S), height: CGFloat(S))
-        ctx.draw(room, in: full)
+        drawUpright(room, in: full, ctx)
 
         // 猫不在：画完房间就收工
         if let name = actKey, let act = pack.fallback(for: name) {
@@ -324,7 +324,7 @@ final class LiveFramePump {
                 let ground = Double(S) * Self.groundRatio
                 let top = ground - footScaled
                 let x = (Double(S) - w) / 2
-                ctx.draw(img, in: CGRect(x: x, y: top, width: w, height: h))
+                drawUpright(img, in: CGRect(x: x, y: top, width: w, height: h), ctx)
             }
 
             // 推进帧号（动作自己的 fps，跟喂帧频率不是一回事）
@@ -335,6 +335,25 @@ final class LiveFramePump {
             }
         }
         return pb
+    }
+
+    /// 在这个「y 朝下」的上下文里把一张图**正着**贴进去。
+    ///
+    /// ★★★ `ctx.draw(CGImage, in:)` 是按 **y 朝上** 画的 —— 见 `SayBubble.paint`：
+    ///   那边没有翻转上下文，`draw` 出来的图是正的。
+    ///   而这个合成上下文为了「离地面多远」算起来顺手，已经翻成了 y 朝下；
+    ///   直接在它里面 `draw`，等于翻一次再翻一次的反面 —— **贴上去的图是倒的**。
+    ///   用户看到的就是「除了自带那只，换上去的猫全都倒过来了」。
+    ///
+    /// ★ 房间看不出问题，是因为它是毛玻璃色块，上下翻一模一样 ——
+    ///   所以这个 bug 只在猫身上露出来，别去怀疑素材。
+    private func drawUpright(_ img: CGImage, in r: CGRect, _ ctx: CGContext) {
+        ctx.saveGState()
+        // 把这一段局部翻回 y 朝上：y' = (minY + maxY) - y，区间还是它自己，位置不动。
+        ctx.translateBy(x: 0, y: r.minY + r.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(img, in: CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height))
+        ctx.restoreGState()
     }
 
     /// 给一条片段挂上「取帧口」。

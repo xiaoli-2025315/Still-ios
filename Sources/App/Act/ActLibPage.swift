@@ -1,6 +1,8 @@
+import CoreTransferable
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 // MARK: - 角色（动作库）
 //
@@ -94,8 +96,17 @@ struct ActLibPage: View {
         .background(Tw.gray50.ignoresSafeArea())
         .task { await model.load() }
         .sheet(isPresented: $showNew) {
-            NewRoleSheet { await model.load() }
-                .presentationDetents([.large])
+            NewRoleSheet { c in
+                await model.load()
+                guard let c else { return }
+                // ★ 登记完直接把这只的动作墙打开 —— 他的原话是
+                //   「在 APP 上直接制作新的一个角色并可以取回来使用」，
+                //   所以「建完就接着做」这一步不该让他自己再点一次。
+                //   等半秒是为了让上面这张表先收干净，两张表同时开会互相吃掉。
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                watching = c
+            }
+            .presentationDetents([.large])
         }
         .sheet(item: $watching) { c in
             ActWallSheet(char: c) { await model.load() }
@@ -289,6 +300,29 @@ struct ActWallSheet: View {
     @State private var previewing: ActPreview?
     @State private var using = false
 
+    // MARK: 制作这条链要用的状态
+    //
+    // ★ 这一版把「自己做一只新角色」整条接上了。两条路各一个按钮：
+    //   ① 免费通道：从相册选一段动作视频传上去，台子抠像
+    //   ② 付费通道：一句话让台子按词库把 12 条各做一条（花豆包额度）
+    //   两条都常驻显示 —— 不按「有没有东西」藏按钮（他从来找不到藏起来的入口）。
+
+    /// 刚从相册选的那段视频
+    @State private var videoItem: PhotosPickerItem?
+    /// 正在上传 / 刚传完那句话
+    @State private var upNote = ""
+    @State private var upBusy = false
+    /// 正在盯着的抠像任务
+    @State private var actJobs: [ActLab.Job] = []
+    /// 正在盯着的生成任务
+    @State private var genJob = ""
+    @State private var genState: ActLab.GenJob?
+    @State private var genBusy = false
+    /// 台子上现在好了几条（跟手机里那份比对，判断要不要更新）
+    @State private var labDone = 0
+    /// 点「一键做整套」前的确认
+    @State private var askGen = false
+
     private let cols = [GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8)]
@@ -320,10 +354,28 @@ struct ActWallSheet: View {
                     footNote
                 }
             }
+            workBar
             useBar
         }
         .background(Tw.gray50.ignoresSafeArea())
-        .task { await prepare() }
+        .task {
+            // ★ 先问台子「现在好了几条」，再决定要不要下包 ——
+            //   一条都没有的时候下 40MB 是白下（而且那包是空的，读不出来会报错）。
+            await refreshLab()
+            await prepare()
+            await watch()
+        }
+        .onChange(of: videoItem) { _, it in
+            guard let it else { return }
+            Task { await uploadVideo(it) }
+        }
+        .confirmationDialog("让台子做整套动作？", isPresented: $askGen, titleVisibility: .visible) {
+            Button("做（会花豆包额度）") { Task { await startGen() } }
+            Button("先不做", role: .cancel) {}
+        } message: {
+            Text("台子会按 12 个标准动作各生成一条，然后再抠像。"
+                 + "这一步花的是你机器上的豆包额度；已经有、正在做的会自己跳过。")
+        }
         .fullScreenCover(item: $previewing) { p in
             ActPreviewPage(pack: p.pack, act: p.act)
         }
@@ -437,6 +489,189 @@ struct ActWallSheet: View {
             .padding(.bottom, 20)
     }
 
+    // MARK: 制作（这一版新接的两条路）
+
+    private var workBar: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 8) {
+                PhotosPicker(selection: $videoItem, matching: .videos, photoLibrary: .shared()) {
+                    pill(icon: "square.and.arrow.up", text: "传一段动作视频",
+                         on: false, busy: upBusy)
+                }
+                .disabled(upBusy || genBusy)
+
+                Button {
+                    askGen = true
+                } label: {
+                    pill(icon: "wand.and.stars", text: "一键做整套",
+                         on: false, busy: genBusy)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(upBusy || genBusy)
+            }
+
+            if !liveText.isEmpty {
+                HStack(spacing: 6) {
+                    if upBusy || genBusy || !actJobs.filter({ !$0.isDone && !$0.isBad }).isEmpty {
+                        ProgressView().scaleEffect(0.6)
+                    }
+                    Text(liveText)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Tw.gray500)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 2)
+            }
+
+            // 台子上比手机里多 —— 说明又做好了几条，得重下一遍才看得见
+            if labDone > (pack?.acts.count ?? 0), !loading {
+                Button {
+                    Task { await refreshPack() }
+                } label: {
+                    pill(icon: "arrow.down.circle", text: "台子上多了 \(labDone - (pack?.acts.count ?? 0)) 条 · 更新到手机",
+                         on: true, busy: false)
+                }
+                .buttonStyle(PressStyle())
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
+    }
+
+    /// 一颗小按钮。`on` = 用红底（那是「有事可做」的那颗）。
+    private func pill(icon: String, text: String, on: Bool, busy: Bool) -> some View {
+        HStack(spacing: 6) {
+            if busy {
+                ProgressView().scaleEffect(0.6)
+            } else {
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+            }
+            Text(text)
+                .font(.system(size: 12.5, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(on ? Tw.white : Tw.gray900)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(on ? Tw.red600 : Tw.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(on ? .clear : Tw.gray200, lineWidth: 1)
+                )
+        )
+    }
+
+    /// 现在最该让他看见的那一句话。
+    /// 顺序：正在上传 → 正在生成 → 正在抠像 → 空。
+    private var liveText: String {
+        if upBusy || !upNote.isEmpty { return upNote }
+        if let g = genState, genBusy || !genJob.isEmpty || g.isDone || g.isBad {
+            return "整套生成：" + g.line
+        }
+        if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
+            return "抠像：" + (j.display?.isEmpty == false ? j.display! : (j.name ?? "")) + " · " + j.line
+        }
+        if let bad = actJobs.first(where: { $0.isBad }) {
+            return "有一段没成：" + (bad.err?.isEmpty == false ? bad.err! : (bad.stage ?? ""))
+        }
+        return ""
+    }
+
+    // MARK: 盯台子
+
+    /// 每 3 秒问一次：好了几条、抠到哪了、生成到哪了。
+    /// 这个页面上才跑，关掉就停 —— 不做后台轮询。
+    private func watch() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if Task.isCancelled { return }
+            await refreshLab()
+        }
+    }
+
+    private func refreshLab() async {
+        if let cs = try? await ActLab.chars(),
+           let mine = cs.first(where: { $0.id == char.id }) {
+            labDone = mine.doneCount
+        }
+        if let js = try? await ActLab.jobs(charId: char.id) {
+            actJobs = js
+        }
+        if !genJob.isEmpty {
+            if let g = try? await ActLab.genState(job: genJob) {
+                genState = g
+                if g.isDone || g.isBad {
+                    genJob = ""
+                    genBusy = false
+                    // 做完立刻把手机里那份换新，不用他再点一次
+                    await refreshPack()
+                }
+            }
+        }
+    }
+
+    // MARK: 传一段视频（免费通道）
+
+    private func uploadVideo(_ item: PhotosPickerItem) async {
+        upBusy = true
+        upNote = "正在读这段视频…"
+        defer {
+            upBusy = false
+            videoItem = nil
+        }
+        do {
+            guard let box = try await item.loadTransferable(type: MovieBox.self) else {
+                upNote = "这段视频读不出来 —— 换一段（要相册里的视频，不是照片）"
+                return
+            }
+            let mb = (try? FileManager.default.attributesOfItem(atPath: box.url.path)[.size] as? Int64) ?? 0
+            upNote = "正在传 \(max(1, mb / 1_048_576)) MB… 传完台子就开始抠"
+            let j = try await ActLab.submitVideo(charId: char.id, video: box.url)
+            try? FileManager.default.removeItem(at: box.url)
+            upNote = "收到了 · \(j.display ?? j.name ?? "这条动作") 正在抠像"
+            actJobs = [j] + actJobs
+            // 一上传完就盯紧一点
+            await refreshLab()
+        } catch {
+            upNote = error.localizedDescription
+        }
+    }
+
+    // MARK: 一键做整套（付费通道）
+
+    private func startGen() async {
+        genBusy = true
+        genState = nil
+        do {
+            let r = try await ActLab.genStart(charId: char.id)
+            genJob = r.job
+            genState = ActLab.GenJob.stub(stage: "下单了，台子正在排队（\(r.acts.count) 条）")
+            await refreshLab()
+        } catch {
+            genBusy = false
+            genState = ActLab.GenJob.stub(stage: "没做起来：" + error.localizedDescription)
+        }
+    }
+
+    /// 强制重下一遍动作包（台子上多了几条之后用）。
+    private func refreshPack() async {
+        loading = true
+        do {
+            pack = try await store.install(charId: char.id, force: true)
+            await onChanged()
+        } catch {
+            err = "更新动作包没成：\(error.localizedDescription)"
+        }
+        loading = false
+    }
+
     // MARK: 用它
 
     private var useBar: some View {
@@ -489,6 +724,9 @@ struct ActWallSheet: View {
             pack = p
             return
         }
+        // ★ 台子上一条动作都没有 ⇒ 不下包。
+        //   空包（只有说明书、没有帧）下下来是 40MB 白流量，读的时候还容易报「读不出来」。
+        guard max(labDone, char.doneCount) > 0 else { return }
         loading = true
         err = nil
         do {
@@ -609,8 +847,8 @@ struct ActPreviewPage: View {
 
 struct NewRoleSheet: View {
 
-    /// 登记成功后回调（让外面刷新列表）
-    var onDone: () async -> Void
+    /// 登记成功后回调：把新角色带出去，外面刷新列表并把它的动作墙打开
+    var onDone: (ActLab.Char?) async -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -797,12 +1035,45 @@ struct NewRoleSheet: View {
         busy = true
         err = nil
         do {
-            _ = try await ActLab.create(name: nm, channel: channel, photo: p)
-            await onDone()
+            let c = try await ActLab.create(name: nm, channel: channel, photo: p)
+            // 先收表，再把新角色交出去 —— 顺序反了会两张表打架
             dismiss()
+            await onDone(c)
         } catch {
             err = "登记失败：\(error.localizedDescription)"
         }
         busy = false
+    }
+}
+
+
+// MARK: - 相册里的一段视频
+
+/// 从相册取一段视频，落到我们自己的临时文件上。
+///
+/// ★ 为什么不 `loadTransferable(type: Data.self)`：一段动作视频二三十兆，
+///   读成 Data 等于整个塞进内存；而且 `upload(for:from:)` 用文件发能走流式。
+/// ★ 相册给的那个 URL 是**临时的**，回调一返回系统就可能删掉 —— 必须当场复制出来。
+struct MovieBox: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { sent in
+            SentTransferredFile(sent.url)
+        } importing: { received in
+            let dst = FileManager.default.temporaryDirectory
+                .appendingPathComponent("still-up-\(UUID().uuidString).mp4")
+            try? FileManager.default.removeItem(at: dst)
+            try FileManager.default.copyItem(at: received.file, to: dst)
+            return Self(url: dst)
+        }
+    }
+}
+
+extension ActLab.GenJob {
+    /// 本地先摆一句「下单了」用，别等台子回话才有字。
+    static func stub(stage: String) -> ActLab.GenJob {
+        ActLab.GenJob(job: nil, stage: nil, phase: stage, msg: nil, progress: nil,
+                      allDone: nil, failed: nil, acts: nil, each: nil)
     }
 }

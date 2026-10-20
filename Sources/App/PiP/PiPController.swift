@@ -78,12 +78,6 @@ final class PiPController: NSObject, ObservableObject {
     /// 这一次是「点通知叫进来的」—— 小窗一出来就要把自己送回后台。
     private var returnToBackground = false
 
-    /// 小窗上要不要留系统按键。
-    /// 他要的是「一块会动的画面」，不是播放器 —— 进度条、播放键、快进键一冒出来就出戏。
-    /// false = 留关闭 / 全屏，其余（进度条、播放、前后跳）全去掉。
-    /// 关闭不能藏：全藏之后小窗上就没有收它的入口了，只能回 App。
-    private let bareWindow = false
-
     /// 全局口子。
     ///
     /// ★ 为什么需要：Siri 在后台唤起 App 跑 Intent 时，拿到的不是界面上那个
@@ -260,9 +254,11 @@ final class PiPController: NSObject, ObservableObject {
     ///    这条链路是自签侧载、不进 App Store，所以私有 KVC 没有审核风险；
     ///    但系统改版可能把这个 key 抹掉 —— 先问一句 `responds(to:)`，没有就静默跳过，绝不崩。
     private func applyBareControls(_ c: AVPictureInPictureController) {
+        // ★★★ v39：**不再用私有 `controlsStyle` 删键。**
+        //   它从 v29 一直设成 1（= 只留关闭 / 全屏），结果把「播放 / 暂停」也一起删了 ——
+        //   他这次说的「画中画里根本没有这个暂停键」，就是这么来的。
+        //   现在只留官方那个口子（去掉快进 / 后退），其余全交回系统画。
         c.requiresLinearPlayback = true
-        guard c.responds(to: NSSelectorFromString("setControlsStyle:")) else { return }
-        c.setValue(bareWindow ? 2 : 1, forKey: "controlsStyle")
     }
 
     // MARK: - 手动开关（App 里那两颗按钮）

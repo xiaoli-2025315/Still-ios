@@ -147,8 +147,36 @@ struct MainHomeView: View {
     @State private var talkOpen = false
     /// 点过几个按钮 —— 自检用：按了没反应时，先看这个数字动没动
     @State private var taps = 0
+    /// 它刚回的那句（在首页直接显示，不走对话页也能看见）
+    @State private var lastReply = ""
+    /// 正在等它回话
+    @State private var thinking = false
 
     private func hit() { taps += 1 }
+
+    // MARK: - 说一句（v39：走系统弹窗，这条路一定能打字）
+    //
+    // ★ 不再一上来就 fullScreenCover。前三次（v36/37/38）都死在「键盘不弹」，
+    //   而 UIAlertController 的键盘是系统自己弹的，不经过我们这棵视图树。
+    //   先保证「能打上字」，看记录再进对话页。
+
+    private func saySomething() {
+        hit()
+        showMe = false
+        TalkPrompt.ask { m in
+            send(m)
+        }
+    }
+
+    private func send(_ m: String) {
+        thinking = true
+        lastReply = ""
+        Task { @MainActor in
+            let r = await CatTalk.say(m)
+            lastReply = r
+            thinking = false
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -267,7 +295,9 @@ struct MainHomeView: View {
         Group {
             switch tab {
             case 0: HerPane(pip: pip, talkOpen: $talkOpen, openMe: { showMe = true },
-                            onHit: hit, taps: taps)
+                            onHit: hit, taps: taps,
+                            lastReply: lastReply, thinking: thinking,
+                            onTalk: { saySomething() })
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }
@@ -419,7 +449,7 @@ struct MainHomeView: View {
                 }
                 actionPill("跟它说话", primary: true) {
                     showMe = false
-                    talkOpen = true
+                    saySomething()
                 }
             }
             HStack(spacing: 8) {
@@ -428,6 +458,18 @@ struct MainHomeView: View {
                 }
                 actionPill("重排提醒", primary: false) {
                     Notifier.reschedule()
+                }
+            }
+            // ★ 这一颗是「在别的 App 里也能打字」的入口自测：
+            //   按下去会来一条带输入框的通知，拉开来就能写。不用等它自己来找你。
+            HStack(spacing: 8) {
+                actionPill("发一条能打字的通知", primary: false) {
+                    Notifier.askInput(after: 1.0)
+                    showMe = false
+                }
+                actionPill("看聊天记录", primary: false) {
+                    showMe = false
+                    talkOpen = true
                 }
             }
             Text(pip.note)
@@ -466,6 +508,9 @@ struct HerPane: View {
     var onHit: () -> Void = {}
     /// 自检里那行「点了几下」——按了没反应时，先看这个数字动没动
     var taps: Int = 0
+    var lastReply: String = ""
+    var thinking: Bool = false
+    var onTalk: () -> Void = {}
     /// 键盘到底起来没有，要跟着变，所以得观察
     @ObservedObject private var focus = TalkFocus.shared
 
@@ -519,9 +564,11 @@ struct HerPane: View {
                 .padding(.bottom, 11)
 
                 // 主按钮：跟它说话
+                // ★ v39：这里不再弹我们自己的对话页（那三版键盘都不弹），
+                //   改成系统弹窗输入 —— 系统自己弹的键盘，一定能打字。
                 Button {
                     onHit()
-                    talkOpen = true
+                    onTalk()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -544,6 +591,33 @@ struct HerPane: View {
                 }
                 .buttonStyle(PressStyle())
                 .padding(.bottom, 10)
+
+                // 它刚说的那句 —— 直接摆在首页，不用再点开任何页面。
+                if thinking || !lastReply.isEmpty {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: thinking ? "ellipsis.bubble" : "bubble.left.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Tw.red600)
+                            .padding(.top, 2)
+                        Text(thinking ? "它在想…" : lastReply)
+                            .font(.system(size: 13))
+                            .foregroundStyle(thinking ? Tw.gray400 : Tw.gray900)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Tw.white)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Tw.gray200, lineWidth: 1)
+                            )
+                    )
+                    .padding(.bottom, 10)
+                }
 
                 HStack(spacing: 10) {
                     tile("放进小窗", pip.active ? "收回" : "切出去它就跟着",

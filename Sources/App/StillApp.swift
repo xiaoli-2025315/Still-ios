@@ -62,8 +62,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // ★★ 通知上那个输入框：系统把字交回来了。
         //   这一刻他多半还在别的 App 里，我们是在后台被叫起来的 ——
         //   所以这里**什么都不弹**，只把话送到，回话走小窗或下一条通知。
+        //
+        // ★ 类型名是 `UNTextInputNotificationResponse`，不是 `UNTextNotificationResponse`
+        //   （少个 Input，编译直接 cannot find type in scope，踩过一次）。
         if response.actionIdentifier == Notifier.askAction {
-            let typed = (response as? UNTextNotificationResponse)?.userText ?? ""
+            let typed = (response as? UNTextInputNotificationResponse)?.userText ?? ""
             Notifier.handleTyped(typed)
             completionHandler()
             return

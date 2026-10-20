@@ -118,6 +118,7 @@ final class LabFeed: ObservableObject {
 //   这三个毛病是同一个根。修法就是**别让主界面观察它**：
 //   引擎照跑，只有真正显示它的那张诊断卡去观察；主界面拿的是同一个实例。
 
+@MainActor
 final class AppCore {
     static let shared = AppCore()
     let engine = PetEngine()
@@ -128,6 +129,7 @@ final class AppCore {
 
 // MARK: - 主视图
 
+@MainActor
 struct MainHomeView: View {
 
     /// 不观察 —— 只拿来调 start / stop

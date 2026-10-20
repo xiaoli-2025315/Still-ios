@@ -3,131 +3,32 @@ import SwiftUI
 
 // MARK: - 版本号
 //
-// 每次出包 +1，App 状态栏上直接显示。
+// 每次出包 +1，界面顶栏上直接显示。
 // 用处只有一个：**一眼确认手机上跑的是哪一版** ——
 // 折腾过一整天「改了没效果」，最后发现是手机里一直装着旧包。
 
 enum AppVersion {
     /// ★★★ 每次发版**必须**同步改这里。
-    ///   它停在 "v30" 停了三个版本（v31/v32/v33 都忘了改）——
+    ///   它曾经停在 "v30" 停了三个版本（v31/v32/v33 都忘了改）——
     ///   直接后果：他装完不知道手机上到底是不是新版，
     ///   排查「改了没效果」时连「装的是哪一版」都确定不了。
-    ///   状态栏上那一小粒就是这个，别让它再骗人。
-    static let tag = "v35"
+    static let tag = "v36"
 }
 
-// MARK: - 主界面
+// MARK: - 入口
 //
-// 打开就是**那间房** —— 它此刻就在你眼前。
-// 切出去，它自己决定这一次跟不跟你：跟，就缩成小窗在角上陪着你；
-// 不跟，桌面干干净净，等它想来了敲你一下（通知）。
+// ★ v36 起，界面本体搬到 `MainHomeView`：按安卓 `activity_main.xml` 摆
+//   （顶栏 · 三屏 · 底栏三格）。这个文件只留版本号和灵动岛自测。
 //
-// 整条链子：
-//   它在屋里过日子 → 你切出去 → 它决定跟不跟
-//   → 跟：小窗在角上，它走了就剩一间空房，然后小窗自己收
-//   → 不跟：过一会儿来一条通知 → 你点 → 一闪 → 它已经在角上了，你原来的事没被打断
+// ★ 旧的假状态栏 / 三个胶囊 / 底部常驻输入框全部撤掉了：
+//   · 假状态栏是「装成主屏幕」那套玩法的残留，安卓没有，撤。
+//   · 底部那条输入框他点了没反应（键盘不弹），换成顶上那条能自己聚焦的
+//     `TalkSheet`（见 Talk/TalkSheet.swift）。
+//   · 诊断面板收进右上角「我」里 —— 首页只留它自己。
 
 struct ContentView: View {
-
-    @StateObject private var engine = PetEngine()
-    @StateObject private var pip = PiPController()
-    @State private var showPanel = false
-    @Environment(\.scenePhase) private var scenePhase
-
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Cfg.Palette.bg.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                FakeStatusBar()
-
-                Spacer(minLength: 6)
-
-                // 方形 —— 捏到最小档拿到的是 130×130 的方块，方构图才住得下猫
-                RoomStage(controller: pip)
-                    .aspectRatio(1, contentMode: .fit)
-                    .padding(.horizontal, 22)
-
-                Spacer(minLength: 6)
-
-                RoomStageBar(controller: pip)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
-
-                // 跟它说句话。
-                // Siri 走的是同一个入口（CatTalk.say），所以「打字说的」和「嘴上说的」
-                // 反应完全一样 —— 不会出现两套行为要分别调。
-                TalkBar()
-                    .padding(.bottom, 8)
-
-                // 诊断默认收起来。
-                // 你打开的应该是它的房间，不是一个调试台 —— 但排障的时候得够得着。
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) { showPanel.toggle() }
-                } label: {
-                    Text(showPanel ? "收起诊断" : "诊断")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Cfg.Palette.faint)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(.white.opacity(0.6)))
-                }
-                .buttonStyle(.plain)
-
-                if showPanel {
-                    ScrollView {
-                        StatusPanelView(engine: engine)
-                            .padding(.horizontal, 12)
-                    }
-                    .frame(maxHeight: 300)
-                    .padding(.bottom, 8)
-                    .transition(.opacity)
-                }
-            }
-        }
-        .onAppear {
-            // ★ Siri 在后台唤起 App 跑 Intent 时够不到界面上的实例，只能靠这个口子。
-            //   小窗在播 = App 进程活着 = 这里一定是那个正在跑的控制器。
-            PiPController.shared = pip
-            engine.start()
-            pip.start()
-            IslandProbe.run()
-            // ★ 必须等权限问完再排期。
-            //   第一次打开时「问权限」和「排通知」是并发的 —— 没授权时 add 会静默失败，
-            //   表现就是「第一天好好的，装完当天一条都不来」，很难归因。
-            Notifier.requestAuthorization { _ in Notifier.reschedule() }
-
-            // 冷启动就是「点通知进来的」那一种
-            if AppDelegate.pendingSummon {
-                AppDelegate.pendingSummon = false
-                pip.summonFromNotification()
-            }
-        }
-        .onDisappear {
-            engine.stop()
-            pip.stop()
-        }
-        // 热启动那一种 —— App 已经在后台活着，你点了通知
-        .onReceive(NotificationCenter.default.publisher(for: .stillSummon)) { _ in
-            AppDelegate.pendingSummon = false
-            pip.summonFromNotification()
-        }
-        // iOS 17 的 onChange 用零参数形式（单参数已废弃）
-        .onChange(of: scenePhase) {
-            switch scenePhase {
-            case .active:
-                engine.start()
-                // 你回到屋里了，小窗该收 —— 不然会同时有两只猫
-                pip.backInForeground()
-            case .background:
-                engine.stop()
-                engine.save()
-                // 你切出去 —— 它在这里决定这一次跟不跟你
-                pip.leaveApp()
-            default:
-                break
-            }
-        }
+        MainHomeView()
     }
 }
 
@@ -143,127 +44,6 @@ enum IslandProbe {
             IslandBridge.shared.enter(roomName: "它在这儿")
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             IslandBridge.shared.leave()
-        }
-    }
-}
-
-// MARK: - 伪装的状态栏
-// 让它看着像你真的在主屏幕上，而不是在浏览一个 App
-
-struct FakeStatusBar: View {
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(timeString)
-                .font(.system(size: 14, weight: .semibold))
-            // ★ 版本号直接写在状态栏上。
-            //   一整天「改了没效果」的教训 —— 没有这个标记，
-            //   没法判断手机上装的到底是哪一版。
-            Text(AppVersion.tag)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(Cfg.Palette.accent)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
-                .background(Capsule().fill(Cfg.Palette.accent.opacity(0.16)))
-            Spacer()
-            HStack(spacing: 4) {
-                signalBars
-                Image(systemName: "wifi").font(.system(size: 11))
-                BatteryGlyph()
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 6)
-        .frame(height: 30)
-        .foregroundStyle(Cfg.Palette.ink)
-    }
-
-    private var timeString: String {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: Date())
-    }
-
-    private var signalBars: some View {
-        HStack(alignment: .bottom, spacing: 1.6) {
-            ForEach(0..<4) { i in
-                RoundedRectangle(cornerRadius: 0.6)
-                    .frame(width: 2.6, height: 3 + CGFloat(i) * 2.4)
-            }
-        }
-        .frame(height: 11)
-    }
-}
-
-struct BatteryGlyph: View {
-    var body: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2.4)
-                .strokeBorder(Cfg.Palette.ink.opacity(0.4), lineWidth: 1)
-                .frame(width: 20, height: 10)
-            RoundedRectangle(cornerRadius: 1.4)
-                .fill(Cfg.Palette.ink)
-                .frame(width: 14, height: 7)
-                .padding(.leading, 1.6)
-        }
-        .frame(width: 20, height: 10)
-    }
-}
-
-// MARK: - 跟它说句话
-
-/// App 里的输入框。
-///
-/// 为什么要有它：Siri 那条路好，但有时候你就是不想说话 ——
-/// 在地铁上、在开会、半夜。打字必须有个地方。
-///
-/// 走的是跟 Siri 完全同一个函数，所以小窗里那一下、通知里那句话，都一样。
-struct TalkBar: View {
-
-    @State private var text = ""
-    @State private var lastReply: String?
-
-    var body: some View {
-        VStack(spacing: 5) {
-            HStack(spacing: 8) {
-                TextField("跟它说句话", text: $text)
-                    .font(.system(size: 13))
-                    .textFieldStyle(.plain)
-                    .submitLabel(.send)
-                    .onSubmit(send)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(.white.opacity(0.72)))
-
-                Button(action: send) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Cfg.Palette.accent))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-
-            // 它刚回的那一句。通知里也有，这里留一份是为了不用切出去看。
-            if let r = lastReply {
-                Text(r)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Cfg.Palette.faint)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 22)
-            }
-        }
-    }
-
-    private func send() {
-        let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !m.isEmpty else { return }
-        text = ""
-        // 先占个位。回话要去问真 AI，约 1 秒 —— 这一秒里界面空着会被当成
-        // 「说了没反应」。写一句「它在听」，跟小窗里抬头那一下对上。
-        lastReply = "（它在听…）"
-        Task { @MainActor in
-            lastReply = await CatTalk.say(m)
         }
     }
 }

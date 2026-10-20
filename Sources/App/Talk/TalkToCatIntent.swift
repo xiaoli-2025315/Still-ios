@@ -50,6 +50,65 @@ struct TalkToCatIntent: AppIntent {
     }
 }
 
+// MARK: - 给「轻点背面」的那一个
+//
+// ★★ iOS 上「双击手机背面」不是一个 App 能自己注册的手势。
+//   它是系统的「设置 → 辅助功能 → 触控 → 轻点背面」，
+//   系统只允许你把**某一条快捷指令**绑上去，App 里没有任何 API 能直接接管。
+//   所以这条路的形状是固定的：
+//       轻点背面 → 跑一条快捷指令 → 这条快捷指令调我们下面这个 Intent
+//                → 把 App 拉到前台 → 输入条弹出来、键盘自己起来
+//
+// ★ 为什么不用现成的 TalkToCatIntent（Siri 那条）：
+//   那条 `openAppWhenRun = false`，故意在后台跑、不抢你的前台 ——
+//   它会在快捷指令里问一句「你说的话」，但那个询问框不是 App 的输入条，
+//   而且回完话就没了，你想接着说还得再来一次。
+//   这条不一样：它打开 App、打开输入条，说完了还能接着说。
+
+struct OpenStillTalkIntent: AppIntent {
+
+    static var title: LocalizedStringResource = "打开还在的输入框"
+    static var description = IntentDescription("打开还在，直接弹出输入条，键盘自己起来。可以绑定到「轻点背面」。")
+
+    /// ★ 必须 true：我们要的就是把 App 叫到眼前，好让输入条有地方可弹。
+    static var openAppWhenRun: Bool { true }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        StillIntentBridge.requestTalk()
+        return .result()
+    }
+}
+
+/// Intent 和界面之间的一根短管。
+///
+/// ★ 为什么不用 NotificationCenter：这个 Intent 可能跑在**另一个进程**里
+///   （App 没活着的时候，系统直接把它拉起来执行），进程内的通知递不过去。
+///   走 App Group 的 UserDefaults 才是两个进程都看得见的。
+enum StillIntentBridge {
+
+    private static let talkKey = "still.wantTalk"
+
+    private static var defaults: UserDefaults? { UserDefaults(suiteName: Cfg.appGroup) }
+
+    /// Intent 侧：留一个「待办」就走。
+    static func requestTalk() {
+        defaults?.set(Date().timeIntervalSince1970, forKey: talkKey)
+    }
+
+    /// 界面侧：取走并清掉。
+    ///
+    /// ★ 只看「有没有」会把上次留下的旧标记也吃进来：装完打开 App 就莫名弹一次输入条，
+    ///   像自己在动。所以配一个保鲜期 —— 超过 20 秒的标记当它没发生。
+    static func consumeTalk() -> Bool {
+        guard let d = defaults else { return false }
+        let t = d.double(forKey: talkKey)
+        guard t > 0 else { return false }
+        d.set(0, forKey: talkKey)
+        return Date().timeIntervalSince1970 - t < 20
+    }
+}
+
 // MARK: - 让 Siri 装完就认识，不用去设置里绑
 //
 // ★ 这段是「零配置」的关键。没有它，用户必须自己去「快捷指令」里

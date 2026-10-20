@@ -154,14 +154,26 @@ struct HomeComposer: View {
     // MARK: - 兜底那一行
 
     private var fallbackRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 10) {
             Text("键盘：\(focus.status)")
                 .font(.system(size: 10))
                 .foregroundStyle(Tw.gray400)
                 .lineLimit(1)
+                .layoutPriority(1)
             Spacer(minLength: 0)
+            // ★ v45：两条完全不碰键盘的路。
+            //   键盘要是还起不来，至少字能弄进 App 里 —— 他说的是「只要能让它在 App 里写上字」。
             Button {
-                // 这条一定能用：通知上那个输入框在系统进程里，跟键盘无关。
+                pasteFromClipboard()
+            } label: {
+                Text("粘贴")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Tw.red600)
+            }
+            .buttonStyle(PressStyle(scale: 0.94))
+
+            Button {
+                // 通知里那个输入框在系统进程里，跟键盘无关，一直是通的。
                 Notifier.askInput(after: 0.2)
             } label: {
                 Text("改用通知打字")
@@ -171,6 +183,15 @@ struct HomeComposer: View {
             .buttonStyle(PressStyle(scale: 0.94))
         }
         .padding(.horizontal, 4)
+    }
+
+    /// 从剪贴板把字拿进来。
+    /// 他可以在微信 / 备忘录里写好，复制，回来一点就进来了 —— 全程不经过键盘。
+    private func pasteFromClipboard() {
+        guard let s = UIPasteboard.general.string,
+              !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        text = s
+        pulse += 1
     }
 
     // MARK: - 打字态

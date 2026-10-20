@@ -9,8 +9,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.44.0"
-    CURRENT_PROJECT_VERSION: "44"
+    MARKETING_VERSION: "1.45.0"
+    CURRENT_PROJECT_VERSION: "45"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -60,6 +60,27 @@ targets:
         # SwiftUI App 生命周期，不需要 SceneDelegate
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # ★★★ v45：**这两行是「键盘永远弹不出来」的真凶**。
+        #
+        #   现场数据（v44 真机上报）：
+        #     窗口尺寸 = 320x480      ← 这不是任何一台现代 iPhone 的点尺寸
+        #     安全区底 = 0            ← 有刘海的机器应该是 34
+        #     输入法   = —            ← 系统一个输入法都没交给我们
+        #     场景状态 = 未连接
+        #
+        #   320×480 是 iOS 在「App 没有声明启动画面」时的**兼容模式回退尺寸**：
+        #   App 被当成没适配过的老应用，在一个 320×480 的画布里渲染再放大。
+        #   这种模式下输入法（键盘）服务注入不上 —— `activeInputModes` 直接是空的，
+        #   所以 `becomeFirstResponder()` 永远返回 true、但键盘永远不出现。
+        #   这就是 v36→v44 一共九版都在改「输入框怎么摆」却一点没变的原因：
+        #   **根子不在输入框，在 App 的清单里少了一行。**
+        #
+        #   `UILaunchScreen: {}` = 用系统默认的空白启动画面（不需要额外文件），
+        #   声明之后 App 就以现代全屏模式运行，键盘服务正常注入。
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
     dependencies:
       # 注意：target 名 ≠ 类型名。Sources/Widget/StillWidget.swift 里有个 struct 也叫 StillWidget，
       # 如果 target 也叫 StillWidget，就会出现「模块和类型同名」的歧义报错。

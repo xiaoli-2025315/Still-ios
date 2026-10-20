@@ -52,7 +52,27 @@ final class PiPController: NSObject, ObservableObject {
 
     /// 实时流的帧泵：把播放器的帧取出来 → 画字 → 喂给上面那块图层。
     /// 只在实时流模式下才起。
-    private lazy var pump = LiveFramePump(player: cat.player)
+    private lazy var pump: LiveFramePump = {
+        let p = LiveFramePump(player: cat.player)
+        // 装了台子上的猫以后，画面要按「此刻在播哪一段」去挑动作，
+        // 所以帧泵得知道播放器现在的段名。
+        p.clipSource = { [weak self] in self?.cat.currentClip ?? "" }
+        // ★ 这里不能读 CatPackStore.shared（它是 @MainActor，而本类是 NSObject）。
+        //   启动时的第一口气由 `catSwitched()` 补上 —— MainHomeView 一上屏就会调用。
+        return p
+    }()
+
+    /// 换猫了（装了台子上的 / 换回自带的）。
+    ///
+    /// ★ 为什么要有这个口子：帧泵是懒建的，换猫那一刻可能还没建；
+    ///   而小窗此刻可能正开着、图层已经接上。所以这里既要把包传下去，
+    ///   也要把画面上已经露出的一半猫清掉（清 lastSample），
+    ///   否则会看到新旧两只猫的影子叠一下。
+    @MainActor
+    func catSwitched() {
+        let p = CatPackStore.shared.current
+        pump.usePack(p)
+    }
 
     private var pip: AVPictureInPictureController?
     private var observations: [NSKeyValueObservation] = []

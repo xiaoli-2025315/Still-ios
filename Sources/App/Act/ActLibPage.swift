@@ -41,6 +41,8 @@ struct ActLibPage: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = ActLibModel()
+    /// 装了哪只、正在用哪只 —— 列表上要标出来
+    @ObservedObject private var store = CatPackStore.shared
 
     @State private var showNew = false
     @State private var watching: ActLab.Char?
@@ -50,7 +52,7 @@ struct ActLibPage: View {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("一张卡一只它 · 点开看这套动作好了几条")
+                    Text("一张卡一只它 · 点开能看每条动作，还能换到小窗里用它")
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray500)
                         .padding(.horizontal, 20)
@@ -96,8 +98,8 @@ struct ActLibPage: View {
                 .presentationDetents([.large])
         }
         .sheet(item: $watching) { c in
-            ActWallSheet(char: c)
-                .presentationDetents([.medium, .large])
+            ActWallSheet(char: c) { await model.load() }
+                .presentationDetents([.large])
         }
     }
 
@@ -151,6 +153,14 @@ struct ActLibPage: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
+                    if store.isCurrent(c.id) {
+                        Text("正在用")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Tw.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Tw.red600))
+                    }
                     Text(chanLabel(c))
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(c.isPaid ? Tw.red600 : Tw.gray500)
@@ -254,101 +264,343 @@ struct ActLibPage: View {
 }
 
 // MARK: - 一只的动作墙
+//
+// ★ 这一版起，格子是**能点的**：点开就播那一条动作（真帧）。
+//   前一版这里是纯 VStack，看着像列表、点着没反应 —— 也就是他说的
+//   「只能看不能点、没有用它的通道」。
+//
+// ★ 数据从「整只猫的动作包」来（一次下一个 zip，43–63MB），
+//   不下单条：台子的清单行里没有单条的任务号，拿不到单条包。
+//   下完以后这条包同时也是「用它」要装的东西，一次下、两处用。
 
+@MainActor
 struct ActWallSheet: View {
 
     let char: ActLab.Char
+    /// 装完 / 换走之后叫一声，让外面的列表刷新「正在用」那行
+    var onChanged: () async -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
-    @State private var manifest: ActLab.Manifest?
+    @ObservedObject private var store = CatPackStore.shared
+
+    @State private var pack: CatPack?
+    @State private var loading = false
     @State private var err: String?
+    @State private var previewing: ActPreview?
+    @State private var using = false
 
     private let cols = [GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8)]
 
+    /// 正在播的那条（预览页要拿到动作本身）
+    struct ActPreview: Identifiable {
+        let id: String
+        let pack: CatPack
+        let act: CatPack.Act
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(char.title)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Tw.gray900)
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Tw.gray500)
-                }
-                Spacer(minLength: 0)
-                Button("关上") { dismiss() }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Tw.gray500)
+            header
+            if let p = store.progress, store.downloading == char.id {
+                progressBar(p)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
             ScrollView {
-                if let e = err {
-                    Text(e)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Tw.red600)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
-                }
-
-                LazyVGrid(columns: cols, spacing: 8) {
-                    ForEach(ActLab.official, id: \.key) { item in
-                        tile(key: item.key, label: item.label)
+                VStack(spacing: 0) {
+                    if let err {
+                        Text(err)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Tw.red600)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 12)
                     }
+                    grid
+                    footNote
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
             }
+            useBar
         }
         .background(Tw.gray50.ignoresSafeArea())
-        .task { await load() }
+        .task { await prepare() }
+        .fullScreenCover(item: $previewing) { p in
+            ActPreviewPage(pack: p.pack, act: p.act)
+        }
+    }
+
+    // MARK: 顶
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(char.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Tw.gray900)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray500)
+            }
+            Spacer(minLength: 0)
+            Button("关上") { dismiss() }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Tw.gray500)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
 
     private var subtitle: String {
-        guard let m = manifest else { return "正在看这套动作…" }
-        var s = "\(char.doneCount)/12 条好了"
-        if m.pending > 0 { s += " · \(m.pending) 条还在抠" }
-        return s
+        if loading { return "正在把这套动作取到手机上…" }
+        guard let p = pack else { return "\(char.doneCount)/12 条好了" }
+        let ready = p.acts.count
+        return "\(ready) 条动作在手机上 · 点一格就能看它怎么动"
     }
 
-    private func tile(key: String, label: String) -> some View {
-        let done = manifest?.names.contains(key) ?? false
-        return VStack(spacing: 4) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle.dotted")
-                .font(.system(size: 17))
-                .foregroundStyle(done ? Tw.green500 : Tw.gray300)
+    private func progressBar(_ f: Double) -> some View {
+        VStack(spacing: 5) {
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Tw.gray200)
+                    Capsule().fill(Tw.red600)
+                        .frame(width: max(6, g.size.width * CGFloat(min(1, max(0, f)))))
+                }
+            }
+            .frame(height: 5)
+            Text("取动作包 \(Int(min(1, f) * 100))% · 这套东西几十兆，一次下完以后就不用再下")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Tw.gray500)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+
+    // MARK: 格子
+
+    private var grid: some View {
+        LazyVGrid(columns: cols, spacing: 8) {
+            ForEach(ActLab.official, id: \.key) { item in
+                let act = pack?.act(item.key)
+                Button {
+                    guard let p = pack, let a = act else { return }
+                    previewing = ActPreview(id: a.name, pack: p, act: a)
+                } label: {
+                    tile(label: item.label, act: act)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(act == nil)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+    }
+
+    private func tile(label: String, act: CatPack.Act?) -> some View {
+        let done = act != nil
+        return VStack(spacing: 5) {
+            Image(systemName: done ? "play.circle.fill" : "circle.dotted")
+                .font(.system(size: 18))
+                .foregroundStyle(done ? Tw.red600 : Tw.gray300)
             Text(label)
                 .font(.system(size: 11, weight: done ? .semibold : .regular))
                 .foregroundStyle(done ? Tw.gray900 : Tw.gray400)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+            if let a = act {
+                Text("\(a.frames) 帧")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(Tw.gray400)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Tw.white)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(done ? Tw.green500.opacity(0.35) : Tw.gray200, lineWidth: 1)
+                        .stroke(done ? Tw.red600.opacity(0.28) : Tw.gray200, lineWidth: 1)
                 )
         )
     }
 
-    private func load() async {
-        do {
-            manifest = try await ActLab.manifest(charId: char.id)
-        } catch {
-            err = "清单没取上：\(error.localizedDescription)"
+    private var footNote: some View {
+        Text(pack == nil
+             ? "这一只的动作还没取下来。灰格子＝台子上还没有这一条。"
+             : "点一格就看它怎么动。这台子上没有的动作会是灰的。")
+            .font(.system(size: 11))
+            .foregroundStyle(Tw.gray400)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+    }
+
+    // MARK: 用它
+
+    private var useBar: some View {
+        VStack(spacing: 8) {
+            let mine = store.isCurrent(char.id)
+
+            Button {
+                Task { await useThis() }
+            } label: {
+                HStack(spacing: 8) {
+                    if using { ProgressView().tint(.white) }
+                    Text(mine ? "正在用它 · 换回自带那只" : (using ? "正在换…" : "用它"))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(mine ? Tw.red600 : Tw.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(mine ? Tw.white : (pack == nil ? Tw.gray300 : Tw.red600))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(mine ? Tw.red600 : .clear, lineWidth: 1.4)
+                        )
+                )
+            }
+            .buttonStyle(PressStyle())
+            .disabled(pack == nil || using)
+
+            Text(mine
+                 ? "现在小窗里那只就是它。想换回去，再点一下。"
+                 : "换了以后，小窗里那只就变成它 —— 动作、走路的节奏都是它自己的。")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Tw.gray400)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(
+            Tw.white.overlay(alignment: .top) { Rectangle().fill(Tw.gray200).frame(height: 0.5) }
+        )
+    }
+
+    // MARK: 干活
+
+    private func prepare() async {
+        if let p = store.installed(char.id) {
+            pack = p
+            return
+        }
+        loading = true
+        err = nil
+        do {
+            pack = try await store.install(charId: char.id)
+        } catch {
+            err = "这套动作没取下来：\(error.localizedDescription)"
+        }
+        loading = false
+    }
+
+    private func useThis() async {
+        guard let p = pack else { return }
+        using = true
+        let mine = store.isCurrent(char.id)
+        store.use(mine ? nil : p)
+        await onChanged()
+        using = false
+        dismiss()
     }
 }
+
+// MARK: - 看一条动作
+//
+// 真帧播放（不是示意图、不是占位）。裸帧是 384×216 的透明 webp，
+// 底下铺一层暖色，跟房间里地面那个色接近，看起来才是「在地上」。
+
+@MainActor
+struct ActPreviewPage: View {
+
+    let pack: CatPack
+    let act: CatPack.Act
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var frame = 0
+    @State private var timer: Timer?
+
+    /// 20 格/秒。素材是 50fps，按 20 放会慢一点，但手机上是「看清它怎么动」，
+    /// 慢一点反而看得清；真按 50 放，肉眼看就是一闪。
+    private let hz: Double = 20
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.949, green: 0.910, blue: 0.863).ignoresSafeArea()  // #F2E8DC，房间那个暖色
+
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(act.display)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Tw.gray900)
+                        Text("\(act.frames) 帧 · 原速 \(Int(act.fps)) 帧/秒 · \(act.category.isEmpty ? "动作" : act.category)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Tw.gray500)
+                    }
+                    Spacer(minLength: 0)
+                    Button("关上") {
+                        stop()
+                        dismiss()
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Tw.gray500)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+
+                Spacer(minLength: 0)
+
+                if let img = pack.image(act: act, index: frame) {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 12)
+                        .id(frame)          // ★ 不加 id，SwiftUI 可能复用旧图不重绘
+                } else {
+                    Text("这一帧读不出来")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Tw.red600)
+                }
+
+                Spacer(minLength: 0)
+
+                Text(frame < act.frames
+                     ? "第 \(frame + 1) / \(act.frames) 帧"
+                     : "…")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(Tw.gray400)
+                    .padding(.bottom, 22)
+            }
+        }
+        .onAppear(perform: start)
+        .onDisappear(perform: stop)
+    }
+
+    private func start() {
+        stop()
+        let t = Timer(timeInterval: 1.0 / hz, repeats: true) { _ in
+            Task { @MainActor in
+                frame = (frame + 1) % max(1, act.frames)
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
 
 // MARK: - 登记一个新角色
 //

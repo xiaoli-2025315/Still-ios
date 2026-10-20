@@ -233,6 +233,9 @@ struct MainHomeView: View {
         PiPController.shared = pip
         core.engine.start()
         pip.start()
+        // ★ 上次装过台子上的猫：启动这一刻就把它交给帧泵。
+        //   漏了这一句，重启 App 后小窗会变回自带那只，而角色页里还写着「正在用」。
+        pip.catSwitched()
         IslandProbe.run()
         Notifier.requestAuthorization { _ in Notifier.reschedule() }
 

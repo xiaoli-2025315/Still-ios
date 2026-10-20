@@ -107,13 +107,34 @@ final class LabFeed: ObservableObject {
     }
 }
 
+// MARK: - 全局那几个「活的东西」
+//
+// ★★★ 为什么要单拎出来一个壳：`PetEngine` 的主循环是 **30Hz**，
+//   它一有更新，凡是「观察它」的 View 整棵都会重建 —— 一秒 30 次。
+//   v36 就是让主界面直接观察了引擎，结果：
+//     · 按钮按下去还没来得及抬手，整棵树已经被重建掉了 ⇒ 点了没反应
+//     · 抢键盘那一下（异步）被反复打断 ⇒ 键盘不弹
+//     · 切后台的时机被拖后 ⇒ 小窗起不来
+//   这三个毛病是同一个根。修法就是**别让主界面观察它**：
+//   引擎照跑，只有真正显示它的那张诊断卡去观察；主界面拿的是同一个实例。
+
+final class AppCore {
+    static let shared = AppCore()
+    let engine = PetEngine()
+    let pip = PiPController()
+    let feed = LabFeed()
+    private init() {}
+}
+
 // MARK: - 主视图
 
 struct MainHomeView: View {
 
-    @StateObject private var engine = PetEngine()
-    @StateObject private var pip = PiPController()
-    @StateObject private var feed = LabFeed()
+    /// 不观察 —— 只拿来调 start / stop
+    private let core = AppCore.shared
+    /// 这两个更新很稀（小窗开合、播到哪一段、社区数据），可以观察
+    @ObservedObject private var pip = AppCore.shared.pip
+    @ObservedObject private var feed = AppCore.shared.feed
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -122,6 +143,10 @@ struct MainHomeView: View {
     @State private var showMe = false
     /// 顶部那条输入框开着没有
     @State private var talkOpen = false
+    /// 点过几个按钮 —— 自检用：按了没反应时，先看这个数字动没动
+    @State private var taps = 0
+
+    private func hit() { taps += 1 }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -152,11 +177,9 @@ struct MainHomeView: View {
                     .zIndex(4)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: talkOpen)
-        .animation(.easeInOut(duration: 0.22), value: showMe)
         .onAppear(perform: boot)
         .onDisappear {
-            engine.stop()
+            core.engine.stop()
             pip.stop()
         }
         // 热启动：App 已经在后台活着，点了通知
@@ -167,13 +190,13 @@ struct MainHomeView: View {
         .onChange(of: scenePhase) {
             switch scenePhase {
             case .active:
-                engine.start()
+                core.engine.start()
                 pip.backInForeground()
                 // 从「轻点背面」那条快捷指令进来的：把输入条弹出来
                 if StillIntentBridge.consumeTalk() { talkOpen = true }
             case .background:
-                engine.stop()
-                engine.save()
+                core.engine.stop()
+                core.engine.save()
                 pip.leaveApp()
             default:
                 break
@@ -185,7 +208,7 @@ struct MainHomeView: View {
 
     private func boot() {
         PiPController.shared = pip
-        engine.start()
+        core.engine.start()
         pip.start()
         IslandProbe.run()
         Notifier.requestAuthorization { _ in Notifier.reschedule() }
@@ -222,6 +245,7 @@ struct MainHomeView: View {
                 .background(Capsule().fill(Tw.red600.opacity(0.10)))
 
             Button {
+                hit()
                 showMe = true
             } label: {
                 Image(systemName: "person.fill")
@@ -230,7 +254,7 @@ struct MainHomeView: View {
                     .frame(width: 40, height: 40)
                     .background(Circle().fill(Tw.gray100))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressStyle(scale: 0.9))
         }
         .padding(.leading, 20)
         .padding(.trailing, 12)
@@ -243,7 +267,8 @@ struct MainHomeView: View {
     private var content: some View {
         Group {
             switch tab {
-            case 0: HerPane(pip: pip, talkOpen: $talkOpen, openMe: { showMe = true })
+            case 0: HerPane(pip: pip, talkOpen: $talkOpen, openMe: { showMe = true },
+                            onHit: hit, taps: taps)
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }
@@ -274,6 +299,7 @@ struct MainHomeView: View {
 
     private func tabItem(_ i: Int, _ title: String, _ icon: String) -> some View {
         Button {
+            hit()
             tab = i
         } label: {
             VStack(spacing: 3) {
@@ -293,7 +319,7 @@ struct MainHomeView: View {
             .padding(.bottom, 2)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle(scale: 0.93))
     }
 
     // MARK: - 「我」：从下面升上来的那一层
@@ -314,6 +340,7 @@ struct MainHomeView: View {
                         .foregroundStyle(Tw.gray900)
                     Spacer()
                     Button {
+                        hit()
                         showMe = false
                     } label: {
                         Image(systemName: "xmark")
@@ -322,7 +349,7 @@ struct MainHomeView: View {
                             .frame(width: 32, height: 32)
                             .background(Circle().fill(Tw.gray100))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressStyle(scale: 0.9))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -331,7 +358,9 @@ struct MainHomeView: View {
                 ScrollView {
                     VStack(spacing: 10) {
                         howToBackTap
-                        StatusPanelView(engine: engine)
+                        // ★ 只有这一张卡观察 30Hz 的引擎 —— 主界面不观察，
+                        //   否则整棵树一秒重建 30 次，按钮和键盘都会被冲掉。
+                        StatusPanelView(engine: core.engine)
                         roomControls
                     }
                     .padding(.horizontal, 16)
@@ -409,7 +438,10 @@ struct MainHomeView: View {
     }
 
     private func actionPill(_ t: String, primary: Bool, _ run: @escaping () -> Void) -> some View {
-        Button(action: run) {
+        Button {
+            hit()
+            run()
+        } label: {
             Text(t)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(primary ? Tw.white : Tw.gray900)
@@ -419,8 +451,9 @@ struct MainHomeView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(primary ? Tw.red600 : Tw.gray100)
                 )
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
     }
 }
 
@@ -431,6 +464,11 @@ struct HerPane: View {
     @ObservedObject var pip: PiPController
     @Binding var talkOpen: Bool
     var openMe: () -> Void
+    var onHit: () -> Void = {}
+    /// 自检里那行「点了几下」——按了没反应时，先看这个数字动没动
+    var taps: Int = 0
+    /// 键盘到底起来没有，要跟着变，所以得观察
+    @ObservedObject private var focus = TalkFocus.shared
 
     var body: some View {
         ScrollView {
@@ -441,13 +479,32 @@ struct HerPane: View {
                     .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 8)
 
-                Text("你正开着：桌面")
+                // ★ 这一行是**真的状态**，不是文案：
+                //   小窗能不能起、卡在哪一步，全在这儿写着。真机上第一眼看它。
+                Text(pip.note)
                     .font(.system(size: 12))
-                    .foregroundStyle(Tw.gray500)
+                    .foregroundStyle(pip.active ? Tw.green500 : Tw.gray500)
+                    .lineLimit(2)
                     .padding(.horizontal, 4)
-                    .padding(.bottom, 18)
+
+                // 自检：版本 · 点了几下 · 键盘 · 小窗
+                HStack(spacing: 6) {
+                    Text("自检")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Tw.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Tw.gray300))
+                    Text("\(AppVersion.tag) · 点击 \(taps) · 键盘\(focus.keyboardUp ? "已起" : "未起") · 小窗\(pip.possible ? "可起" : "不可起")")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(Tw.gray400)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 16)
 
                 // 小标题（安卓 .cap）
                 HStack(spacing: 8) {
@@ -464,6 +521,7 @@ struct HerPane: View {
 
                 // 主按钮：跟它说话
                 Button {
+                    onHit()
                     talkOpen = true
                 } label: {
                     HStack(spacing: 8) {
@@ -483,8 +541,9 @@ struct HerPane: View {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Tw.red600)
                     )
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle())
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
@@ -508,7 +567,10 @@ struct HerPane: View {
 
     private func tile(_ title: String, _ sub: String, _ icon: String,
                       _ run: @escaping () -> Void) -> some View {
-        Button(action: run) {
+        Button {
+            onHit()
+            run()
+        } label: {
             VStack(alignment: .leading, spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 16))
@@ -531,8 +593,9 @@ struct HerPane: View {
                             .stroke(Tw.gray200, lineWidth: 1)
                     )
             )
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
     }
 }
 
@@ -589,7 +652,7 @@ struct CommPane: View {
                     Capsule().fill(sub == i ? Tw.gray900 : Tw.gray100)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle(scale: 0.94))
     }
 
     private func staffCard(_ s: StaffItem) -> some View {
@@ -704,7 +767,7 @@ struct CommPane: View {
                     .padding(.vertical, 9)
                     .background(Capsule().fill(Tw.gray900))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressStyle(scale: 0.94))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -761,7 +824,7 @@ struct RankPane: View {
                             .padding(.vertical, 9)
                             .background(Capsule().fill(Tw.gray900))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressStyle(scale: 0.94))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -793,7 +856,7 @@ struct RankPane: View {
                 .padding(.vertical, 7)
                 .background(Capsule().fill(which == i ? Tw.gray900 : Tw.gray100))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle(scale: 0.94))
     }
 
     private func row(_ n: Int, _ s: StaffItem) -> some View {

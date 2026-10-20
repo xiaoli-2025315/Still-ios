@@ -67,6 +67,9 @@ final class PiPController: NSObject, ObservableObject {
     ///   所以这不是一个可以随时反悔的开关，是「它这次没跟」。
     private(set) var following = true
 
+    /// 用户在小窗上按了暂停。★ v37：这个键现在是真的。
+    private var pausedByUser = false
+
     /// 小窗什么时候自己收 —— 就是它「想出去别的房间」了。
     private var closesAt: Date?
 
@@ -206,10 +209,19 @@ final class PiPController: NSObject, ObservableObject {
         c.delegate = self
         applyBareControls(c)
 
-        // ★ 自动跟随必须关掉。
-        //   我们要的是「它自己决定这次跟不跟」；开着这个开关就等于每次都跟，
-        //   那个决定就没地方做了。
-        c.canStartPictureInPictureAutomaticallyFromInline = false
+        // ★★★ 这一条 v37 改了，是「切出去不起小窗」的真正修法。
+        //
+        //   原来写 false，然后在 scenePhase == .background 里手动
+        //   `startPictureInPicture()` —— **太晚了**：那一刻 App 已经在后台，
+        //   系统直接拒（-1001），而且不弹任何东西。表现就是「划走了，小窗没出来」。
+        //
+        //   现在交给系统自己接：`canStartPictureInPictureAutomaticallyFromInline`
+        //   一开，App 从前台往下沉的**那一瞬**系统就把它接成小窗，
+        //   时机由系统把控，不会晚。我们的 `leaveApp()` 只做兜底。
+        //
+        //   followRate 现在就是 1.0（他定的：一进后台就跟），
+        //   所以这个开关恒为 true；哪天要改回「看心情」，这里跟着 followRate 走。
+        c.canStartPictureInPictureAutomaticallyFromInline = Cfg.followRate >= 1.0
 
         pip = c
         note = "就绪 · 切出去它就跟上"
@@ -255,9 +267,41 @@ final class PiPController: NSObject, ObservableObject {
 
     func toggle() {
         prepare()
-        guard let pip else { return }
-        if pip.isPictureInPictureActive { pip.stopPictureInPicture() }
-        else { pip.startPictureInPicture() }
+        guard let pip else {
+            note = "小窗还没准备好（房间得先在屏幕上）"
+            return
+        }
+        if pip.isPictureInPictureActive {
+            pip.stopPictureInPicture()
+            return
+        }
+        // ★ 不再「点一下、没反应、什么都不说」。
+        //   能起就起；暂时不可起就按 0.25 / 0.6 / 1.2 秒再试三次，
+        //   每次都把结果写进 note —— 界面上那行字就是他看到的事实。
+        note = "正在把小窗叫出来…"
+        startWithRetry([0.0, 0.25, 0.6, 1.2], failNote: "画中画这会儿起不来 —— 房间画面还没在屏幕上稳住")
+    }
+
+    /// 反复尝试起小窗。
+    ///
+    /// `isPictureInPicturePossible` 是个「会自己变真」的值：图层刚上屏那一两拍
+    /// 它还是 false。只试一次就会得到一个假的失败。
+    private func startWithRetry(_ delay: [Double], failNote: String) {
+        guard let first = delay.first else {
+            if !(pip?.isPictureInPictureActive ?? false) { note = failNote }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + first) { [weak self] in
+            guard let self, let p = self.pip else { return }
+            // 系统自己已经接上了（自动跟随）—— 千万别再插一手，
+            // 重复 start 会触发 failedToStart，反而把正在起的小窗打回去。
+            if self.active || p.isPictureInPictureActive { return }
+            if p.isPictureInPicturePossible {
+                p.startPictureInPicture()
+            } else {
+                self.startWithRetry(Array(delay.dropFirst()), failNote: failNote)
+            }
+        }
     }
 
     // MARK: - 你切出去：它决定跟不跟
@@ -282,11 +326,13 @@ final class PiPController: NSObject, ObservableObject {
             // 半路被打断的话，结果是一条都不剩。排期统一放在回到前台时做。
             return
         }
-        guard pip.isPictureInPicturePossible else {
-            note = "画中画这会儿起不来（画面要先在屏幕上）"
-            return
-        }
-        pip.startPictureInPicture()
+
+        // ★ 走的是兜底：正常情况下系统凭
+        //   `canStartPictureInPictureAutomaticallyFromInline` 已经替我们接上了，
+        //   这里只是「万一没接上」的那只手。后台调 start 系统可能拒 —— 拒了就算了，
+        //   不报错、不打扰，回到前台再重来。
+        note = "它跟上来了"
+        startWithRetry([0.1, 0.5, 1.2, 2.4], failNote: "小窗没能起来（系统这会儿不让起）")
     }
 
     /// 你回到 App 里了 —— 小窗该收了。
@@ -437,6 +483,7 @@ extension PiPController: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerWillStartPictureInPicture(_ c: AVPictureInPictureController) {
         active = true
+        pausedByUser = false
         // 窗口真正出现时系统会把控件重建一遍，这里再压一次。
         applyBareControls(c)
         note = "它在小窗里"
@@ -494,21 +541,33 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
         CMTimeRange(start: .zero, duration: .positiveInfinity)
     }
 
-    /// 系统会定期来问「现在是暂停状态吗」。永远答「在播」。
+    /// 系统会定期来问「现在是暂停状态吗」。
+    /// ★ v37：照实答。以前恒返回 false、点暂停又偷偷 play 回来 ——
+    ///   那正是他说的「里面的按钮都是假的」：按了没变化。
     func pictureInPictureControllerIsPlaybackPaused(
         _ controller: AVPictureInPictureController
     ) -> Bool {
-        false
+        pausedByUser
     }
 
-    /// 用户在小窗上点了暂停。
+    /// 用户在小窗上点了暂停 / 播放。
     ///
-    /// ★ 不给暂停：这是猫在过日子，不是视频。点了就当场恢复，
-    ///   免得他以为猫卡死了。（真停了的话，画面会定格在某一帧上不动。）
+    /// ★ 系统那几个键我们藏不干净（私有 KVC 会随系统版本失效），
+    ///   既然藏不掉，就让它**真的有用**：暂停就真停（帧泵也停，省电），
+    ///   播放就真播。不再出现「按下去什么都不发生」。
     func pictureInPictureController(
         _ controller: AVPictureInPictureController, setPlaying playing: Bool
     ) {
-        if !playing { cat.player.play() }
+        pausedByUser = !playing
+        if playing {
+            pump.start()
+            cat.player.play()
+            note = "它在小窗里"
+        } else {
+            cat.player.pause()
+            pump.stop()
+            note = "它停住了（不是你按的？再点一下就继续）"
+        }
     }
 
     /// 小窗被捏大捏小了。

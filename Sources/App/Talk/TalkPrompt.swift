@@ -52,7 +52,7 @@ enum TalkPrompt {
 
     /// 只报个信（回话太长、或者不想用通知的时候）。
     static func tell(_ text: String, title: String, done: @escaping @MainActor () -> Void = {}) {
-        guard let host = topViewController() else { done(); return }
+        guard let host = Session.topViewController() else { done(); return }
         let a = UIAlertController(title: title, message: text, preferredStyle: .alert)
         a.addAction(UIAlertAction(title: "嗯", style: .default) { _ in
             MainActor.assumeIsolated { done() }
@@ -205,7 +205,7 @@ enum TalkPrompt {
 
         /// 从当前活跃窗口一路往上找到最顶上的 present 链尾部。
         /// 不找到它就直接 present，会在「已经有东西在弹」的时候静默失败。
-        private static func topViewController() -> UIViewController? {
+        fileprivate static func topViewController() -> UIViewController? {
             let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
             guard let scene else { return nil }

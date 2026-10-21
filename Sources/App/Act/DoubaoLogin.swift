@@ -89,19 +89,18 @@ final class DoubaoLoginModel: ObservableObject {
     }
 
     private func clearWebCookies() async {
+        // ★ 这两句别写成「completionHandler 的尾巴闭包」：
+        //   iOS 15 起 WebKit 有 async 版本，同一个名字会优先选 async 那个，
+        //   再挂尾巴闭包就报「extra trailing closure passed in call」（CI 上栽过一次）。
         let store = WKWebsiteDataStore.default()
         let types: Set<String> = [WKWebsiteDataTypeCookies]
-        let records: [WKWebsiteDataRecord] = await withCheckedContinuation { cont in
-            store.dataRecords(ofTypes: types) { cont.resume(returning: $0) }
-        }
+        let records = await store.dataRecords(ofTypes: types)
         let hit = records.filter { r in
             let n = r.displayName.lowercased()
             return n.contains("doubao") || n.contains("bytedance")
                 || n.contains("byteimg") || n.contains("bytescm") || n.contains("snssdk")
         }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            store.removeData(ofTypes: types, for: hit) { cont.resume() }
-        }
+        await store.removeData(ofTypes: types, for: hit)
     }
 
     /// 体检：豆包认不认这份登录态（不花额度）。

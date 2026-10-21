@@ -14,7 +14,7 @@ import UIKit
 //
 // ★ 相机这条路只用 AVFoundation，取景用 previewLayer（自己画帧会黑屏，安卓那边栽过两次）。
 
-final class ScanModel: NSObject, ObservableObject {
+final class ScanModel: NSObject, ObservableObject, AVCaptureMetadataOutputObjectsDelegate {
 
     let session = AVCaptureSession()
 

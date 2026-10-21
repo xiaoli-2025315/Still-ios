@@ -97,6 +97,18 @@ struct TalkToCatIntent: AppIntent {
         //   他说了话 → 照常回；没说话就跳过了 → 弹一条带输入框的通知，
         //   让他在通知上打完 —— 不能出现「喊完它，什么都发生」。
         let said = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // ★★★ 2026-10-21 诊断版（v58）：**进来先留一条，证明 Siri 到底有没有调到这儿。**
+        //
+        //   他真机上无论怎么喊都是「不支持」，但我一直没有证据区分两件事：
+        //     ① 系统根本没把这句话交给 App（注册/索引那一层）
+        //     ② 交进来了，但执行中途被拒（执行体那一层）
+        //   这条通知就是把这两件事切开的那一刀：
+        //     有「① Siri 进来了」→ 进得来，问题在执行体，我顺着往下砍
+        //     没有这条          → 根本没进来，问题在注册那一层，改代码没用
+        Notifier.tellReply("① Siri 进来了：\(said.isEmpty ? "（没带内容）" : said)",
+                           catName: PetName.current)
+
         guard !said.isEmpty else {
             Notifier.askInput(after: 0.6)
             return .result()

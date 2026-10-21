@@ -18,7 +18,7 @@ final class VoiceIn: NSObject, ObservableObject {
     @Published var heard = ""
     @Published var err: String?
 
-    private let engine = AVAudioEngine()
+    private let audio = AVAudioEngine()
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -57,7 +57,7 @@ final class VoiceIn: NSObject, ObservableObject {
                               options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try s.setActive(true)
 
-            let input = engine.inputNode
+            let input = audio.inputNode
             let fmt = input.outputFormat(forBus: 0)
             guard fmt.sampleRate > 0 else {
                 err = "没拿到麦克风（这台机器现在不给录音）"
@@ -74,8 +74,8 @@ final class VoiceIn: NSObject, ObservableObject {
             }
             tapped = true
 
-            engine.prepare()
-            try engine.start()
+            audio.prepare()
+            try audio.start()
             listening = true
 
             task = recognizer?.recognitionTask(with: req) { [weak self] res, e in
@@ -104,10 +104,10 @@ final class VoiceIn: NSObject, ObservableObject {
 
     private func stopTalking() {
         if tapped {
-            engine.inputNode.removeTap(onBus: 0)
+            audio.inputNode.removeTap(onBus: 0)
             tapped = false
         }
-        if engine.isRunning { engine.stop() }
+        if audio.isRunning { audio.stop() }
         request?.endAudio()
         task?.cancel()
         task = nil

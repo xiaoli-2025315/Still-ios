@@ -75,6 +75,16 @@ jobs:
         working-directory: ${{ steps.loc.outputs.dir }}
         run: node Tools/_check.js
 
+      # ★ 2026-10-21：小窗里的猫「倒过来」已经折腾三次（v47 两次 + v51），
+      #   每次都是肉眼在真机上判方向，判错就白编一轮。这里把方向钉成数字：
+      #   走一遍跟 LiveFramePump.compose 完全相同的像素缓冲/上下文/翻转，
+      #   读内存第 0 行（画面顶部）看是红还是蓝。不过就当场失败，别出包。
+      - name: 小窗方向自检（猫不能倒）
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -o pipefail
+          swift Tools/flipcheck/main.swift | tee flipcheck.log
+
       - name: 装 XcodeGen
         run: brew install xcodegen
 

@@ -53,8 +53,26 @@ struct TalkToCatIntent: AppIntent {
     @Parameter(title: "它", description: "它叫什么名字")
     var pet: PetEntity?
 
-    @Parameter(title: "你说的话", description: "你想对它说的话")
-    var message: String
+    // ★★★ 2026-10-21 真机第二次翻车（他：「我试了就是他说不支持，然后他触发的是让我打开还在」）：
+    //
+    //   版本对（1.55.0/55）、系统也认识这个 App（设置→Siri 与搜索里有「还在」），
+    //   但说「用还在跟奶娃说句话」只换来「不支持」+「打开还在」。
+    //
+    //   根因在**这里**：`var message: String` 是**非可选、又没默认值**的参数。
+    //   苹果对 App Shortcut 的硬规矩：这种参数系统没法预览、也没法预填，
+    //   **整条短语就不被采用**（编译能过、元数据也能导出，但 Siri 不认）。
+    //   于是只剩 App 名能匹配上 → Siri 只能建议「打开还在」。
+    //
+    //   两条一起改：
+    //     ① `String?` —— 可选参数系统才肯收；配 `requestValueDialog` 让它开口问。
+    //     ② 他要是没答（直接跳过），perform 里兜底弹一条带输入框的通知，
+    //        让他在通知上把话打完 —— 绝不出现「喊了之后什么也没有」。
+    //
+    //   ★ 为什么不能改成 `default: ""`：那样 Siri 不会问「说什么」，
+    //     直接拿空话去执行，他就白喊了一句。要的是**追问**，不是沉默。
+    @Parameter(title: "你说的话", description: "你想对它说的话",
+               requestValueDialog: IntentDialog("你要跟它说什么？"))
+    var message: String?
 
     static var parameterSummary: some ParameterSummary {
         Summary("跟 \(\.$pet) 说 \(\.$message)")
@@ -75,7 +93,16 @@ struct TalkToCatIntent: AppIntent {
         // ★ 这里 await 是有意的：Siri 说完那句问「说什么」的框不会马上消失，
         //   我们正好在这口气里把回话要回来（约 1 秒），而不是先给一句假的、
         //   过一会儿再换成真的 —— 换的那一下比等的那一下难看。
-        await CatTalk.say(message)
+        // ★ 2026-10-21：`message` 现在是可选的（不这样短语根本不生效，见上面那段注释）。
+        //   他说了话 → 照常回；没说话就跳过了 → 弹一条带输入框的通知，
+        //   让他在通知上打完 —— 不能出现「喊完它，什么都发生」。
+        let said = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty else {
+            Notifier.askInput(after: 0.6)
+            return .result()
+        }
+
+        await CatTalk.say(said)
         return .result()
     }
 }

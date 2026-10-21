@@ -118,7 +118,12 @@ enum Cfg {
     static let homePull = 0.06
 
     // MARK: 走路
-    static let walkSecPerUnit: Double = 9.0  // Android: animDur = dist * 9000ms
+    /// ★★★ 2026-10-21（他定的「iOS 改」）：原来这里是 9.0，注释还写着
+    ///   「Android: animDur = dist * 9000ms」—— 安卓 v1.24 早就把走路速度改成
+    ///   `WALK_MS = 1800`（1800 毫秒/单位距离）了，iOS 没跟着改，
+    ///   ⇒ 同样一段距离，iOS 要走 **5 倍**时间，看着像慢动作、脚在地上蹭。
+    ///   现在对齐安卓：1.8 秒/单位距离。
+    static let walkSecPerUnit: Double = 1.8  // Android: animDur = dist * 1800ms
     static let walkSecMin: Double = 0.6
     static let walkSecMax: Double = 6.0
     static let depthCost: Float = 0.55       // 纵深走得慢，时长只按 0.55 折算

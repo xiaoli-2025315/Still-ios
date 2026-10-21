@@ -37,9 +37,21 @@ struct TalkToCatIntent: AppIntent {
     //   短语写成「跟 \(\.$pet) 说句话」，系统就会拿 `PetBook.all()` 给的名字表
     //   去把那句话拼出来 —— 猫现在叫什么，Siri 就认什么。
     //
-    //   ★ 带默认值＝不用先问「哪一只」。你只有一只猫，默认就是当前那只。
+    //   ★ 这里**不能**带默认值。写成 `var pet: PetEntity = PetBook.here()`
+    //     编译直接报（v54(2) CI 就是这么挂的）：
+    //       error: extra argument 'wrappedValue' in call
+    //     @Parameter 没有「接一个现成值」的初始化器，AppEntity 这类参数
+    //     在 Swift 里也不允许声明默认值。
+    //
+    //   ★ 所以做成 Optional：
+    //     ① 短语里能填就填（「跟小黄说句话」→ 系统把 pet 填成小黄）
+    //     ② 兜底那句「跟<App名>说句话」不含 pet，这时它是 nil，也不会反问「哪一只」
+    //
+    //   ★ 这一格**只用来拼短语**，perform() 里不读它 —— 真回话时名字由
+    //     CatTalk 从 PetName 现取。名字只留一个来源，不会出现
+    //     「短语喊小黄、回话自称还在」这种一半对一半不对的状态。
     @Parameter(title: "它", description: "它叫什么名字")
-    var pet: PetEntity = PetBook.here()
+    var pet: PetEntity?
 
     @Parameter(title: "你说的话", description: "你想对它说的话")
     var message: String

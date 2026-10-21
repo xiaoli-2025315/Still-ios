@@ -348,9 +348,15 @@ final class LiveFramePump {
     /// ★ 房间看不出问题，是因为它是毛玻璃色块，上下翻一模一样 ——
     ///   所以这个 bug 只在猫身上露出来，别去怀疑素材。
     private func drawUpright(_ img: CGImage, in r: CGRect, _ ctx: CGContext) {
-        // 自救口：动作墙底部那颗「点我翻过来」会把这个开关打开。
+        // 自救口：动作墙底部那颗「点我翻过来」会切这个开关（切过就记住）。
         // 翻转方向这种事不该让他等一个版本 —— 点一下就该好。
-        if UserDefaults.standard.bool(forKey: "still.catFlipY") {
+        //
+        // ★★★ 2026-10-21（他报「iOS 那边又全都是倒过来的」）：**默认值改成 true（＝不再额外翻一下）**。
+        //   「又」是这么来的：当初 v47 就是靠他手点那颗按钮才把倒着的猫翻正的（点一下＝写 true），
+        //   可代码里的**默认值是 false**。升级/重装/清缓存把它退回默认，猫就整片躺下了。
+        //   现在默认就是「他点过之后那个对的值」；真要翻回去，按钮照样能切（切过会记住）。
+        let 设过 = UserDefaults.standard.object(forKey: "still.catFlipY") as? Bool
+        if 设过 ?? true {
             ctx.draw(img, in: r)
             return
         }

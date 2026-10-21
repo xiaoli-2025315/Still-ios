@@ -140,7 +140,7 @@ struct DoubaoLoginPage: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = DoubaoLoginModel()
     /// 给「后退 / 刷新」两颗键留一个能摸到网页的把手。
-    @StateObject private var box = WebBox()
+    @StateObject private var box = DoubaoBox()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -365,7 +365,7 @@ struct DoubaoLoginPage: View {
 
 /// 给页面外面那两颗「后退 / 刷新」留一个能摸到网页的把手。
 @MainActor
-final class WebBox: ObservableObject {
+final class DoubaoBox: ObservableObject {
     weak var web: WKWebView?
 }
 
@@ -373,7 +373,7 @@ struct DoubaoWebView: UIViewRepresentable {
 
     /// 手机版才有「抖音登录」那颗按钮；电脑版只有扫码/短信。
     let mobile: Bool
-    let box: WebBox
+    let box: DoubaoBox
     /// 系统唤不起对应 App（多半是没装抖音）时，回一句人话给页面显示。
     let onSchemeFail: (String) -> Void
 

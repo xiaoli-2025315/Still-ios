@@ -139,12 +139,17 @@ struct DoubaoLoginPage: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = DoubaoLoginModel()
+    /// 给「后退 / 刷新」两颗键留一个能摸到网页的把手。
+    @StateObject private var box = WebBox()
 
     var body: some View {
         VStack(spacing: 0) {
             header
             stateCard
-            DoubaoWebView(mobile: model.mobile)
+            webBar
+            DoubaoWebView(mobile: model.mobile, box: box) { msg in
+                model.err = msg
+            }
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -156,6 +161,35 @@ struct DoubaoLoginPage: View {
         }
         .background(Tw.gray50.ignoresSafeArea())
         .task { await model.refresh() }
+    }
+
+    /// ★ 2026-10-22 加的这一条：他点了「抖音登录」被带到抖音的网页登录页之后，
+    ///   **卡在那儿没法退回来** —— 这一页原来只有一颗「关掉整页」。
+    ///   现在给他后退和刷新。
+    private var webBar: some View {
+        HStack(spacing: 8) {
+            Button { box.web?.goBack() } label: {
+                Label("后退", systemImage: "chevron.left")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Tw.gray500)
+            }
+            .buttonStyle(PressStyle(scale: 0.94))
+
+            Button { box.web?.reload() } label: {
+                Label("刷新", systemImage: "arrow.clockwise")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Tw.gray500)
+            }
+            .buttonStyle(PressStyle(scale: 0.94))
+
+            Spacer(minLength: 0)
+
+            Text("也可以从屏幕左边缘往右滑")
+                .font(.system(size: 10))
+                .foregroundStyle(Tw.gray400)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 6)
     }
 
     private var header: some View {
@@ -329,12 +363,21 @@ struct DoubaoLoginPage: View {
 
 // MARK: - 那个网页
 
+/// 给页面外面那两颗「后退 / 刷新」留一个能摸到网页的把手。
+@MainActor
+final class WebBox: ObservableObject {
+    weak var web: WKWebView?
+}
+
 struct DoubaoWebView: UIViewRepresentable {
 
     /// 手机版才有「抖音登录」那颗按钮；电脑版只有扫码/短信。
     let mobile: Bool
+    let box: WebBox
+    /// 系统唤不起对应 App（多半是没装抖音）时，回一句人话给页面显示。
+    let onSchemeFail: (String) -> Void
 
-    func makeCoordinator() -> Nav { Nav() }
+    func makeCoordinator() -> Nav { Nav(onFail: onSchemeFail) }
 
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
@@ -346,6 +389,8 @@ struct DoubaoWebView: UIViewRepresentable {
         v.allowsBackForwardNavigationGestures = true
         v.isInspectable = false
         v.navigationDelegate = context.coordinator
+        v.uiDelegate = context.coordinator
+        box.web = v
 
         if let u = URL(string: "https://www.doubao.com/chat/") {
             v.load(URLRequest(url: u))
@@ -354,6 +399,7 @@ struct DoubaoWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ v: WKWebView, context: Context) {
+        context.coordinator.onFail = onSchemeFail
         let want = mobile ? DoubaoLoginModel.mobileUA : DoubaoLoginModel.desktopUA
         guard v.customUserAgent != want else { return }
         v.customUserAgent = want
@@ -365,15 +411,50 @@ struct DoubaoWebView: UIViewRepresentable {
     ///
     ///   差别就在这几行：**WKWebView 默认不处理非 http(s) 的跳转。**
     ///   豆包登录页上的「抖音登录」走的是 `snssdk1128://` 这类自定义 scheme，
-    ///   WebView 拿到它只会**静默丢掉** —— 看起来就是「点了没反应」，用户只能退回扫码。
+    ///   WebView 拿到它只会**静默丢掉** —— 看起来就是「点了没反应」。
     ///   手机自带浏览器之所以能直接拉起抖音，就是系统替它做了这一步；
     ///   嵌在 App 里的浏览器得自己把这一步写出来。
     ///
+    /// ★★★ 2026-10-22 更正（他：「点抖音登录完之后，它是跳到抖音的那个官方的登录页面，
+    ///   也不会拉起我这个抖音」）：v59 的判断顺序**写反了**。
+    ///   当时是「先看是不是新窗口，再看 scheme」，而豆包那颗「抖音登录」很可能
+    ///   是 `target=_blank` 打开的 —— 于是一个 `snssdk1128://` 被当成「新窗口链接」
+    ///   塞回了 WebView，抖音根本唤不起来。
+    ///   **现在顺序反过来：任何不是网页的 scheme，第一件事就交给系统。**
+    ///
     ///   处理三件事（顺序不能换）：
-    ///     ① 新窗口链接（target=_blank）→ 在当前 WebView 里打开，否则一片空白
-    ///     ② http(s)/about/file/data → 正常放行
-    ///     ③ 其余 scheme → 交给系统去唤起对应 App（抖音 / 豆包 / 支付宝…）
-    final class Nav: NSObject, WKNavigationDelegate {
+    ///     ① 非 http(s) scheme → 交给系统去唤起对应 App（抖音 / 豆包 / 支付宝…）
+    ///     ② 新窗口链接（target=_blank）→ 在当前 WebView 里打开，否则一片空白
+    ///     ③ 其余 → 正常放行
+    final class Nav: NSObject, WKNavigationDelegate, WKUIDelegate {
+
+        var onFail: (String) -> Void
+
+        init(onFail: @escaping (String) -> Void) {
+            self.onFail = onFail
+        }
+
+        /// 这些是「网页自己的」，剩下的都当外部 App。
+        private static let webSchemes: Set<String> = [
+            "http", "https", "about", "file", "data", "blob", "javascript"
+        ]
+
+        /// 交给系统。返回 true ＝ 这条不该在 WebView 里加载。
+        private func handOffIfExternal(_ url: URL) -> Bool {
+            let scheme = (url.scheme ?? "").lowercased()
+            guard !scheme.isEmpty, !Self.webSchemes.contains(scheme) else { return false }
+
+            UIApplication.shared.open(url, options: [:]) { [weak self] ok in
+                guard !ok else { return }
+                // ★ 唤不起来**必须说出来**，否则在他看来就是「点了没反应」，
+                //   然后又退回去截图扫码 —— 这是他最烦的那一段。
+                DispatchQueue.main.async {
+                    self?.onFail("点了没反应 ＝ 这台手机没有能接住它的 App（多半是没装抖音）。"
+                                 + "往下翻，用这一页里的「验证码登录」，短信直接发到这台手机。")
+                }
+            }
+            return true
+        }
 
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
@@ -384,22 +465,31 @@ struct DoubaoWebView: UIViewRepresentable {
                 return
             }
 
+            // ★ 顺序：先外部 App，再新窗口。写反了抖音就唤不起来（v59 的坑）。
+            if handOffIfExternal(url) {
+                decisionHandler(.cancel)
+                return
+            }
+
             if navigationAction.targetFrame == nil {
                 webView.load(navigationAction.request)
                 decisionHandler(.cancel)
                 return
             }
 
-            let scheme = (url.scheme ?? "").lowercased()
-            if scheme.isEmpty || ["http", "https", "about", "file", "data"].contains(scheme) {
-                decisionHandler(.allow)
-                return
-            }
+            decisionHandler(.allow)
+        }
 
-            // ★ 异步回调里也必须且只能调一次 decisionHandler
-            UIApplication.shared.open(url, options: [:]) { ok in
-                decisionHandler(ok ? .cancel : .allow)
+        /// `window.open(...)` 走的是这条，不接的话豆包某些按钮点了没反应。
+        func webView(_ webView: WKWebView,
+                     createWebViewWith configuration: WKWebViewConfiguration,
+                     for navigationAction: WKNavigationAction,
+                     windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if let url = navigationAction.request.url, handOffIfExternal(url) {
+                return nil
             }
+            webView.load(navigationAction.request)
+            return nil
         }
     }
 }

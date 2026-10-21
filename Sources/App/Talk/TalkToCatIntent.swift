@@ -50,6 +50,12 @@ struct TalkToCatIntent: AppIntent {
     //   ★ 这一格**只用来拼短语**，perform() 里不读它 —— 真回话时名字由
     //     CatTalk 从 PetName 现取。名字只留一个来源，不会出现
     //     「短语喊小黄、回话自称还在」这种一半对一半不对的状态。
+    //
+    //   ★★★ 2026-10-22 更正：这一格**已经从所有短语里拿掉了**。
+    //     原因见 `StillShortcuts` 里那段（任意字符串的参数没法被 Siri 填，
+    //     带它的短语整条作废，只回「不支持」）。
+    //     参数本身留着：快捷指令 App 里那个动作还能选「哪一只」，
+    //     只是念出来的句子里不再有它的位置。
     @Parameter(title: "它", description: "它叫什么名字")
     var pet: PetEntity?
 
@@ -98,16 +104,23 @@ struct TalkToCatIntent: AppIntent {
         //   让他在通知上打完 —— 不能出现「喊完它，什么都发生」。
         let said = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // ★★★ 2026-10-21 诊断版（v58）：**进来先留一条，证明 Siri 到底有没有调到这儿。**
+        // ★★★ 诊断版（v58 起）：**进来先留一条，证明 Siri 到底有没有调到这儿。**
         //
-        //   他真机上无论怎么喊都是「不支持」，但我一直没有证据区分两件事：
+        //   他真机上无论怎么喊都是「不支持」，我一直没有证据区分两件事：
         //     ① 系统根本没把这句话交给 App（注册/索引那一层）
         //     ② 交进来了，但执行中途被拒（执行体那一层）
-        //   这条通知就是把这两件事切开的那一刀：
-        //     有「① Siri 进来了」→ 进得来，问题在执行体，我顺着往下砍
-        //     没有这条          → 根本没进来，问题在注册那一层，改代码没用
-        Notifier.tellReply("① Siri 进来了：\(said.isEmpty ? "（没带内容）" : said)",
-                           catName: PetName.current)
+        //   这条通知就是把这两件事切开的那一刀。
+        //
+        //   ★ 2026-10-22：真凶已经查到（短语里那个任意字符串的参数），
+        //     这条留着只为了确认 v60 修好没有 —— 所以**只发前 5 次**，
+        //     之后自动闭嘴，不会长期多响一条。
+        let diagKey = "still.diag.talkCount"
+        let n = UserDefaults.standard.integer(forKey: diagKey)
+        if n < 5 {
+            UserDefaults.standard.set(n + 1, forKey: diagKey)
+            Notifier.tellReply("① Siri 进来了：\(said.isEmpty ? "（没带内容）" : said)",
+                               catName: PetName.current)
+        }
 
         guard !said.isEmpty else {
             Notifier.askInput(after: 0.6)
@@ -313,31 +326,32 @@ struct StillShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: TalkToCatIntent(),
             phrases: [
-                // ★★★ 2026-10-21：短语里要同时出现**两个**名字，缺一个都不行。
+                // ★★★ 2026-10-22：**短语里不能再有 \(\.$pet)。** 这是查了四版之后的真凶。
                 //
-                //   ① \(.applicationName) —— App 的显示名（「还在」），**写死的**
-                //   ② \(\.$pet)          —— 它自己的名字，从 PetBook.all() 现取，
-                //                            用户在 App 里改成什么就是什么
+                //   苹果 DTS 工程师（Ed Ford）在开发者论坛 thread/771507 里写得很死：
+                //     "App Shortcuts need to have defined values for the parameters,
+                //      such as those defined by an AppEnum. **A parameter in an App
+                //      Shortcut with a large range of values, such as arbitrary
+                //      strings** … won't work with that parameter part of the
+                //      invocation phrase."
+                //     "**If you remove that parameter from the invocation phrase,
+                //      you'll see the App Shortcuts appear.**"
                 //
-                //   ★★ 苹果的规矩比我以为的严：不是「这一组短语里至少一句带 App 名」，
-                //      而是**每一条都必须带**。v55(2) 就是这么挂的：
-                //        error: Invalid Utterance. Every App Shortcut utterance
-                //        should have one '${applicationName}' in it.
-                //      所以「跟\(\.$pet)说句话」单独出现是非法短语 ——
-                //      再通顺也会让整个 AppIntents 元数据导不出来（Siri 直接不认）。
+                //   「它叫什么」恰恰就是"任意字符串"：名字是用户自己起的，系统没有一张
+                //   有限的表可以提前铺开，所以 Siri **没法把那一格填上** ——
+                //   整条短语作废，只剩 App 名能匹配上，于是只回一句「不支持」。
                 //
-                //   ★ 注意这里**不能**写 \(\.$message)：那是自由文字，
-                //     短语槽位只收 AppEntity / AppEnum，写了直接编译报错：
-                //     Invalid parameter type. AppEntity and AppEnum are the only
-                //     allowed types for message
-                //     「说一句任意的话」这半句只能交给 Siri 追问。
+                //   ★ 为什么前四版都没查出来：编译器不报错，`root.ssu.yaml` 里三句话
+                //     原原本本都在，快捷指令 App 里也能看到这个动作 ——
+                //     **只有 Siri 那一层不认**。所以拆包、验元数据全都"通过"。
                 //
-                //   ★ 念出来是「用还在跟小黄说句话」。Siri 允许省略开头，
-                //     只说「跟小黄说句话」通常也命中（名字是最强的特征）。
-                "用\(.applicationName)跟\(\.$pet)说句话",
-                "用\(.applicationName)对\(\.$pet)说句话",
-                // 兜底：名字还没索引到、或者用户根本没改过名时，这条永远可用。
-                "跟\(.applicationName)说句话"
+                //   ★ 名字这一格留着（`pet` 参数还在，快捷指令里能选），
+                //     只是**不再出现在要念出来的句子里的参数位**。
+                //     反正只有一只猫，念 App 名就够了；它自己叫什么，
+                //     回话和通知里照旧显示，不会对不上。
+                "跟\(.applicationName)说句话",
+                "用\(.applicationName)跟它说句话",
+                "用\(.applicationName)对它说句话"
             ],
             shortTitle: "跟它说句话",
             systemImageName: "bubble.left.and.bubble.right"

@@ -18,7 +18,9 @@ enum ChatLog {
     private static let max = 300
 
     private static var defaults: UserDefaults? {
-        UserDefaults(suiteName: SharedStore.suiteName) ?? UserDefaults.standard
+        // ★ 用 standard，不用 App Group：这份记录只有 App 自己要看，
+        //   而自签重签后 App Group 有时会丢 —— 丢了记录就无声没了。
+        UserDefaults.standard
     }
 
     static func all() -> [Row] {

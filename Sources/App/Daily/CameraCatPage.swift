@@ -235,6 +235,8 @@ struct CameraCatPage: View {
     /// 猫站在哪儿（0…1 的横向位置）
     @State private var catX: CGFloat = 0.5
     @State private var catScale: CGFloat = 1.0
+    /// 拖动的起点（不加这个，一上手它会跳到手指下面）
+    @State private var dragFrom: CGFloat?
 
     var body: some View {
         ZStack {
@@ -300,8 +302,11 @@ struct CameraCatPage: View {
             .gesture(
                 DragGesture()
                     .onChanged { v in
-                        catX = min(0.9, max(0.1, v.location.x / g.size.width))
+                        if dragFrom == nil { dragFrom = catX }
+                        let dx = v.translation.width / g.size.width
+                        catX = min(0.9, max(0.1, (dragFrom ?? catX) + dx))
                     }
+                    .onEnded { _ in dragFrom = nil }
             )
             .onTapGesture {
                 catScale = catScale > 1.2 ? 0.75 : catScale + 0.2

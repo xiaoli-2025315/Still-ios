@@ -170,9 +170,6 @@ enum ActLab {
             case leftover = "剩"
         }
 
-        var isDone: Bool { allDone == true || done == true }
-        var isBad: Bool { failed == true }
-
         /// ★★★ 这一版修的那件事：台子把「已经停了」的趟次统一钳到 1%。
         ///   所以 `进度 == 1` 时**不能**当成「刚起步」——
         ///   要看「阶段」那句人话到底在说什么（取消 / 没成 / 额度用完 / 被打断）。

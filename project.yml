@@ -1,6 +1,20 @@
 name: Still
 options:
   bundleIdPrefix: com.still
+  # ★★★ 2026-10-21：Siri 短语的语言必须是中文。
+  #
+  #   这一行不改的后果（我从 v53 的包里挖出来的，不是猜的）：
+  #   `Payload/Still.app/Metadata.appintents/root.ssu.yaml` 里五句短语
+  #   （跟还在说句话 / 对还在说句话 / 叫还在出来说话 / 给还在写句话 / 跟还在打字说话）
+  #   **全部标着 `locale: en`** —— 因为 XcodeGen 默认 developmentLanguage 是 en，
+  #   Info.plist 里 CFBundleDevelopmentRegion 也就成了 en。
+  #
+  #   中文的 Siri 去匹配「英文」的语料，中文那句「跟还在说句话」会被按英文去切词。
+  #   这就是「短语明明在包里，说了却没反应」最可能的来源。
+  #
+  #   改成 zh-Hans 之后，语料会标成 zh-Hans，中文 Siri 才对得上。
+  #   ★ 短语文本本身不用动 —— 它已经是中文了，错的只是语言标签。
+  developmentLanguage: "zh-Hans"
   deploymentTarget:
     iOS: "17.0"
   groupSortPosition: none
@@ -9,8 +23,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.53.0"
-    CURRENT_PROJECT_VERSION: "53"
+    MARKETING_VERSION: "1.54.0"
+    CURRENT_PROJECT_VERSION: "54"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -51,6 +65,9 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: "还在"
+        # ★ 与上面 options.developmentLanguage 配套：Info.plist 里也钉死，
+        #   别让它自己回落到 en（回落了 Siri 语料又会变回英文标签）。
+        CFBundleDevelopmentRegion: "zh-Hans"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
         # ★ 画中画的硬前提。缺了它 PiP 会**静默失效**：不报错、不崩溃，就是什么都不发生。

@@ -35,6 +35,10 @@ enum ActLab {
         ("inhale", "吸气"), ("exhale", "呼气"),
     ]
 
+    /// 这套动作一共几条 —— **别处不要写死数字**。12 条的时候到处写 `12`，
+    /// 10-21 删掉「往左走」之后全成了错的（进度、分母、齐没齐都错）。
+    static var total: Int { official.count }
+
     // MARK: - 模型
 
     struct Char: Decodable, Identifiable, Equatable {

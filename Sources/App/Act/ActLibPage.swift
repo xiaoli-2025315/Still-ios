@@ -181,9 +181,9 @@ struct ActLibPage: View {
                             Capsule().fill(c.isPaid ? Tw.red600.opacity(0.10) : Tw.gray100)
                         )
 
-                    Text("\(c.doneCount)/12 条动作好了")
+                    Text("\(c.doneCount)/\(ActLab.total) 条动作好了")
                         .font(.system(size: 11))
-                        .foregroundStyle(c.doneCount >= 12 ? Tw.green500 : Tw.gray500)
+                        .foregroundStyle(c.doneCount >= ActLab.total ? Tw.green500 : Tw.gray500)
                 }
             }
 
@@ -516,7 +516,7 @@ struct ActWallSheet: View {
         if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
             return min(0.99, max(0.03, Double(j.pct ?? 0) / 100))
         }
-        if labDone > 0 { return min(1, Double(labDone) / 12.0) }
+        if labDone > 0 { return min(1, Double(labDone) / Double(ActLab.total)) }
         return 0
     }
 
@@ -537,8 +537,8 @@ struct ActWallSheet: View {
         if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
             return "正在抠：\(j.display?.isEmpty == false ? j.display! : (j.name ?? "一条动作"))"
         }
-        if labDone >= 12 { return "「\(char.title)」这套已经齐了 · 12/12" }
-        return "「\(char.title)」现在没在跑 · 好了 \(labDone)/12 条"
+        if labDone >= ActLab.total { return "「\(char.title)」这套已经齐了 · \(labDone)/\(ActLab.total)" }
+        return "「\(char.title)」现在没在跑 · 好了 \(labDone)/\(ActLab.total) 条"
     }
 
     private var bannerSub: String {
@@ -602,7 +602,7 @@ struct ActWallSheet: View {
 
     private var subtitle: String {
         if loading { return "正在把这套动作取到手机上…" }
-        guard let p = pack else { return "\(char.doneCount)/12 条好了" }
+        guard let p = pack else { return "\(char.doneCount)/\(ActLab.total) 条好了" }
         let ready = p.acts.count
         return "\(ready) 条动作在手机上 · 点一格就能看它怎么动"
     }

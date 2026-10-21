@@ -232,6 +232,14 @@ struct DoubaoLoginPage: View {
                     .foregroundStyle(Tw.gray500)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // ★ 常驻，不做判断（他看不见"有条件的入口"）：
+            //   点「抖音登录」如果手机里没装抖音，系统唤不起来，这一下就是没反应。
+            //   话先摆在这儿，省得他以为是我们坏了、然后退回截图扫码那条老路。
+            Text("点了「抖音登录」没反应 ＝ 手机里没装抖音 · 那就用这一页里的「验证码登录」，短信直接发到这台手机，不用截图")
+                .font(.system(size: 10))
+                .foregroundStyle(Tw.gray400)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

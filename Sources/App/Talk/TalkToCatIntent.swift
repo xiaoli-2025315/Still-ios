@@ -241,8 +241,9 @@ enum PetBook {
 // ★ 这段是「零配置」的关键。没有它，用户必须自己去「快捷指令」里
 //   建一条、选这个 Intent、起名字，才能用语音 —— 那就不叫零配置了。
 //
-// ★ 短语里必须出现 \(.applicationName)，这是苹果的硬要求：
-//   不含 App 名的短语注册会失败，而且失败得很安静（Siri 就是"不认识"）。
+// ★ 短语里**每一条**都必须出现 \(.applicationName)，这是苹果的硬要求：
+//   少一条，整个 AppIntents 元数据导不出来，Siri 就是"不认识"（有报错，但只在 CI 日志里）。
+//   ★ 注意不是「每组里有一条就行」—— 是每一条。踩过两次。
 //
 // ★ 装完第一次要打开一次 App，系统才会索引这些短语。之后就一直有了。
 
@@ -252,21 +253,30 @@ struct StillShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: TalkToCatIntent(),
             phrases: [
-                // ★★★ 2026-10-21：从「跟还在说句话」改成「跟<它的名字>说句话」。
+                // ★★★ 2026-10-21：短语里要同时出现**两个**名字，缺一个都不行。
                 //
-                //   \(\.$pet) 会被系统替换成 `PetBook.all()` 里的名字
-                //   （现在就是你给猫起的那个名），所以你说「跟小黄说句话」它认得。
+                //   ① \(.applicationName) —— App 的显示名（「还在」），**写死的**
+                //   ② \(\.$pet)          —— 它自己的名字，从 PetBook.all() 现取，
+                //                            用户在 App 里改成什么就是什么
                 //
-                //   ★ 注意这里**仍然**不能写 \(\.$message) —— 那是自由文字，
+                //   ★★ 苹果的规矩比我以为的严：不是「这一组短语里至少一句带 App 名」，
+                //      而是**每一条都必须带**。v55(2) 就是这么挂的：
+                //        error: Invalid Utterance. Every App Shortcut utterance
+                //        should have one '${applicationName}' in it.
+                //      所以「跟\(\.$pet)说句话」单独出现是非法短语 ——
+                //      再通顺也会让整个 AppIntents 元数据导不出来（Siri 直接不认）。
+                //
+                //   ★ 注意这里**不能**写 \(\.$message)：那是自由文字，
                 //     短语槽位只收 AppEntity / AppEnum，写了直接编译报错：
                 //     Invalid parameter type. AppEntity and AppEnum are the only
                 //     allowed types for message
                 //     「说一句任意的话」这半句只能交给 Siri 追问。
-                "跟\(\.$pet)说句话",
-                "对\(\.$pet)说句话",
-                // ★ 这一句是**硬要求**留下的保底：苹果规定每条 AppShortcut
-                //   至少一句短语里要出现 \(.applicationName)，否则整条会被静默丢掉
-                //   （Siri 就是"不认识"，不报错）。少了它，上面两句一起失效。
+                //
+                //   ★ 念出来是「用还在跟小黄说句话」。Siri 允许省略开头，
+                //     只说「跟小黄说句话」通常也命中（名字是最强的特征）。
+                "用\(.applicationName)跟\(\.$pet)说句话",
+                "用\(.applicationName)对\(\.$pet)说句话",
+                // 兜底：名字还没索引到、或者用户根本没改过名时，这条永远可用。
                 "跟\(.applicationName)说句话"
             ],
             shortTitle: "跟它说句话",

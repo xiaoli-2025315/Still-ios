@@ -47,10 +47,17 @@ enum ActLab {
         let channel: String?
         let img: String?
         let done: Int?
+        /// ★ 2026-10-21：这个角色是不是已经被「整个删掉」了（台子只盖戳、不删文件）。
+        let dropped: Bool?
+        /// ★ 台子算好的「能不能删」——样板是 false。**前端别自己判**，两处判法迟早会不一样。
+        let canDrop: Bool?
 
         var title: String { name.isEmpty ? id : name }
         var doneCount: Int { done ?? 0 }
         var isPaid: Bool { (channel ?? "free") == "paid" }
+        var isDropped: Bool { dropped == true }
+        /// 没给 canDrop 的老台子：非样板就算能删（样板恒排第一且 channel=official）
+        var dropAllowed: Bool { canDrop ?? (channel != "official") }
         var imgURL: URL? {
             guard let img, !img.isEmpty else { return nil }
             if img.hasPrefix("http") { return URL(string: img) }
@@ -256,6 +263,28 @@ enum ActLab {
         return r.chars ?? []
     }
 
+    /// ★ 2026-10-21：连「已经删掉的」一起拉（`?all=1`）。
+    /// 角色页靠它下面那行「已删掉 N 个 · 放回来」——删错了自己点回去，不用来找我。
+    /// ★ 参数名必须是英文 `all`：中文 key 经 HTTP 路径的编码这一层对不上，会静默取不到。
+    static func chars(includingDropped: Bool) async throws -> [Char] {
+        if !includingDropped { return try await chars() }
+        let r: CharsResp = try await get("/api/act/chars?all=1")
+        return r.chars ?? []
+    }
+
+    /// 整个删掉一个角色。台子那边只是「盖个戳」，素材文件一样不删 ⇒ 能放回来。
+    /// 回一句人话（失败时就是原因）。
+    @discardableResult
+    static func dropChar(_ id: String) async throws -> String {
+        try await postSay("/api/act/chardrop", query: [URLQueryItem(name: "char", value: id)])
+    }
+
+    /// 把删掉的角色放回来（自救口）。
+    @discardableResult
+    static func restoreChar(_ id: String) async throws -> String {
+        try await postSay("/api/act/charrestore", query: [URLQueryItem(name: "char", value: id)])
+    }
+
     static func manifest(charId: String) async throws -> Manifest {
         var comp = URLComponents(string: base + "/api/act/manifest")!
         comp.queryItems = [URLQueryItem(name: "char", value: charId)]
@@ -383,6 +412,37 @@ enum ActLab {
 
     private static func get<T: Decodable>(_ path: String) async throws -> T {
         try await get(absURL: URL(string: base + path)!)
+    }
+
+    /// 台子那些「做完一件事、回一句话」的接口（删角色 / 放回来）共用的回包。
+    /// ★ 键是中文的：`说` = 成功那句，`错误` = 失败那句。
+    private struct SayResp: Decodable {
+        let ok: Bool?
+        let say: String?
+        let why: String?
+        enum CodingKeys: String, CodingKey {
+            case ok
+            case say = "说"
+            case why = "错误"
+        }
+    }
+
+    /// POST 一个「只回一句话」的动作。
+    /// ★ 台子拒绝时回的是 **409 + 中文原因**（比如「还有 2 条在做」）。
+    ///   这里要把它原样当人话抛出去 —— 不然用户只看到一串 JSON。
+    private static func postSay(_ path: String, query: [URLQueryItem]) async throws -> String {
+        var comp = URLComponents(string: base + path)!
+        comp.queryItems = query
+        var req = URLRequest(url: comp.url!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 25
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let r = try? JSONDecoder().decode(SayResp.self, from: data)
+        if let r, r.ok == true { return r.say ?? "" }
+        if let w = r?.why, !w.isEmpty { throw LabError(w) }
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
+        throw LabError("台子说 HTTP \(http.statusCode)：\(snip(data))")
     }
 
     private static func get<T: Decodable>(absURL: URL) async throws -> T {

@@ -16,6 +16,8 @@ import UniformTypeIdentifiers
 @MainActor
 final class ActLibModel: ObservableObject {
     @Published var chars: [ActLab.Char] = []
+    /// ★ 2026-10-21：已经被「整个删掉」的那些。列表底下那行「放回来」用。
+    @Published var dropped: [ActLab.Char] = []
     @Published var loading = false
     @Published var err: String?
     @Published var loadedOnce = false
@@ -25,7 +27,11 @@ final class ActLibModel: ObservableObject {
         loading = true
         err = nil
         do {
-            chars = try await ActLab.chars()
+            // ★ 一次把「已删掉的」也拉回来：分两次请求的话，删完那一刻
+            //   墙上没了、回收那行也没出来，中间会空一拍。
+            let all = try await ActLab.chars(includingDropped: true)
+            chars = all.filter { !$0.isDropped }
+            dropped = all.filter { $0.isDropped }
             loadedOnce = true
         } catch {
             err = "没取上台子：\(error.localizedDescription)"
@@ -48,6 +54,10 @@ struct ActLibPage: View {
 
     @State private var showNew = false
     @State private var watching: ActLab.Char?
+    /// 正在问「真要删吗」的那一只（非 nil 就弹确认框）
+    @State private var askingDrop: ActLab.Char?
+    /// 删 / 放回来 失败时的一句人话（显示在列表上方，不弹第二个 alert）
+    @State private var opErr: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,15 +78,18 @@ struct ActLibPage: View {
                         loadingRow
                     }
 
+                    if let e = opErr {
+                        Text(e)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Tw.red600)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 10)
+                    }
+
                     ForEach(model.chars) { c in
-                        Button {
-                            watching = c
-                        } label: {
-                            charCard(c)
-                        }
-                        .buttonStyle(PressStyle())
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 10)
+                        charCard(c)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 10)
                     }
 
                     if model.loadedOnce && model.chars.isEmpty && model.err == nil {
@@ -85,6 +98,12 @@ struct ActLibPage: View {
                             .foregroundStyle(Tw.gray400)
                             .padding(.horizontal, 20)
                             .padding(.top, 8)
+                    }
+
+                    // ★ 2026-10-21：「删角色」这功能的自救口。
+                    //   删错了不用来找我 —— 下面这行点一下就回墙上，素材本来就没删。
+                    if !model.dropped.isEmpty {
+                        droppedRow
                     }
 
                     Spacer(minLength: 30)
@@ -112,6 +131,84 @@ struct ActLibPage: View {
             ActWallSheet(char: c) { await model.load() }
                 .presentationDetents([.large])
         }
+        // ★ 删角色：先问一次，并把后果说成人话（几条动作一起撤、手机上那份也会清、能不能恢复）。
+        //   不弹第二个 alert —— 两个 alert 挂在一个视图上，SwiftUI 只会生效一个，
+        //   这是踩过的坑。失败原因走列表上方那行红字（opErr）。
+        .alert(
+            "把「\(askingDrop?.title ?? "")」整个删掉？",
+            isPresented: Binding(
+                get: { askingDrop != nil },
+                set: { if !$0 { askingDrop = nil } }
+            ),
+            presenting: askingDrop
+        ) { c in
+            Button("删掉", role: .destructive) { Task { await drop(c) } }
+            Button("算了", role: .cancel) { }
+        } message: { c in
+            Text("它已经做好的 \(c.doneCount) 条动作会一起从墙上撤下，"
+                 + "手机上装了这只的话也会一起清掉。\n"
+                 + "素材不会丢，删完列表底下会出现「放回来」。")
+        }
+    }
+
+    // MARK: - 删 / 放回来
+
+    /// 删掉一整个角色。台子撤下 + 手机上这份清掉 + 正在用就换回自带那只。
+    /// ★ 三步都得做：只撤台子不清本地，App 里还留着；只清本地不撤台子，下拉又回来了。
+    private func drop(_ c: ActLab.Char) async {
+        opErr = nil
+        do {
+            let say = try await ActLab.dropChar(c.id)
+            // 正在用的那只：先换回 App 自带的，否则 remove 会拒绝删（它不许删正在用的）
+            if store.isCurrent(c.id) { store.use(nil) }
+            store.remove(c.id)
+            _ = say
+            await model.load()
+        } catch {
+            opErr = "没删掉：\(error.localizedDescription)"
+        }
+    }
+
+    private func restore(_ c: ActLab.Char) async {
+        opErr = nil
+        do {
+            try await ActLab.restoreChar(c.id)
+            await model.load()
+        } catch {
+            opErr = "没放回来：\(error.localizedDescription)"
+        }
+    }
+
+    /// 列表底下那行「已删掉 N 个」。
+    private var droppedRow: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("已删掉 \(model.dropped.count) 个（素材都还在，点「放回来」就回去了）")
+                .font(.system(size: 11))
+                .foregroundStyle(Tw.gray400)
+
+            ForEach(model.dropped) { c in
+                HStack(spacing: 8) {
+                    Text(c.title)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Tw.gray600)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Button {
+                        Task { await restore(c) }
+                    } label: {
+                        Text("放回来")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Tw.red600)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Tw.red600.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
     }
 
     // MARK: - 顶栏
@@ -189,6 +286,28 @@ struct ActLibPage: View {
 
             Spacer(minLength: 0)
 
+            // ★★★ 2026-10-21（他的原话：「现在已经做了的角色删除不了，给角色加一个整个删除」）：
+            //   这里是那只「整个删掉」的键。**常驻、不按条件藏** —— 只有样板不给删
+            //   （台子也会拒）。字必须是「删掉」三个字：只画一个垃圾桶，他不会觉得那是能点的。
+            if c.dropAllowed {
+                Button {
+                    askingDrop = c
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 9.5, weight: .semibold))
+                        Text("删掉")
+                            .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .foregroundStyle(Tw.red600)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Tw.red600.opacity(0.08)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Tw.gray300)
@@ -202,6 +321,10 @@ struct ActLibPage: View {
                         .stroke(Tw.gray200, lineWidth: 1)
                 )
         )
+        // 点卡片进动作墙。★ 不用外层 Button 包着 —— 里面还要放「删掉」，
+        // 套在一起的话点删除会连带把动作墙也打开。
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture { watching = c }
     }
 
     /// 通道标签：台子上有三种值 —— official（台子自带样板）/ free / paid。

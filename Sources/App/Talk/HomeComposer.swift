@@ -53,6 +53,11 @@ struct HomeComposer: View {
             VStack(spacing: 6) {
                 bar
 
+                // ★★★ 2026-10-21：他一直问「Siri 到底怎么跟它说话，是还没做还是我不会触发」——
+                //   功能从 v39 就在（TalkToCatIntent + StillShortcuts），但**App 里一个字都没写**，
+                //   等于没做。这行就是入口引导，常驻，不藏。
+                siriHint
+
                 // 键盘真起不来时的那行 —— 他不该再遇到「点了，什么都没发生」
                 if !focus.keyboardUp, focus.status != "还没试过" {
                     fallbackRow
@@ -71,6 +76,29 @@ struct HomeComposer: View {
     }
 
     // MARK: - 输入条本体
+
+    /// 它现在叫什么（Siri 短语里用的就是这个名字）。
+    private var catName: String {
+        let n = (SharedStore.load().catName ?? "").trimmingCharacters(in: .whitespaces)
+        return n.isEmpty ? "还在" : n
+    }
+
+    /// 一行 Siri 的事。★ 为什么只写语音那条、不写打字那条：
+    ///   先说一句能马上用上的；说两个他反而不知道先试哪个。
+    ///   （打字那条在「快捷指令」里能搜到，动作墙那边也有一句。）
+    private var siriHint: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "waveform")
+                .font(.system(size: 9.5, weight: .semibold))
+            Text("不开 App 也能说：对 Siri 说「跟\(catName)说句话」，它问「说什么」你就说")
+                .font(.system(size: 10.5))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Tw.gray400)
+        .padding(.top, 1)
+    }
 
     private var bar: some View {
         HStack(spacing: 8) {

@@ -47,6 +47,9 @@ enum ActLab {
         let channel: String?
         let img: String?
         let done: Int?
+        // ★ 2026-10-21：**这里不能给默认值** `let dropped: Bool? = nil` ——
+        //   那样编译器会警告「Immutable property will not be decoded」，
+        //   字段永远解不进来，删除功能直接失效还不报错。所以改写调用方。
         /// ★ 2026-10-21：这个角色是不是已经被「整个删掉」了（台子只盖戳、不删文件）。
         let dropped: Bool?
         /// ★ 台子算好的「能不能删」——样板是 false。**前端别自己判**，两处判法迟早会不一样。
@@ -399,7 +402,8 @@ enum ActLab {
         }
         if let c = r?.char { return c }
         // 台子回了 ok 但没给 char：拿名字现拼一只，界面至少能显示出来
-        return Char(id: "", name: name, channel: channel, img: nil, done: 0)
+        return Char(id: "", name: name, channel: channel, img: nil, done: 0,
+                    dropped: nil, canDrop: nil)
     }
 
     // MARK: - 底层

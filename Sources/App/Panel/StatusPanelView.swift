@@ -123,6 +123,30 @@ struct StatusPanelView: View {
                     .transition(.opacity)
             }
 
+            // ★★★ 2026-10-21 真机踩坑后加的：**把 Siri 现在认的那句话摆出来**。
+            //
+            //   他从截图里反馈「喊了它说找不到奶娃 / 说不支持」——
+            //   而他根本无从知道到底该怎么说、现在索引的是哪一句。
+            //   这行就是给他看的答案：名字一改，这行字立刻跟着变，
+            //   他照着念就一定对得上。别再让他猜。
+            HStack(spacing: 5) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Cfg.Palette.faint)
+                Text("对 Siri 说「用还在跟\(engine.catName)说句话」")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            // 装完必须打开一次 App，系统才会把这几句登记进去 ——
+            // 没打开过就是「这个 App 不支持用 Siri 做这件事」。
+            // 这句只在他还没成功用过时才有价值，所以直接写死一行小字，不做判断。
+            Text("装完先打开一次 App，Siri 才认识它 · 每句都要先喊「嘿 Siri」")
+                .font(.system(size: 10))
+                .foregroundStyle(Cfg.Palette.faint)
+                .fixedSize(horizontal: false, vertical: true)
+
             // 它的声音（v48）：关了它照样跑跳，只是不出声 —— 跟安卓那个开关是同一条。
             HStack(spacing: 6) {
                 Image(systemName: soundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")

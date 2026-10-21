@@ -197,8 +197,29 @@ struct PetEntity: AppEntity {
 
 struct PetQuery: EntityQuery {
 
+    // ★★★ 2026-10-21 真机踩到的坑（他截图里那句「很抱歉，"还在"还不支持使用 Siri 执行此操作」）：
+    //
+    //   原来这里只有一句 `PetBook.all().filter { identifiers.contains($0.id) }` ——
+    //   只认 `self` / `still` 这两个**内部编号**。可 Siri 从用户嘴里抽出来的
+    //   是**名字本身**（「奶娃」），不是编号。于是：
+    //        Siri 抽到「奶娃」 → 交给 entities(for:) → 过滤完是空数组
+    //        → 参数解析失败 → Siri 只能回「这个 App 不支持用 Siri 做这件事」。
+    //   在他看来就是「喊了没反应、还说不支持」，而代码里其实什么都没报错。
+    //
+    //   ★ 修法：**这儿只有一只猫**。所以任何标识符都该落到它身上 —
+    //     认识的按认识的给，不认识的就当「你喊的正是它」。
+    //     这样「用还在跟奶娃说句话」里的奶娃能不能查到都不影响能跑，
+    //     也顺手兜住「刚改完名、系统索引还没跟上」和「名字存在老 App Group 里」两种错位。
     func entities(for identifiers: [String]) async throws -> [PetEntity] {
-        PetBook.all().filter { identifiers.contains($0.id) }
+        let all = PetBook.all()
+        var out = all.filter { identifiers.contains($0.id) }
+        let known = Set(out.map { $0.id })
+        for raw in identifiers where !known.contains(raw) {
+            let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty else { continue }
+            out.append(PetEntity(id: id, name: PetName.clean(id)))
+        }
+        return out.isEmpty ? [PetBook.here()] : out
     }
 
     func suggestedEntities() async throws -> [PetEntity] {

@@ -35,6 +35,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         // 通知上的按钮得先登记，否则系统不认识那颗「让它过来」。
         Notifier.registerCategories()
+        // ★★★ 2026-10-21：让 Siri 把「跟<它的名字>说句话」重新拼一遍。
+        //
+        //   「带名字」的那两句短语（跟 \(\.$pet) 说句话）是**参数化短语**：
+        //   系统要拿 App 递给它的名字表（PetBook.all()）才能把句子拼出来。
+        //   不调这一行，名字改过之后短语还是旧的 ——「改了名，Siri 还在叫旧名字」。
+        //
+        //   ★ 这也是「装完要打开一次 App」的真正原因：苹果要求 App 至少跑过一趟，
+        //     短语才会被索引。豆包方案里那句「App 被杀掉要自己处理唤醒」同理。
+        StillShortcuts.updateAppShortcutParameters()
         return true
     }
 

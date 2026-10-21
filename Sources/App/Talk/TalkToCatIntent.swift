@@ -27,11 +27,25 @@ struct TalkToCatIntent: AppIntent {
 
     static var openAppWhenRun: Bool { false }
 
+    // ★★★ 2026-10-21：这一格是「它叫什么」。
+    //
+    //   原来短语写死成 \(.applicationName) —— 系统把它替换成 **App 显示名「还在」**。
+    //   你要的是**喊猫自己的名字**（「跟小黄说句话」），那 App 名和猫名是两回事，
+    //   必须另外给它一个「可以点名的它」。
+    //
+    //   做法：把「它」做成 AppEntity（Swift 里「能被点名、系统能拿去填句子」的类型）。
+    //   短语写成「跟 \(\.$pet) 说句话」，系统就会拿 `PetBook.all()` 给的名字表
+    //   去把那句话拼出来 —— 猫现在叫什么，Siri 就认什么。
+    //
+    //   ★ 带默认值＝不用先问「哪一只」。你只有一只猫，默认就是当前那只。
+    @Parameter(title: "它", description: "它叫什么名字")
+    var pet: PetEntity = PetBook.here()
+
     @Parameter(title: "你说的话", description: "你想对它说的话")
     var message: String
 
     static var parameterSummary: some ParameterSummary {
-        Summary("跟它说 \(\.$message)")
+        Summary("跟 \(\.$pet) 说 \(\.$message)")
     }
 
     @MainActor
@@ -142,6 +156,72 @@ enum StillIntentBridge {
     }
 }
 
+// MARK: - 「它」＝ 一个能点名的东西
+//
+// ★★★ 2026-10-21（你的原话：「我想做到他这个 planb 里可以直接叫宠物名字的方法」）。
+//
+//   为什么必须多这一层：Siri 短语里能填的那一格，**只收 AppEntity / AppEnum**，
+//   String 直接编译报错（这条我们早就踩过，见下面 StillShortcuts 里的注释）。
+//   「它的名字」正好是「系统可以先知道、再拿来说」的东西 —— 包成 AppEntity 就合法了。
+//
+//   ★ 跟签名一点关系都没有：
+//     不需要 App Group、不需要独立的 App Intent Extension、不需要任何 entitlement。
+//     豆包那套之所以要开发者账号，是因为它多造了一个**进程**；
+//     我们从头到尾都在 App 自己这个进程里，重签也好、App Group 丢了也好，不影响。
+
+struct PetEntity: AppEntity {
+
+    var id: String
+    var name: String
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "它"
+
+    static var defaultQuery = PetQuery()
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(name)")
+    }
+}
+
+struct PetQuery: EntityQuery {
+
+    func entities(for identifiers: [String]) async throws -> [PetEntity] {
+        PetBook.all().filter { identifiers.contains($0.id) }
+    }
+
+    func suggestedEntities() async throws -> [PetEntity] {
+        PetBook.all()
+    }
+}
+
+/// 它现在叫什么。
+///
+/// ★ 名字从 `SharedStore` 里读 —— 就是你在 App 里「改名字」改的那个。
+///   读不到（没改过 / App Group 被重签弄丢了）就是默认的「还在」，
+///   跟界面、通知里显示的完全是同一个来源，不会出现「通知叫小黄、Siri 叫还在」。
+enum PetBook {
+
+    /// 当前那一只。
+    static func here() -> PetEntity {
+        all()[0]
+    }
+
+    /// 名字表。第一条永远是当前那只。
+    ///
+    /// ★ 改成别的名字之后，「还在」仍然留在表里：
+    ///   你叫惯了旧名字、或者刚改完名 Siri 还没重新索引，都不至于哑火。
+    static func all() -> [PetEntity] {
+        let raw = (SharedStore.load().catName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = raw.isEmpty ? "还在" : raw
+        var out = [PetEntity(id: "self", name: name)]
+        if name != "还在" {
+            out.append(PetEntity(id: "still", name: "还在"))
+        }
+        return out
+    }
+}
+
 // MARK: - 让 Siri 装完就认识，不用去设置里绑
 //
 // ★ 这段是「零配置」的关键。没有它，用户必须自己去「快捷指令」里
@@ -158,14 +238,22 @@ struct StillShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: TalkToCatIntent(),
             phrases: [
-                // ★ 这里不能写 "跟\(.applicationName)说\(\.$message)"。
-                //   试过，编译直接报：
-                //   Invalid parameter type. AppEntity and AppEnum are the only allowed
-                //   types for message
-                //   —— 短语槽位只收 AppEntity / AppEnum，String 收不了。
-                //   所以只能给「不带内容」的短语，剩下那半句交给 Siri 追问。
-                "跟\(.applicationName)说句话",
-                "对\(.applicationName)说句话"
+                // ★★★ 2026-10-21：从「跟还在说句话」改成「跟<它的名字>说句话」。
+                //
+                //   \(\.$pet) 会被系统替换成 `PetBook.all()` 里的名字
+                //   （现在就是你给猫起的那个名），所以你说「跟小黄说句话」它认得。
+                //
+                //   ★ 注意这里**仍然**不能写 \(\.$message) —— 那是自由文字，
+                //     短语槽位只收 AppEntity / AppEnum，写了直接编译报错：
+                //     Invalid parameter type. AppEntity and AppEnum are the only
+                //     allowed types for message
+                //     「说一句任意的话」这半句只能交给 Siri 追问。
+                "跟\(\.$pet)说句话",
+                "对\(\.$pet)说句话",
+                // ★ 这一句是**硬要求**留下的保底：苹果规定每条 AppShortcut
+                //   至少一句短语里要出现 \(.applicationName)，否则整条会被静默丢掉
+                //   （Siri 就是"不认识"，不报错）。少了它，上面两句一起失效。
+                "跟\(.applicationName)说句话"
             ],
             shortTitle: "跟它说句话",
             systemImageName: "bubble.left.and.bubble.right"

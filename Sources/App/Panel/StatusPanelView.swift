@@ -40,6 +40,16 @@ struct StatusPanelView: View {
         return ""
     }
 
+    /// 改名。
+    ///
+    /// ★ 2026-10-21：改完必须让 Siri 重新拼一遍短语。
+    ///   短语「跟 \(\.$pet) 说句话」里的名字，是系统从 `PetBook.all()` 拿的；
+    ///   不重拼，你改了名、界面和通知都叫新名字，只有 Siri 还在喊旧的那个。
+    private func rename() {
+        engine.setName(catName)
+        StillShortcuts.updateAppShortcutParameters()
+    }
+
     private func loadWidgetCount() {
         // 用 iOS 16 就有的回调版，别用 iOS 17 的 async 版 —— 少一个可用性上的雷。
         WidgetCenter.shared.getCurrentConfigurations { result in
@@ -80,13 +90,17 @@ struct StatusPanelView: View {
             }
 
             // 给它起名：Siri 唤醒词里用的就是它（「跟豆豆说…」）
+            //
+            // ★ 2026-10-21：这行字以前是**假的** —— 短语里用的是 App 显示名，
+            //   不是这里的名字。现在把「它」做成了 AppEntity，这句才真的成立。
+            //   改完名字要立刻让 Siri 重新拼一遍短语，否则它还认旧名字。
             HStack(spacing: 6) {
                 Text("叫它").font(.system(size: 11)).foregroundStyle(.secondary)
                 TextField("还在", text: $catName)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 92)
-                    .onSubmit { engine.setName(catName) }
-                Button("改") { engine.setName(catName) }
+                    .onSubmit { rename() }
+                Button("改") { rename() }
                     .buttonStyle(ChipButton())
             }
 

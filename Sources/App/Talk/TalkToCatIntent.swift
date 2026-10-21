@@ -132,6 +132,64 @@ struct TalkToCatIntent: AppIntent {
     }
 }
 
+// MARK: - 「问它」—— 给快捷指令用的那一个（跟豆包的「问豆包」同一形状）
+//
+// ★★★ 2026-10-22（他的原话：「豆包那个快捷指令里面有一个『问豆包』，点它它就会自动
+//   弹出一个输入的文本框……人家为什么就可以做得到，我要的就是像它这种」）。
+//
+//   先说清楚豆包那几个（问豆包 / 语音通话 / 视频通话 / 发消息）**是什么**：
+//   它们**不是 Siri 短语**，是「快捷指令」App 里的**动作**。
+//   点它会弹输入框，原因很朴素：**它的参数是必填的** ——
+//   快捷指令在跑之前必须把这一格填上，填不上就问你，于是框弹出来了。
+//
+//   ★ 我们原来那个「跟它说句话」的参数是**可选**的（为了迁就 Siri 短语，
+//     见 `StillShortcuts` 那段）。后果就是：在快捷指令里它可以留空
+//     ⇒ 点一下直接跑空 ⇒ 只落一条通知。他觉得「只是用来发个通知的」，就是这个原因。
+//
+//   ★ 解法：**再给一个参数必填的**，两个并存、各干一件事 ——
+//       「跟它说句话」（旧，参数可选）→ 给 Siri 短语用
+//       「问它」      （新，参数必填）→ 给快捷指令用，点开就问你「要跟它说什么」
+//
+//   ★★★ 这个 Intent **绝对不许**放进 `StillShortcuts` 的 phrases 里。
+//     参数必填的 Intent 一进短语，整条短语作废（踩过，见 StillShortcuts 注释）。
+//     它在快捷指令里单独作为一个动作出现，跟 Siri 短语是两套东西，互不影响。
+//
+//   ★ 语音输入不用我们做：iOS 键盘上自带麦克风键，点一下就能说话 ——
+//     豆包那个「点开就能说」也是这么来的，它并没有自己写语音输入。
+
+struct AskCatIntent: AppIntent {
+
+    static var title: LocalizedStringResource = "问它"
+    static var description = IntentDescription("对它说句话，它会当场动一下，然后回你一条通知。")
+
+    static var openAppWhenRun: Bool { false }
+
+    // ★★ 这里**必须是 `String`，不能是 `String?`** —— 这是跟旧那个唯一的差别，
+    //    也正是弹输入框的关键：必填参数，快捷指令不填就不放行。
+    @Parameter(title: "你说的话", description: "你想对它说的话",
+               requestValueDialog: IntentDialog("你要跟它说什么？"))
+    var message: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("对它说 \(\.$message)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let said = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 理论上填不上就进不来；真拿到空串（比如只敲了空格）就退回到通知那条路，
+        // 绝不能出现「跑了但什么都没发生」。
+        guard !said.isEmpty else {
+            Notifier.askInput(after: 0.6)
+            return .result()
+        }
+
+        await CatTalk.say(said)
+        return .result()
+    }
+}
+
 // MARK: - 打字那条：叫它出一条「能写字」的通知
 //
 // ★★★ 这是「在别的 App 里打不了字」的正解（v39）。
@@ -349,6 +407,11 @@ struct StillShortcuts: AppShortcutsProvider {
                 //     只是**不再出现在要念出来的句子里的参数位**。
                 //     反正只有一只猫，念 App 名就够了；它自己叫什么，
                 //     回话和通知里照旧显示，不会对不上。
+                // ★ 2026-10-22：试过「把猫名焊进短语」（`用还在跟奶娃说句话`），
+                //   技术上成立，但他明确说**猫名以后会改**（他原话：「这个会改的，算了」）。
+                //   焊死的名字改一次就失效、还得重发一版，划不来 ⇒ 撤回，只留通用的三条。
+                //   将来真要让每个用户念自己的名字，唯一的路是「快捷指令里录一句」，
+                //   App Shortcuts 的短语文本在安装时就定死，运行时改不了。
                 "跟\(.applicationName)说句话",
                 "用\(.applicationName)跟它说句话",
                 "用\(.applicationName)对它说句话"

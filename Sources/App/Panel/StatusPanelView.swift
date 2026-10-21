@@ -137,6 +137,10 @@ struct StatusPanelView: View {
             //   ⇒ **整句话作废** ⇒ Siri 只回「不支持」。查了五版才查到，见
             //   `TalkToCatIntent.swift` 里 `StillShortcuts` 那段。
             //   所以现在照实写：念的那句里只有 App 名，猫名不进去。
+            //   ★ 再往下一层（2026-10-22）：那句里的「还在」是 App 显示名，他嫌别扭，
+            //     一度把猫名焊进短语（`用还在跟奶娃说句话`）。但他明确说**名字以后会改**，
+            //     焊死等于改一次名就失效、还得重发版 ⇒ 撤回，回到只念 App 名。
+            //     App 显示名本身改不了（`CFBundleDisplayName` 装完定死，无运行时改名的接口）。
             HStack(spacing: 5) {
                 Image(systemName: "waveform")
                     .font(.system(size: 10))

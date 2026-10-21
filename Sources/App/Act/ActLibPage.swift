@@ -325,6 +325,26 @@ struct ActWallSheet: View {
     /// 只为了让「点我翻过来」那颗按钮的字刷新一下
     @State private var flipNote = false
 
+    // MARK: 这一版新加的口子（全部常驻，不按条件藏）
+    /// 做动作的进度页
+    @State private var showGen = false
+    /// 登录豆包
+    @State private var showLogin = false
+    @State private var loginState: ActLab.LoginState?
+    /// 长按一格 → 换视频（先记住是哪一格，再用系统的选择器）
+    @State private var pendingSlot = ""
+    @State private var slotItem: PhotosPickerItem?
+    @State private var showSlotPicker = false
+    /// 长按一格 → 改到别的格 / 删掉这一格
+    @State private var renameFrom = ""
+    @State private var askRename = false
+    @State private var retireSlot = ""
+    @State private var askRetire = false
+    /// 一键修复：要不要连已经好了的也重抠
+    @State private var askRepair = false
+    /// 页面上那句反馈（贴在墙上，不弹窗）
+    @State private var hint = ""
+
     private let cols = [GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8),
                         GridItem(.flexible(), spacing: 8)]
@@ -339,8 +359,12 @@ struct ActWallSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            banner
             if let p = store.progress, store.downloading == char.id {
                 progressBar(p)
+            }
+            if !hint.isEmpty {
+                hintRow
             }
             ScrollView {
                 VStack(spacing: 0) {
@@ -363,6 +387,7 @@ struct ActWallSheet: View {
         .task {
             // ★ 先问台子「现在好了几条」，再决定要不要下包 ——
             //   一条都没有的时候下 40MB 是白下（而且那包是空的，读不出来会报错）。
+            genJob = UserDefaults.standard.string(forKey: GenModel.key(char.id)) ?? ""
             await refreshLab()
             await prepare()
             await watch()
@@ -371,6 +396,10 @@ struct ActWallSheet: View {
             guard let it else { return }
             Task { await uploadVideo(it) }
         }
+        .onChange(of: slotItem) { _, it in
+            guard let it else { return }
+            Task { await uploadToSlot(it) }
+        }
         .confirmationDialog("让台子做整套动作？", isPresented: $askGen, titleVisibility: .visible) {
             Button("做（会花豆包额度）") { Task { await startGen() } }
             Button("先不做", role: .cancel) {}
@@ -378,9 +407,175 @@ struct ActWallSheet: View {
             Text("台子会按 12 个标准动作各生成一条，然后再抠像。"
                  + "这一步花的是你机器上的豆包额度；已经有、正在做的会自己跳过。")
         }
+        .confirmationDialog("把「\(labelOf(renameFrom))」改到哪一格？",
+                            isPresented: $askRename, titleVisibility: .visible) {
+            ForEach(ActLab.official.filter { $0.key != renameFrom }, id: \.key) { a in
+                Button(a.label) { Task { await renameSlot(renameFrom, to: a.key) } }
+            }
+            Button("先不改", role: .cancel) {}
+        } message: {
+            Text("改完这一格就归到那个动作上了。目标格已经有东西的话，会拒一下。")
+        }
+        .confirmationDialog("把「\(labelOf(retireSlot))」从墙上退下来？",
+                            isPresented: $askRetire, titleVisibility: .visible) {
+            Button("退下来", role: .destructive) { Task { await retire(retireSlot) } }
+            Button("先不退", role: .cancel) {}
+        } message: {
+            Text("退下来只是不显示这一格，文件一个都不删，以后还能恢复。")
+        }
+        .confirmationDialog("一键修复", isPresented: $askRepair, titleVisibility: .visible) {
+            Button("只修卡住的（不花额度）") { Task { await repair(force: false) } }
+            Button("连已经好了的也重抠一遍") { Task { await repair(force: true) } }
+            Button("先不修", role: .cancel) {}
+        } message: {
+            Text("拿机器上原来那段源视频重新抠 —— 不重新生成、不花豆包额度、也不用你重传。")
+        }
+        .sheet(isPresented: $showGen) {
+            GenProgressPage(char: char) { await refreshAll() }
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showLogin) {
+            DoubaoLoginPage()
+                .presentationDetents([.large])
+        }
+        .photosPicker(isPresented: $showSlotPicker, selection: $slotItem, matching: .videos)
         .fullScreenCover(item: $previewing) { p in
             ActPreviewPage(pack: p.pack, act: p.act)
         }
+    }
+
+    // MARK: 常驻横幅
+    //
+    // ★★★ 他要的是「制作进度条能一直显示」。所以它不随「有没有在跑」消失：
+    //   在跑 → 红色、带百分比；没在跑 → 灰色一行，写着这台机器现在闲不闲。
+
+    private var banner: some View {
+        Button {
+            showGen = true
+        } label: {
+            VStack(spacing: 6) {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(running ? Tw.red600 : Tw.gray300)
+                        .frame(width: 7, height: 7)
+                    Text(bannerTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(running ? Tw.gray900 : Tw.gray500)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    Text(running ? (percentText.isEmpty ? "看进度" : percentText) : "进度")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(running ? Tw.red600 : Tw.gray400)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Tw.gray300)
+                }
+
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Tw.gray200)
+                        Capsule()
+                            .fill(running ? Tw.red600 : Tw.gray300)
+                            .frame(width: max(4, g.size.width * CGFloat(bannerValue)))
+                    }
+                }
+                .frame(height: 4)
+
+                Text(bannerSub)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Tw.gray500)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(running ? Tw.red600.opacity(0.06) : Tw.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(running ? Tw.red600.opacity(0.22) : Tw.gray200, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PressStyle(scale: 0.99))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 10)
+    }
+
+    private var running: Bool {
+        if let s = genState, !s.stopped { return true }
+        return !actJobs.filter { !$0.isDone && !$0.isBad }.isEmpty
+    }
+
+    private var bannerValue: Double {
+        if let s = genState, !genJob.isEmpty { return s.barValue }
+        if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
+            return min(0.99, max(0.03, Double(j.pct ?? 0) / 100))
+        }
+        if labDone > 0 { return min(1, Double(labDone) / 12.0) }
+        return 0
+    }
+
+    private var percentText: String {
+        if let s = genState, !genJob.isEmpty {
+            if s.stopped { return "已停" }
+            if let p = s.progress, p > 1 { return "\(p)%" }
+            return ""
+        }
+        if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
+            return "\(j.pct ?? 0)%"
+        }
+        return ""
+    }
+
+    private var bannerTitle: String {
+        if let s = genState, !genJob.isEmpty, !s.stopped { return "正在给「\(char.title)」做动作" }
+        if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
+            return "正在抠：\(j.display?.isEmpty == false ? j.display! : (j.name ?? "一条动作"))"
+        }
+        if labDone >= 12 { return "「\(char.title)」这套已经齐了 · 12/12" }
+        return "「\(char.title)」现在没在跑 · 好了 \(labDone)/12 条"
+    }
+
+    private var bannerSub: String {
+        if let s = genState, !genJob.isEmpty {
+            return s.line + (s.isDone || s.isBad ? "" : "（退出去也接着做）")
+        }
+        if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
+            return "\(j.line) · 不花额度"
+        }
+        if let bad = actJobs.first(where: { $0.isBad }) {
+            return "有一段没成：\(bad.err?.isEmpty == false ? bad.err! : (bad.stage ?? "")) —— 点「一键修复」"
+        }
+        return "点这一行看进度 · 想补几条就传视频，或点「做整套」"
+    }
+
+    private var hintRow: some View {
+        HStack(spacing: 6) {
+            Text(hint)
+                .font(.system(size: 11))
+                .foregroundStyle(Tw.gray600)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button {
+                hint = ""
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Tw.gray400)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 8)
+    }
+
+    private func labelOf(_ key: String) -> String {
+        ActLab.official.first(where: { $0.key == key })?.label ?? key
     }
 
     // MARK: 顶
@@ -441,43 +636,120 @@ struct ActWallSheet: View {
                     guard let p = pack, let a = act else { return }
                     previewing = ActPreview(id: a.name, pack: p, act: a)
                 } label: {
-                    tile(label: item.label, act: act)
+                    tile(item.key, item.label, act)
                 }
                 .buttonStyle(PressStyle())
-                .disabled(act == nil)
+                // ★ 长按一格：改格 / 换视频 / 删格（安卓那套「修改通道」）
+                .contextMenu {
+                    Button {
+                        pendingSlot = item.key
+                        showSlotPicker = true
+                    } label: {
+                        Label("换一段视频（按到这一格）", systemImage: "video.badge.plus")
+                    }
+                    Button {
+                        renameFrom = item.key
+                        askRename = true
+                    } label: {
+                        Label("改到别的格", systemImage: "arrow.left.arrow.right")
+                    }
+                    Button(role: .destructive) {
+                        retireSlot = item.key
+                        askRetire = true
+                    } label: {
+                        Label("把这一格退下来", systemImage: "trash")
+                    }
+                }
             }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 14)
     }
 
-    private func tile(label: String, act: CatPack.Act?) -> some View {
+    /// 一格。有真帧就显示第一帧（不再只是一个图标），在抠就显示进度。
+    private func tile(_ key: String, _ label: String, _ act: CatPack.Act?) -> some View {
+        let live = cellProgress(key)
         let done = act != nil
-        return VStack(spacing: 5) {
-            Image(systemName: done ? "play.circle.fill" : "circle.dotted")
-                .font(.system(size: 18))
-                .foregroundStyle(done ? Tw.red600 : Tw.gray300)
+        return VStack(spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Tw.gray100)
+
+                if let a = act, let img = pack?.image(act: a, index: 0) {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(1)
+                } else if let live {
+                    VStack(spacing: 2) {
+                        Text("\(Int(live.value * 100))%")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Tw.red600)
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Tw.gray200)
+                                Capsule().fill(Tw.red600)
+                                    .frame(width: max(3, g.size.width * CGFloat(live.value)))
+                            }
+                        }
+                        .frame(height: 3)
+                        .padding(.horizontal, 12)
+                    }
+                } else {
+                    Image(systemName: "circle.dotted")
+                        .font(.system(size: 17))
+                        .foregroundStyle(Tw.gray300)
+                }
+            }
+            .frame(height: 50)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
             Text(label)
                 .font(.system(size: 11, weight: done ? .semibold : .regular))
                 .foregroundStyle(done ? Tw.gray900 : Tw.gray400)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            if let a = act {
+                .minimumScaleFactor(0.75)
+
+            if let live {
+                Text(live.stage)
+                    .font(.system(size: 8.5))
+                    .foregroundStyle(Tw.red600)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            } else if let a = act {
                 Text("\(a.frames) 帧")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(Tw.gray400)
+            } else {
+                Text("还没有")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Tw.gray300)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 11)
+        .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Tw.white)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(done ? Tw.red600.opacity(0.28) : Tw.gray200, lineWidth: 1)
+                        .stroke(done ? Tw.red600.opacity(0.28)
+                                     : (live == nil ? Tw.gray200 : Tw.red600.opacity(0.16)),
+                                lineWidth: 1)
                 )
         )
+    }
+
+    /// 这一格正在走到哪一步（抠像优先，其次是生成那趟的逐条状态）。
+    private func cellProgress(_ key: String) -> (value: Double, stage: String)? {
+        if let j = actJobs.first(where: { ($0.name ?? "") == key }) {
+            if j.isDone { return nil }
+            return (min(0.99, max(0.03, Double(j.pct ?? 0) / 100)), j.line)
+        }
+        if let s = genState?.each?.first(where: { $0.act == key }), !s.matteDone {
+            return (min(0.99, max(0.03, Double(s.pct ?? 0) / 100)), s.line)
+        }
+        return nil
     }
 
     private var footNote: some View {
@@ -529,13 +801,31 @@ struct ActWallSheet: View {
                 .disabled(upBusy || genBusy)
 
                 Button {
-                    askGen = true
+                    showGen = true
                 } label: {
-                    pill(icon: "wand.and.stars", text: "一键做整套",
-                         on: false, busy: genBusy)
+                    pill(icon: "chart.bar.fill", text: "做动作 · 看进度",
+                         on: true, busy: genBusy)
                 }
                 .buttonStyle(PressStyle())
-                .disabled(upBusy || genBusy)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    askRepair = true
+                } label: {
+                    pill(icon: "wrench.and.screwdriver.fill", text: "一键修复",
+                         on: false, busy: false)
+                }
+                .buttonStyle(PressStyle())
+
+                Button {
+                    showLogin = true
+                } label: {
+                    pill(icon: "person.crop.circle.badge.checkmark",
+                         text: (loginState?.loggedIn == true) ? "豆包：已登录" : "登录豆包",
+                         on: false, busy: false)
+                }
+                .buttonStyle(PressStyle())
             }
 
             if !liveText.isEmpty {
@@ -632,16 +922,91 @@ struct ActWallSheet: View {
         if let js = try? await ActLab.jobs(charId: char.id) {
             actJobs = js
         }
+        if loginState == nil {
+            loginState = try? await ActLab.loginState()
+        }
         if !genJob.isEmpty {
             if let g = try? await ActLab.genState(job: genJob) {
+                let wasDone = genState?.isDone ?? false
                 genState = g
-                if g.isDone || g.isBad {
-                    genJob = ""
+                if (g.isDone || g.isBad) && !wasDone {
                     genBusy = false
                     // 做完立刻把手机里那份换新，不用他再点一次
                     await refreshPack()
                 }
             }
+        }
+    }
+
+    /// 进度页回来说「完了」之后：重问台子，多出来的话顺手更新到手机。
+    private func refreshAll() async {
+        await refreshLab()
+        if labDone > (pack?.acts.count ?? 0) {
+            await refreshPack()
+        }
+        await onChanged()
+    }
+
+    // MARK: 一键修复 / 改格 / 删格 / 换视频
+
+    private func repair(force: Bool) async {
+        hint = force ? "正在叫台子把每一条都重抠一遍…" : "正在叫台子修卡住的那些…"
+        do {
+            hint = try await ActLab.actRepair(charId: char.id, force: force)
+            await refreshLab()
+        } catch {
+            hint = "没修起来：\(error.localizedDescription)"
+        }
+    }
+
+    private func renameSlot(_ from: String, to: String) async {
+        hint = "正在把「\(labelOf(from))」改到「\(labelOf(to))」…"
+        do {
+            try await ActLab.actRename(charId: char.id, name: from, to: to)
+            hint = "改好了 · 台子要重打一遍包，约半分钟"
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await refreshPack()
+        } catch {
+            hint = "改不了：\(error.localizedDescription)"
+        }
+    }
+
+    private func retire(_ slot: String) async {
+        hint = "正在把「\(labelOf(slot))」退下来…"
+        do {
+            try await ActLab.actRetire(charId: char.id, name: slot)
+            hint = "「\(labelOf(slot))」退下来了 —— 文件还在，以后能恢复"
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await refreshPack()
+        } catch {
+            hint = "退不下来：\(error.localizedDescription)"
+        }
+    }
+
+    /// 长按某一格 → 换视频：传上去，然后把它按到这一格上。
+    private func uploadToSlot(_ item: PhotosPickerItem) async {
+        let slot = pendingSlot
+        upBusy = true
+        upNote = "正在读这段视频…"
+        defer {
+            upBusy = false
+            slotItem = nil
+            pendingSlot = ""
+        }
+        do {
+            guard let box = try await item.loadTransferable(type: MovieBox.self) else {
+                upNote = "这段视频读不出来 —— 换一段（要相册里的视频，不是照片）"
+                return
+            }
+            upNote = "正在传给台子…"
+            let msg = try await ActLab.replaceVideo(charId: char.id, slot: slot, video: box.url)
+            try? FileManager.default.removeItem(at: box.url)
+            upNote = ""
+            hint = msg
+            await refreshLab()
+        } catch {
+            upNote = ""
+            hint = "没换成：\(error.localizedDescription)"
         }
     }
 
@@ -680,6 +1045,7 @@ struct ActWallSheet: View {
         do {
             let r = try await ActLab.genStart(charId: char.id)
             genJob = r.job
+            UserDefaults.standard.set(r.job, forKey: GenModel.key(char.id))
             genState = ActLab.GenJob.stub(stage: "下单了，台子正在排队（\(r.acts.count) 条）")
             await refreshLab()
         } catch {
@@ -690,6 +1056,8 @@ struct ActWallSheet: View {
 
     /// 强制重下一遍动作包（台子上多了几条之后用）。
     private func refreshPack() async {
+        // 台子上一条都还没有 ⇒ 没有包可下（空包 40MB，还读不出来）
+        guard labDone > 0 else { return }
         loading = true
         do {
             pack = try await store.install(charId: char.id, force: true)
@@ -1100,8 +1468,9 @@ struct MovieBox: Transferable {
 
 extension ActLab.GenJob {
     /// 本地先摆一句「下单了」用，别等台子回话才有字。
-    static func stub(stage: String) -> ActLab.GenJob {
-        ActLab.GenJob(job: nil, stage: nil, phase: stage, msg: nil, progress: nil,
-                      allDone: nil, failed: nil, acts: nil, each: nil)
+    static func stub(stage: String, progress: Int? = nil, failed: Bool = false) -> ActLab.GenJob {
+        ActLab.GenJob(job: nil, stage: nil, phase: stage, msg: nil, progress: progress,
+                      allDone: nil, failed: failed ? true : nil, done: nil,
+                      acts: nil, each: nil, redo: nil, leftover: nil)
     }
 }

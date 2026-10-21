@@ -115,32 +115,104 @@ enum ActLab {
         let progress: Int?
         let allDone: Bool?
         let failed: Bool?
+        let done: Bool?
         let acts: [String]?
         let each: [GenSeg]?
+        /// 这几条豆包那边画好了、还没捡回来 —— 有就亮「重新收一遍」（不花额度）
+        let redo: [String]?
+        /// 这一趟没做、留给下一批的 —— 按钮写成「接着做下一批（还有 N 段）」
+        let leftover: [String]?
 
         struct GenSeg: Decodable, Identifiable {
             let act: String?
             let stage: String?
+            let pct: Int?
+            let sent: Bool
+            let saved: Bool
+            let matteDone: Bool
+
             var id: String { act ?? UUID().uuidString }
+
+            enum CodingKeys: String, CodingKey {
+                case act, stage, pct, matteDone, tSent, tSaved
+            }
+
+            init(from d: Decoder) throws {
+                let c = try d.container(keyedBy: CodingKeys.self)
+                act = try c.decodeIfPresent(String.self, forKey: .act)
+                stage = try c.decodeIfPresent(String.self, forKey: .stage)
+                pct = try c.decodeIfPresent(Int.self, forKey: .pct)
+                matteDone = try c.decodeIfPresent(Bool.self, forKey: .matteDone) ?? false
+                sent = (try c.decodeIfPresent(Double.self, forKey: .tSent) ?? 0) > 0
+                saved = (try c.decodeIfPresent(Double.self, forKey: .tSaved) ?? 0) > 0
+            }
+
+            /// 这一条走到哪了。给人看的四个台阶（跟安卓那四行一样）。
+            var line: String {
+                if matteDone { return "好了" }
+                if let s = stage, !s.isEmpty {
+                    if s.contains("卡在豆包") { return s }
+                    return s
+                }
+                if saved { return "画好了，正送进台子" }
+                if sent { return "已发给豆包，正在画" }
+                return "排着队"
+            }
         }
 
         enum CodingKeys: String, CodingKey {
-            case job, stage, msg, acts, failed
+            case job, stage, msg, acts, failed, done
             case phase    = "阶段"
             case progress = "进度"
             case allDone  = "全完成"
             case each     = "每条"
+            case redo     = "可重收"
+            case leftover = "剩"
         }
 
-        var isDone: Bool { allDone == true }
+        var isDone: Bool { allDone == true || done == true }
         var isBad: Bool { failed == true }
+
+        /// ★★★ 这一版修的那件事：台子把「已经停了」的趟次统一钳到 1%。
+        ///   所以 `进度 == 1` 时**不能**当成「刚起步」——
+        ///   要看「阶段」那句人话到底在说什么（取消 / 没成 / 额度用完 / 被打断）。
+        ///
+        /// ★ 还有一层坑：台子给「取消」的趟次也打了 `全完成 = 1`，
+        ///   直接用 `全完成` 判「做完了」，取消的那趟会显示成「整套做完了」。文字优先。
+        var phaseText: String {
+            if let p = phase, !p.isEmpty { return p }
+            if let m = msg, !m.isEmpty { return m }
+            return stage ?? ""
+        }
+
+        var isDone: Bool { phaseText.contains("全都好了") || phaseText.contains("做完了") }
+        var isBad: Bool { failed == true || phaseText.contains("没成") }
+
+        var stopped: Bool {
+            if isDone || isBad { return true }
+            let s = phaseText
+            if s.contains("取消") || s.contains("额度") || s.contains("打断")
+                || s.contains("停了") || s.contains("上一趟") { return true }
+            if let p = progress, p >= 100 { return true }
+            return false
+        }
+
         var line: String {
             if isDone { return "整套做完了，动作已经可以用了" }
-            if isBad { return "没成 —— " + (phase ?? msg ?? stage ?? "看台子上的日志") }
-            // ★ 用「阶段」那句人话，别把内部阶段码（生成中/送进台子）直接甩给用户看
-            let st = (phase?.isEmpty == false ? phase! : (msg?.isEmpty == false ? msg! : stage ?? "排队中"))
-            if let p = progress, p > 0, p < 100 { return "\(st) · \(p)%" }
+            if isBad { return "没成 —— " + (phaseText.isEmpty ? "看台子上的日志" : phaseText) }
+            let st = phaseText.isEmpty ? "排队中" : phaseText
+            // ★ 只有「真在跑」才带百分比：停了的那趟进度是假的（1% 那个坑就在这儿）
+            if stopped { return st }
+            if let p = progress, p > 1, p < 100 { return "\(st) · \(p)%" }
             return st
+        }
+
+        /// 进度条该画多少。**停了的不画满** —— 画满会让人以为做完了。
+        var barValue: Double {
+            if isDone { return 1 }
+            if stopped { return 0.02 }
+            let p = Double(progress ?? 0)
+            return min(0.99, max(0.02, p / 100.0))
         }
     }
 
@@ -249,33 +321,9 @@ enum ActLab {
     }
 
     // MARK: - 写：让台子把整套动作生成出来（付费通道）
-
-    /// 下一次单，台子按词库把动作**各做一条**（已经在做 / 已经做好的会自己跳过）。
-    /// ★ 这会消耗豆包额度 —— 调用方必须先让用户确认。
-    static func genStart(charId: String, replace: Bool = false) async throws -> (job: String, acts: [String]) {
-        var req = URLRequest(url: URL(string: base + "/api/gen")!)
-        req.httpMethod = "POST"
-        req.timeoutInterval = 60
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        var body: [String: Any] = ["char": charId]
-        if replace { body["replace"] = true }
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw LabError("生成服务说 HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)：\(snip(data))")
-        }
-        let r = try? JSONDecoder().decode(GenStartResp.self, from: data)
-        if let r, r.ok == false {
-            throw LabError(r.why?.isEmpty == false ? r.why! : "生成服务拒了这一单")
-        }
-        guard let jid = r?.job, !jid.isEmpty else {
-            throw LabError("没拿到生成任务号（回的是：\(snip(data))）")
-        }
-        return (jid, r?.acts ?? [])
-    }
+    //
+    // ★ 下单这一个动作搬到 `ActAPI.swift` 了（那边多了「只补一条」和 replace 两个参数）。
+    //   这里不要再留一份 —— 两个同名的默认参数函数会互相抢，编译直接报「歧义」。
 
     /// 这一趟生成做到哪了。
     static func genState(job: String) async throws -> GenJob {

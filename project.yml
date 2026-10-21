@@ -9,8 +9,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.47.0"
-    CURRENT_PROJECT_VERSION: "47"
+    MARKETING_VERSION: "1.48.0"
+    CURRENT_PROJECT_VERSION: "48"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -81,6 +81,13 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        # ★ v48：这一版新开的三样能力，每一句都要说清「用来干什么」——
+        #   审核和用户看到的都是这句，写「需要相机权限」会被拒。
+        NSCameraUsageDescription: "「带它进现实」要用相机，把它放进你眼前的真实画面里；「扫一扫」也要用它读那张派遣单的码。"
+        NSMicrophoneUsageDescription: "按住小爪说话要把你的话录下来转成文字；相机录像时也会收音。"
+        NSSpeechRecognitionUsageDescription: "把你说的话转成文字，才能让它听懂。语音只在这台手机上转换。"
+        NSPhotoLibraryUsageDescription: "选一张它的照片来登记角色，或者挑一段动作视频交给台子抠像。"
+        NSPhotoLibraryAddUsageDescription: "把拍下来的照片、录下来的视频、还有派它出门那张二维码存进相册。"
     dependencies:
       # 注意：target 名 ≠ 类型名。Sources/Widget/StillWidget.swift 里有个 struct 也叫 StillWidget，
       # 如果 target 也叫 StillWidget，就会出现「模块和类型同名」的歧义报错。

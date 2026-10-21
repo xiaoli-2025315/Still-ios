@@ -203,9 +203,15 @@ struct TalkPage: View {
     // MARK: - 起
 
     private func boot() {
-        // 上次那一轮：进来就能看见刚才说了什么、它怎么回的。
-        if let t = CatTalk.last() {
+        // ★ v48：整段记录都摆出来（以前只有最后一句）。
+        //   老数据只有 last 那一句 —— 记录是空的就退回它，别让人以为记录被清了。
+        let rows = ChatLog.all()
+        if rows.isEmpty, let t = CatTalk.last() {
             lines = [Line(mine: true, text: t.mine), Line(mine: false, text: t.reply)]
+        } else {
+            lines = rows.flatMap {
+                [Line(mine: true, text: $0.you), Line(mine: false, text: $0.cat)]
+            }
         }
         // AutoField 一上屏会自己抢；这几下是补刀，间隔拉开、不跟系统抢。
         for d in [0.25, 0.7, 1.2] {

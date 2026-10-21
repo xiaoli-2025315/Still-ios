@@ -510,6 +510,13 @@ struct HerPane: View {
     /// 键盘到底起来没有，要跟着变，所以得观察
     @ObservedObject private var focus = TalkFocus.shared
 
+    // MARK: 这一版新加的几层（都从这一屏进，不藏在别处）
+    @State private var showCamera = false
+    @State private var showScan = false
+    @State private var showBag = false
+    @State private var showDispatch = false
+    @State private var showWork = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -519,6 +526,30 @@ struct HerPane: View {
                     .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(Color.clear.contentShape(Rectangle()))
+                    .contextMenu {
+                        Button { SoundKit.shared.meow(); Notifier.summonNow() } label: {
+                            Label("叫它来", systemImage: "hand.wave.fill")
+                        }
+                        Button { pip.toggle() } label: {
+                            Label(pip.active ? "收回小窗" : "放进小窗", systemImage: "pip.fill")
+                        }
+                        Button { showCamera = true } label: {
+                            Label("带它进现实", systemImage: "camera.fill")
+                        }
+                        Button { onRole() } label: {
+                            Label("角色 · 做动作", systemImage: "cat.fill")
+                        }
+                        Button { showBag = true } label: {
+                            Label("猫的背包", systemImage: "bag.fill")
+                        }
+                        Button { showDispatch = true } label: {
+                            Label("派它出门", systemImage: "paperplane.fill")
+                        }
+                        Button { showScan = true } label: {
+                            Label("扫一扫", systemImage: "qrcode.viewfinder")
+                        }
+                    }
                     .padding(.bottom, 8)
 
                 // ★ 这一行是**真的状态**，不是文案：
@@ -571,14 +602,30 @@ struct HerPane: View {
                 // 角色：安卓「它」这屏上的第一格入口 —— 点进去才是下一层
                 // （一张卡一只它 · 右上「＋」登记新角色 · 点开看这套动作好了几条）
                 HStack(spacing: 10) {
-                    tile("角色", "一只它 · 这套动作好了几条", "cat.fill") { onRole() }
+                    tile("角色", "做动作 · 看进度 · 换一只", "cat.fill") { onRole() }
+                    tile("带它进现实", "相机里它也站在那儿", "camera.fill") { showCamera = true }
+                }
+                .padding(.bottom, 10)
+
+                HStack(spacing: 10) {
+                    tile("扫一扫", "扫它派来的那张码", "qrcode.viewfinder") { showScan = true }
+                    tile("派它出门", "生成一张它能去的码", "paperplane.fill") { showDispatch = true }
+                }
+                .padding(.bottom, 10)
+
+                HStack(spacing: 10) {
+                    tile("背包", "别人给它的东西", "bag.fill") { showBag = true }
+                    tile("工作台", "台子的网页画布", "square.grid.2x2.fill") { showWork = true }
                 }
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
                     tile("放进小窗", pip.active ? "收回" : "切出去它就跟着",
                          "pip.fill") { pip.toggle() }
-                    tile("叫它来", "敲一下它就来", "hand.wave.fill") { Notifier.summonNow() }
+                    tile("叫它来", "敲一下它就来", "hand.wave.fill") {
+                        SoundKit.shared.meow()
+                        Notifier.summonNow()
+                    }
                 }
                 .padding(.bottom, 10)
 
@@ -586,12 +633,29 @@ struct HerPane: View {
                     tile("重排提醒", "按行程重算", "bell.fill") { Notifier.reschedule() }
                     tile("更多", "诊断 · 时间机器", "ellipsis.circle.fill") { openMe() }
                 }
+
+                // 长按那间房 —— 那一手跟安卓的「长按爪印」是同一件事
+                Text("长按上面那间房，也能叫出这些")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Tw.gray400)
+                    .padding(.top, 10)
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
             .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
+        .fullScreenCover(isPresented: $showCamera) { CameraCatPage() }
+        .fullScreenCover(isPresented: $showScan) { ScanPage() }
+        .fullScreenCover(isPresented: $showWork) {
+            CanvasPage(url: ActLab.base + "/canvas", title: "工作台")
+        }
+        .sheet(isPresented: $showBag) {
+            BagPage().presentationDetents([.large])
+        }
+        .sheet(isPresented: $showDispatch) {
+            DispatchPage().presentationDetents([.large])
+        }
     }
 
     private func tile(_ title: String, _ sub: String, _ icon: String,

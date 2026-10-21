@@ -12,6 +12,8 @@ struct StatusPanelView: View {
     @State private var toast: String? = nil
     @State private var catName: String = ""
     @State private var widgetCount: Int? = nil
+    /// 声音开关（存在手机里，跟着 SoundKit 走）
+    @State private var soundOn: Bool = SoundKit.shared.on
 
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
@@ -87,6 +89,23 @@ struct StatusPanelView: View {
                 Button("改") { engine.setName(catName) }
                     .buttonStyle(ChipButton())
             }
+
+            // 它的声音（v48）：关了它照样跑跳，只是不出声 —— 跟安卓那个开关是同一条。
+            HStack(spacing: 6) {
+                Image(systemName: soundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(soundOn ? .green : .secondary)
+                Text("它的声音")
+                    .font(.system(size: 11))
+                Toggle("", isOn: $soundOn)
+                    .labelsHidden()
+                    .scaleEffect(0.75)
+                    .frame(width: 44)
+                Spacer()
+                Button("喵一声") { SoundKit.shared.meow() }
+                    .buttonStyle(ChipButton())
+            }
+            .onChange(of: soundOn) { _, v in SoundKit.shared.on = v }
 
             // 小窗气泡开关。
             // ★ 这一行是排障的眼睛：字进小窗连着两版闪退（v32/v33），

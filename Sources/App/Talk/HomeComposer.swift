@@ -78,7 +78,7 @@ struct HomeComposer: View {
                       focusPulse: pulse,
                       autoFocus: false,
                       placeholder: "跟它还说话…",
-                      onSubmit: send,
+                      onSubmit: { send() },
                       onBeginEdit: beginTyping,
                       onEndEdit: endTyping)
                 .padding(.horizontal, 16)
@@ -89,7 +89,12 @@ struct HomeComposer: View {
                         .overlay(Capsule().stroke(Tw.gray200, lineWidth: 1))
                 )
 
-            Button(action: send) {
+            // ★ v48：按住小爪说话（安卓那边一直有，iOS 只有 Siri 短语）
+            PawTalkButton(onSaid: { said in
+                say(said)
+            }, onDown: beginTyping, onUp: endTyping)
+
+            Button { send() } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(canSend ? Tw.white : Tw.gray400)
@@ -212,14 +217,19 @@ struct HomeComposer: View {
     // MARK: - 发
 
     private func send() {
-        let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        say(text)
+    }
+
+    /// 说一句。打字和语音都走这里 —— 免得「说的一句一个反应、打的一句另一个反应」。
+    private func say(_ raw: String) {
+        let m = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !m.isEmpty, !thinking else { return }
 
         text = ""
         mine = m
         reply = ""
         thinking = true
-        pulse += 1          // 发完留在输入态，想接着说就接着打
+        SoundKit.shared.tap()
 
         Task { @MainActor in
             let r = await CatTalk.say(m)

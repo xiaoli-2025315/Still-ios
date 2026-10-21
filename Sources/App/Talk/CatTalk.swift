@@ -84,6 +84,10 @@ enum CatTalk {
             d.set(data, forKey: key)
         }
 
+        // ★ v48：每一轮都落进完整的聊天记录（最多留 300 轮）。
+        //   Siri 说的、主页输入框说的、通知里说的，全走这一个函数 ⇒ 一处记就都记上了。
+        ChatLog.add(you: m, cat: reply)
+
         // ④ 回话写进「该显示什么」。帧泵下一帧就把它画进画面，
         //    房间和小窗是同一块图层 —— 那边看得见，这边就看得见。
         SayBubble.shared.say(reply)

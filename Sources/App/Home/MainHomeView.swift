@@ -150,6 +150,9 @@ struct MainHomeView: View {
     @State private var taps = 0
     /// 角色（动作库）那一页开着没有
     @State private var actOpen = false
+    /// ★ v64：小窗上按了那个键 —— 要在**中间**弹一个小框问它说什么（不是整页对话页）。
+    @State private var quickAsk = false
+    @State private var quickText = ""
 
     private func hit() { taps += 1 }
 
@@ -196,6 +199,27 @@ struct MainHomeView: View {
         .fullScreenCover(isPresented: $talkOpen) {
             TalkPage()
         }
+        // ★★★ v64：小窗上那个键按下去 ＝「问它」。
+        //
+        //   他的原话：「问它点了就会和豆包那样弹出一个小窗跟我画中画又不冲突，
+        //   你只要做一件事，就是原本这个暂停键触发的是跟它说话，现在换成问它就好了」。
+        //
+        //   ⇒ 不要再打开整页对话页（太重、也不是他的意思），
+        //     就在**屏幕中间**弹一个跟豆包一样的小框：一个输入框、取消、说。
+        //   ★ 用 `alert` 而不是自绘：系统框自带键盘、自带焦点、写完点一下就收，
+        //     外观跟豆包那个几乎一致，也不用我们管键盘什么时候起来。
+        .alert("对\(PetName.current)说什么？", isPresented: $quickAsk) {
+            TextField("说点什么…", text: $quickText)
+            Button("取消", role: .cancel) { quickText = "" }
+            Button("说") {
+                let s = quickText.trimmingCharacters(in: .whitespacesAndNewlines)
+                quickText = ""
+                guard !s.isEmpty else { return }
+                Task { _ = await CatTalk.say(s) }
+            }
+        } message: {
+            Text("说完它会当场动一下")
+        }
         // 角色（动作库）：安卓那边是「它」这屏上的「角色」格子点进去的那一页
         .fullScreenCover(isPresented: $actOpen) {
             ActLibPage()
@@ -217,6 +241,8 @@ struct MainHomeView: View {
                 pip.backInForeground()
                 // 从「轻点背面」那条快捷指令进来的：把输入条弹出来
                 if StillIntentBridge.consumeTalk() { talkOpen = true }
+                // 小窗上按了那个键：只要一个小框，不打开整页
+                if StillIntentBridge.consumeQuickAsk() { quickAsk = true }
             case .background:
                 core.engine.stop()
                 core.engine.save()
@@ -246,6 +272,8 @@ struct MainHomeView: View {
 
         // 冷启动也可能是「轻点背面」拉起来的 —— onAppear 早于 scenePhase 变 active。
         if StillIntentBridge.consumeTalk() { talkOpen = true }
+        // 冷启动也可能是「小窗上按了那个键」拉起来的
+        if StillIntentBridge.consumeQuickAsk() { quickAsk = true }
     }
 
     // MARK: - 顶栏（安卓 where_dot / where_room / me_btn）

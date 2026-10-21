@@ -276,6 +276,27 @@ enum StillIntentBridge {
         d.set(0, forKey: talkKey)
         return Date().timeIntervalSince1970 - t < 20
     }
+
+    // MARK: - 「小窗上按一下」专用：回来只弹一个**小框**，不打开整页
+    //
+    // ★★★ 2026-10-22（他的原话：「就把这个快捷指令问它绑定到这个暂停键上，暂停键就是等于触发问它」）。
+    //
+    //   他要的是豆包那个样子：**点一下 → 中间冒一个小框 → 写完就没了**。
+    //   而 `talkKey` 那条是给「轻点背面」用的，会打开**整页对话页** —— 太重，不是他要的。
+    //   所以另开一个标记，两条路分开走，互不干扰。
+    private static let quickKey = "still.quickAsk"
+
+    static func requestQuickAsk() {
+        defaults?.set(Date().timeIntervalSince1970, forKey: quickKey)
+    }
+
+    static func consumeQuickAsk() -> Bool {
+        guard let d = defaults else { return false }
+        let t = d.double(forKey: quickKey)
+        guard t > 0 else { return false }
+        d.set(0, forKey: quickKey)
+        return Date().timeIntervalSince1970 - t < 20
+    }
 }
 
 // MARK: - 「它」＝ 一个能点名的东西

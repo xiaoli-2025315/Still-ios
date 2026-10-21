@@ -755,7 +755,7 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
             //     先留一个「待办」标记（`requestTalk`），再把 App 叫起来；
             //     App 一激活（`scenePhase == .active`）就会读到这个标记、把输入条弹出来。
             //   代价是正在用的 App 会被顶一下、小窗随之收起 —— 这是他自己选的那一种。
-            StillIntentBridge.requestTalk()
+            StillIntentBridge.requestQuickAsk()
             if let u = URL(string: "still://talk") {
                 UIApplication.shared.open(u, options: [:]) { ok in
                     // 系统万一没让我们起来，退回通知 —— 绝不能按了什么都不发生

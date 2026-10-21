@@ -1,13 +1,17 @@
-// 方向自检：证明「合成上下文翻一次之后，ctx.draw 直接贴 = 正立」。
+// 方向自检：证明小窗里那只猫到底是正着还是倒着。
 //
-// 为什么要有这个：小窗里那只猫"倒过来"已经反复出过三次（v47 两次 + v51），
-// 每次都靠肉眼在真机上判，判错就白编一轮。这条脚本把方向钉成数字：
-// 造一张「上红下蓝」的图，走一遍 LiveFramePump.compose 用的**完全相同的**
-// 像素缓冲 / 上下文参数 / 翻转，然后把内存里第 0 行（= 画面顶部）的像素读回来。
-//   · 顶部是红 ⇒ PASS，直接贴是正的
-//   · 顶部是蓝 ⇒ FAIL，说明还得再翻
+// 为什么要有这个：这只猫"倒过来"已经反复出过四次（v41/v47 两次/v51/v52 第一版），
+// 每次都靠肉眼在真机上判，判错就白编一轮 —— v52 第一版就是这么被它自己拦下的。
 //
-// 跑法：swift Tools/flipcheck/main.swift   （macOS，CI 里也跑一遍）
+// 做法：造一张「上红下蓝」的图，走一遍跟 LiveFramePump.compose **完全相同的**
+//      像素缓冲 / 上下文参数 / 翻转，然后把内存里第 0 行（= 画面顶部）的像素读回来。
+//        · 顶部＝红 ⇒ 正立
+//        · 顶部＝蓝 ⇒ 倒的
+//
+// 判据钉死的那一条是 `翻·局部翻` —— 它就是 LiveFramePump.drawUpright 现在干的事。
+// 它不正立，CI 直接失败、不出包，绝不把倒着的猫发到他手机上。
+//
+// 跑法：swift Tools/flipcheck/main.swift      （macOS，CI 每次编译前都跑）
 
 import Foundation
 import CoreGraphics
@@ -29,8 +33,14 @@ func makeTestImage() -> CGImage {
     return raw.makeImage()!
 }
 
-/// 把图贴进一个 32BGRA 的 CVPixelBuffer，`flip` 决定要不要像 compose 那样先把上下文翻成 y 朝下。
-func compose(_ img: CGImage, flip: Bool) -> CVPixelBuffer? {
+/// 跟 LiveFramePump.compose 里的三条路一一对应。
+enum Mode: String {
+    case 不翻_直接贴 = "上下文不翻 + 直接贴"
+    case 翻_直接贴   = "上下文翻成 y 朝下 + 直接贴"
+    case 翻_局部翻   = "上下文翻成 y 朝下 + 局部翻（← drawUpright 现在走这条）"
+}
+
+func compose(_ img: CGImage, _ mode: Mode) -> CVPixelBuffer? {
     var pbOut: CVPixelBuffer?
     let attrs: [String: Any] = [
         kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
@@ -50,11 +60,27 @@ func compose(_ img: CGImage, flip: Bool) -> CVPixelBuffer? {
                               bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
                                         | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
 
-    if flip {
-        ctx.translateBy(x: 0, y: CGFloat(S))
-        ctx.scaleBy(x: 1, y: -1)
+    let full = CGRect(x: 0, y: 0, width: CGFloat(S), height: CGFloat(S))
+
+    if mode == .不翻_直接贴 {
+        ctx.draw(img, in: full)
+        return pb
     }
-    ctx.draw(img, in: CGRect(x: 0, y: 0, width: CGFloat(S), height: CGFloat(S)))
+
+    // 跟 compose 一样：先把上下文翻成 y 朝下（原点左上）
+    ctx.translateBy(x: 0, y: CGFloat(S))
+    ctx.scaleBy(x: 1, y: -1)
+
+    if mode == .翻_直接贴 {
+        ctx.draw(img, in: full)
+    } else {
+        // 跟 drawUpright 一字不差
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: full.minY + full.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(img, in: full)
+        ctx.restoreGState()
+    }
     return pb
 }
 
@@ -70,11 +96,13 @@ func pixel(_ pb: CVPixelBuffer, row: Int) -> (Int, Int, Int) {
 }
 
 let img = makeTestImage()
-var failed = false
+var 实际那条正立 = false
 
-for flip in [true, false] {
-    guard let pb = compose(img, flip: flip) else {
-        print("!! 建缓冲失败 flip=\(flip)")
+print("测试图：上红(255,0,0) 下蓝(0,0,255)；读内存第 0 行＝画面顶部\n")
+
+for mode in [Mode.不翻_直接贴, .翻_直接贴, .翻_局部翻] {
+    guard let pb = compose(img, mode) else {
+        print("!! 建缓冲失败：\(mode.rawValue)")
         exit(2)
     }
     let top = pixel(pb, row: 0)
@@ -82,20 +110,18 @@ for flip in [true, false] {
     let 正立 = top.0 > 128 && top.2 < 128
 
     print("""
-    ── 上下文翻成 y 朝下 = \(flip)
-       顶部像素 RGB = \(top)   （应该是红 255,0,0）
-       底部像素 RGB = \(bottom)（应该是蓝 0,0,255）
-       判定：\(正立 ? "正立 ✅" : "倒过来 ❌")
+    ── \(mode.rawValue)
+       顶部 RGB = \(top)   底部 RGB = \(bottom)
+       ⇒ \(正立 ? "正立 ✅" : "倒过来 ❌")
     """)
 
-    // 我们实际用的那条路：翻一次 + 直接 draw。它必须正立。
-    if flip && !正立 { failed = true }
+    if mode == .翻_局部翻 { 实际那条正立 = 正立 }
 }
 
-if failed {
-    print("\n结论：❌ 小窗里的猫会倒过来 —— 合成上下文之外还需要再翻一次，别直接贴。")
-    exit(1)
-} else {
-    print("\n结论：✅ 「上下文翻一次 + ctx.draw 直接贴」就是正立的，不需要任何额外翻转/开关。")
+if 实际那条正立 {
+    print("\n结论：✅ drawUpright 现在这条（上下文翻 + 局部翻）就是正立的。")
     exit(0)
+} else {
+    print("\n结论：❌ 小窗里的猫会倒过来 —— drawUpright 的翻转方向不对，别出包。")
+    exit(1)
 }

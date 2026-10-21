@@ -24,11 +24,13 @@ enum ActLab {
 
     static let base = "https://still-ui-design.app.workbuddy.host"
 
-    /// 台子原来就有的 12 条。跟安卓 `Act.OFFICIAL` 同一批、同一顺序 ——
+    /// 台子上的动作，跟安卓 `Act.OFFICIAL` 同一批、同一顺序 ——
     /// 两边对不上，用户看到的「好了 7 条」就不是同一件事。
+    /// ★★★ 2026-10-21：「往左走」(walk) 整条链删掉（12 → 11）。走路只留 walk_r，
+    ///   往左靠播放时镜像 —— 所以这里跟安卓一样不再有 walk 那一格。
     static let official: [(key: String, label: String)] = [
-        ("sit", "坐着张望"), ("walk", "走路"), ("groom", "舔毛"), ("sleep", "睡着了"),
-        ("liedown", "趴下"), ("wake", "起身"), ("walk_r", "行走·往右"),
+        ("sit", "坐着张望"), ("groom", "舔毛"), ("sleep", "睡着了"),
+        ("liedown", "趴下"), ("wake", "起身"), ("walk_r", "行走"),
         ("hunt1", "扑猎 1"), ("hunt2", "扑猎 2"), ("struggle", "挣扎"),
         ("inhale", "吸气"), ("exhale", "呼气"),
     ]

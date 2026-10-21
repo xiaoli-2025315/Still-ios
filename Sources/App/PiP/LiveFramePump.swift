@@ -90,7 +90,7 @@ final class LiveFramePump {
         "sleep_curl": "sleep",
         "sleep_flat": "sleep",
         "wake_up":    "wake",
-        "walk":       "walk",
+        "walk":       "walk_r",   // ★ 2026-10-21：台子只剩 walk_r 一条走路（往左靠镜像）
         "hunt1":      "hunt1",
         "hunt2":      "hunt2",
         "roll":       "hunt2",

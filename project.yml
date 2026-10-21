@@ -23,8 +23,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.62.0"
-    CURRENT_PROJECT_VERSION: "62"
+    MARKETING_VERSION: "1.63.0"
+    CURRENT_PROJECT_VERSION: "63"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -68,6 +68,13 @@ targets:
         # ★ 与上面 options.developmentLanguage 配套：Info.plist 里也钉死，
         #   别让它自己回落到 en（回落了 Siri 语料又会变回英文标签）。
         CFBundleDevelopmentRegion: "zh-Hans"
+        # ★★★ v63：给自己一个 URL scheme，为的是「小窗上按一下 → 把 App 拉起来」。
+        #   小窗是系统的独立窗口，**弹不了 App 里的输入框**；要弹，只能把 App 顶到前台。
+        #   而「把自己叫到前台」唯一公开的口子就是 open 一个自己的 scheme。
+        CFBundleURLTypes:
+          - CFBundleURLName: "com.still.Still.talk"
+            CFBundleURLSchemes:
+              - "still"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
         # ★ 画中画的硬前提。缺了它 PiP 会**静默失效**：不报错、不崩溃，就是什么都不发生。

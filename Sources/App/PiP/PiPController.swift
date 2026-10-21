@@ -745,8 +745,26 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
             // 节流：连着按也只发一条
             guard Date().timeIntervalSince(self.lastAskSentAt) > 2.0 else { return }
             self.lastAskSentAt = Date()
-            Notifier.askInput()
-            self.note = "小窗上按了一下 —— 通知里等你说一句"
+
+            // ★★★ v63（他的原话：「就是变成弹出现在这个问它」）：
+            //   按一下 → **把 App 顶到前台、输入条弹出来、键盘自己起来**，
+            //   写完按返回就回到他原来那个 App。
+            //   不再发通知 —— 通知得下拉才见输入框，他说那不算「点一下就能写」。
+            //
+            //   ★ 小窗是系统的独立窗口，**App 的 UI 画不进去**，所以只有这一条路：
+            //     先留一个「待办」标记（`requestTalk`），再把 App 叫起来；
+            //     App 一激活（`scenePhase == .active`）就会读到这个标记、把输入条弹出来。
+            //   代价是正在用的 App 会被顶一下、小窗随之收起 —— 这是他自己选的那一种。
+            StillIntentBridge.requestTalk()
+            if let u = URL(string: "still://talk") {
+                UIApplication.shared.open(u, options: [:]) { ok in
+                    // 系统万一没让我们起来，退回通知 —— 绝不能按了什么都不发生
+                    if !ok { Notifier.askInput() }
+                }
+            } else {
+                Notifier.askInput()
+            }
+            self.note = "小窗上按了一下 —— 回来写字"
         }
     }
 

@@ -78,10 +78,11 @@ struct HomeComposer: View {
     // MARK: - 输入条本体
 
     /// 它现在叫什么（Siri 短语里用的就是这个名字）。
-    private var catName: String {
-        let n = (SharedStore.load().catName ?? "").trimmingCharacters(in: .whitespaces)
-        return n.isEmpty ? "还在" : n
-    }
+    ///
+    /// ★ 跟 Siri 走同一个来源（`PetName.current`）。这行字上写的就是它
+    ///   拼短语时用的那个名字 —— 两处各读各的，早晚会出现
+    ///   「页面叫你改后的名、Siri 还叫旧的」。
+    private var catName: String { PetName.current }
 
     /// 一行 Siri 的事。★ 为什么只写语音那条、不写打字那条：
     ///   先说一句能马上用上的；说两个他反而不知道先试哪个。

@@ -59,7 +59,7 @@ enum CatTalk {
     @discardableResult
     static func say(_ message: String) async -> String {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = SharedStore.load().catName ?? "还在"
+        let name = PetName.current
 
         // ① 小窗里的猫当场有反应。
         //    壳在 → 直接换画面，一秒都不用等。

@@ -67,7 +67,9 @@ final class PetEngine: ObservableObject {
         z = CGFloat(store.z)
         callCount = store.callCount
         visited = Set(store.visited)
-        catName = store.catName ?? "还在"
+        // ★ 2026-10-21：名字改从 PetName 读（先 App 自己的沙盒，再退到快照）。
+        //   原来只读快照，而快照在 App Group 里 —— 重签丢了它就退回「还在」。
+        catName = PetName.current
         state = .idle
         act = .sit
         isWalking = false
@@ -453,9 +455,14 @@ final class PetEngine: ObservableObject {
     }
 
     /// 给它起名。空名回退到「还在」。Siri 唤醒词里用的就是它。
+    ///
+    /// ★ 2026-10-21：落盘这一步交给 `PetName.set()` —— 它会**同步**写进 App 自己的
+    ///   沙盒（`UserDefaults.standard`），Siri 那边立刻就读得到新名字；
+    ///   同时再刷一遍 App Group 快照给小组件/灵动岛/通知用。
+    ///   这里是改名的**唯一入口**，所有调用方都走这条链。
     func setName(_ n: String) {
-        let t = n.trimmingCharacters(in: .whitespacesAndNewlines)
-        catName = t.isEmpty ? "还在" : t
+        PetName.set(n)
+        catName = PetName.current
         save()
     }
 

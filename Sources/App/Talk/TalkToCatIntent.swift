@@ -211,12 +211,14 @@ enum PetBook {
     /// ★ 改成别的名字之后，「还在」仍然留在表里：
     ///   你叫惯了旧名字、或者刚改完名 Siri 还没重新索引，都不至于哑火。
     static func all() -> [PetEntity] {
-        let raw = (SharedStore.load().catName ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = raw.isEmpty ? "还在" : raw
+        // ★★ 2026-10-21：名字改从 `PetName.current` 读，**不再直接读 App Group 快照**。
+        //   这里是 Siri 拼短语时唯一取名字的地方，所以它必须是最稳的一条路：
+        //   主 App 和这个 Intent 是同一个进程同一个沙盒 ⇒ `UserDefaults.standard`
+        //   一定读得到，重签丢了 App Group 也不影响。
+        let name = PetName.current
         var out = [PetEntity(id: "self", name: name)]
-        if name != "还在" {
-            out.append(PetEntity(id: "still", name: "还在"))
+        if name != PetName.fallback {
+            out.append(PetEntity(id: "still", name: PetName.fallback))
         }
         return out
     }

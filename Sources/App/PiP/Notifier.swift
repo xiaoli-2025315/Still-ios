@@ -62,7 +62,7 @@ enum Notifier {
             guard !items.isEmpty else { return }
 
             let center = UNUserNotificationCenter.current()
-            let name = SharedStore.load().catName ?? "还在"
+            let name = PetName.current
 
             for (h, from, to) in items {
                 let content = UNMutableNotificationContent()
@@ -93,7 +93,7 @@ enum Notifier {
     /// 所以留一个能当场触发的手动入口。
     static func summonNow(after seconds: Double = 5) {
         let content = UNMutableNotificationContent()
-        content.title = SharedStore.load().catName ?? "还在"
+        content.title = PetName.current
         content.body = "它在门口"
         content.sound = .default
         content.categoryIdentifier = category
@@ -165,7 +165,7 @@ enum Notifier {
     /// 立刻发一条带输入框的通知。
     /// 小窗上那两个键按下去就是走这里 —— 你在别的 App 里，只能这么叫你。
     static func askInput(after seconds: Double = 0.3) {
-        let name = SharedStore.load().catName ?? "还在"
+        let name = PetName.current
 
         let content = UNMutableNotificationContent()
         content.title = name
@@ -193,7 +193,7 @@ enum Notifier {
         guard !m.isEmpty else { return }
 
         Task {
-            let name = SharedStore.load().catName ?? "还在"
+            let name = PetName.current
             let reply = await CatTalk.say(m)
             let inPiP = await MainActor.run { PiPController.shared?.active ?? false }
             // 小窗在放：字会直接画进画面里，不用再弹一条。

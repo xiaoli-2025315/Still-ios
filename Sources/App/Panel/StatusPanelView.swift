@@ -11,6 +11,9 @@ struct StatusPanelView: View {
     @ObservedObject var engine: PetEngine
     @State private var toast: String? = nil
     @State private var catName: String = ""
+    /// ★ 2026-10-21：改完名字给一句回执。他要的是「取完名字立刻反馈到 Siri」，
+    ///   那就得让他**看得见**它反馈了，不然改完心里没底。
+    @State private var note: String = ""
     @State private var widgetCount: Int? = nil
     /// 声音开关（存在手机里，跟着 SoundKit 走）
     @State private var soundOn: Bool = SoundKit.shared.on
@@ -47,7 +50,15 @@ struct StatusPanelView: View {
     ///   不重拼，你改了名、界面和通知都叫新名字，只有 Siri 还在喊旧的那个。
     private func rename() {
         engine.setName(catName)
+        // 空名会被回退成「还在」，输入框得跟着走 —— 否则框里空着、Siri 却叫「还在」。
+        catName = engine.catName
+        // ★ 通知系统重拼短语。这一步是"立刻"的那一半：名字表当场就换了。
+        //   另一半（Siri 真的听懂新名字）由系统重建词表，几秒到几十秒，苹果不给更快的口子。
         StillShortcuts.updateAppShortcutParameters()
+        note = "Siri 也改叫「\(engine.catName)」了 · 几秒后生效"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            if note.hasSuffix("几秒后生效") { note = "" }
+        }
     }
 
     private func loadWidgetCount() {
@@ -102,6 +113,14 @@ struct StatusPanelView: View {
                     .onSubmit { rename() }
                 Button("改") { rename() }
                     .buttonStyle(ChipButton())
+            }
+
+            // 改完的回执。改一个名字要等到下次做梦才能验证，那就等于没改。
+            if !note.isEmpty {
+                Text(note)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
 
             // 它的声音（v48）：关了它照样跑跳，只是不出声 —— 跟安卓那个开关是同一条。

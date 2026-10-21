@@ -35,6 +35,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         // 通知上的按钮得先登记，否则系统不认识那颗「让它过来」。
         Notifier.registerCategories()
+        // ★★★ 2026-10-21：**先迁移名字，再通知 Siri 重拼**（顺序不能反）。
+        //
+        //   老版本的名字只存在 App Group 快照里。Siri 那份名字表现在读的是 App
+        //   自己的沙盒（见 PetName 那段注释）。不先搬过来，升级上来的用户第一次
+        //   进 App 时 Siri 会报「还在」—— 明明他没改名，名字却像丢了。
+        //   迁移是幂等的：standard 里有值就什么都不做。
+        PetName.migrateIfNeeded()
+
         // ★★★ 2026-10-21：让 Siri 把「跟<它的名字>说句话」重新拼一遍。
         //
         //   「带名字」的那两句短语（跟 \(\.$pet) 说句话）是**参数化短语**：

@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UIKit
 
 // MARK: - 登录豆包（手机里登，登录态交给台子）
 //
@@ -12,7 +13,12 @@ import WebKit
 //   豆包登录（手机号 + 验证码 / 扫码）都在它自己的网页流程里。手机上有自己的号、自己的短信，
 //   在这儿登完，把 cookie 交上去，台子那边就等于「用你的号」。安卓也是这个做法，两边一条路。
 //
-// ★ 用电脑版 UA：豆包手机版网页会一直想把你导去下载 App，登录入口也不好找。
+// ★ 为什么默认走手机版 UA（2026-10-21 改）：
+//   以前写死电脑版，理由是「手机版网页一直想把你导去下载 App」。
+//   但电脑版页面上**根本没有「抖音登录」**这颗按钮，只能扫码或收短信 ——
+//   他的原话：「用户还得把二维码截图下来、再打开自己的抖音用相册识别法扫一扫，这很麻烦」。
+//   手机版页面上才有抖音登录，点了能直接跳进手机里的抖音 App 授权，回来就是登录态。
+//   电脑版留着当退路（右上角那颗胶囊可以切）。
 
 @MainActor
 final class DoubaoLoginModel: ObservableObject {
@@ -28,6 +34,18 @@ final class DoubaoLoginModel: ObservableObject {
 
     static let desktopUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+    /// ★★ 2026-10-21（他的原话：「那个豆包只能用二维码或者手机号登录」）：
+    ///   这一页原来**写死电脑版 UA**，电脑版页面上根本没有「抖音登录」那颗按钮，
+    ///   所以只能扫码或者收短信 —— 不是豆包不给，是我们把自己装成了一台电脑。
+    ///   现在默认走手机版 UA（页面上才有抖音登录），要退回电脑版也能切。
+    static let mobileUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+        + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+
+    /// 网页用哪套身份。**登录态交给台子时，UA 必须跟网页登录时用的一致**，否则豆包会判异地。
+    @Published var mobile = true
+
+    var currentUA: String { mobile ? Self.mobileUA : Self.desktopUA }
 
     func refresh() async {
         do { state = try await ActLab.loginState() }
@@ -61,9 +79,10 @@ final class DoubaoLoginModel: ObservableObject {
 
         let jar = mine.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
         do {
+            // ★ UA 跟着网页当前那套走（手机版登的就交手机版），否则豆包会判成异地登录
             try await ActLab.loginGive(cookie: jar,
-                                       ua: Self.desktopUA,
-                                       name: Self.desktopUA.contains("Mac") ? "手机上登的豆包" : "")
+                                       ua: currentUA,
+                                       name: "手机上登的豆包")
             note = "交上去了（\(mine.count) 条）· 台子现在用的是你这个号"
             await refresh()
         } catch {
@@ -125,7 +144,7 @@ struct DoubaoLoginPage: View {
         VStack(spacing: 0) {
             header
             stateCard
-            DoubaoWebView()
+            DoubaoWebView(mobile: model.mobile)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -159,6 +178,18 @@ struct DoubaoLoginPage: View {
                     .foregroundStyle(Tw.gray400)
             }
             Spacer(minLength: 0)
+
+            // ★ 手机版页面上才有「抖音登录」；电脑版只有扫码/短信。
+            //   切了会整页重载，登录态要重新给一次。
+            Button { model.mobile.toggle() } label: {
+                Text(model.mobile ? "手机版" : "电脑版")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(model.mobile ? Tw.gray900 : Tw.gray400)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Tw.gray100))
+            }
+            .buttonStyle(PressStyle(scale: 0.9))
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -292,16 +323,21 @@ struct DoubaoLoginPage: View {
 
 struct DoubaoWebView: UIViewRepresentable {
 
+    /// 手机版才有「抖音登录」那颗按钮；电脑版只有扫码/短信。
+    let mobile: Bool
+
+    func makeCoordinator() -> Nav { Nav() }
+
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()
-        // 手机版网页会一直劝你去下载 App，登录入口还被藏起来 —— 用电脑版
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
 
         let v = WKWebView(frame: .zero, configuration: cfg)
-        v.customUserAgent = DoubaoLoginModel.desktopUA
+        v.customUserAgent = mobile ? DoubaoLoginModel.mobileUA : DoubaoLoginModel.desktopUA
         v.allowsBackForwardNavigationGestures = true
         v.isInspectable = false
+        v.navigationDelegate = context.coordinator
 
         if let u = URL(string: "https://www.doubao.com/chat/") {
             v.load(URLRequest(url: u))
@@ -309,5 +345,53 @@ struct DoubaoWebView: UIViewRepresentable {
         return v
     }
 
-    func updateUIView(_ v: WKWebView, context: Context) {}
+    func updateUIView(_ v: WKWebView, context: Context) {
+        let want = mobile ? DoubaoLoginModel.mobileUA : DoubaoLoginModel.desktopUA
+        guard v.customUserAgent != want else { return }
+        v.customUserAgent = want
+        v.reload()
+    }
+
+    /// ★★★ 2026-10-21 真机补的（他的原话：「用户还得把二维码截图下来、再打开自己的抖音
+    ///   用相册识别法扫一扫，这很麻烦；我用手机自带浏览器登录豆包，它就会直接跳转抖音去登录」）。
+    ///
+    ///   差别就在这几行：**WKWebView 默认不处理非 http(s) 的跳转。**
+    ///   豆包登录页上的「抖音登录」走的是 `snssdk1128://` 这类自定义 scheme，
+    ///   WebView 拿到它只会**静默丢掉** —— 看起来就是「点了没反应」，用户只能退回扫码。
+    ///   手机自带浏览器之所以能直接拉起抖音，就是系统替它做了这一步；
+    ///   嵌在 App 里的浏览器得自己把这一步写出来。
+    ///
+    ///   处理三件事（顺序不能换）：
+    ///     ① 新窗口链接（target=_blank）→ 在当前 WebView 里打开，否则一片空白
+    ///     ② http(s)/about/file/data → 正常放行
+    ///     ③ 其余 scheme → 交给系统去唤起对应 App（抖音 / 豆包 / 支付宝…）
+    final class Nav: NSObject, WKNavigationDelegate {
+
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            if navigationAction.targetFrame == nil {
+                webView.load(navigationAction.request)
+                decisionHandler(.cancel)
+                return
+            }
+
+            let scheme = (url.scheme ?? "").lowercased()
+            if scheme.isEmpty || ["http", "https", "about", "file", "data"].contains(scheme) {
+                decisionHandler(.allow)
+                return
+            }
+
+            // ★ 异步回调里也必须且只能调一次 decisionHandler
+            UIApplication.shared.open(url, options: [:]) { ok in
+                decisionHandler(ok ? .cancel : .allow)
+            }
+        }
+    }
 }

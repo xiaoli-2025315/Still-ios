@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import AppIntents   // ShortcutsLink（系统自带的「在 Siri 里用它」入口）
 
 // MARK: - 状态面板
 //
@@ -139,10 +140,27 @@ struct StatusPanelView: View {
                 Spacer()
             }
 
+            // ★★★ 2026-10-21 深夜找到真凶之后加的（v59）。
+            //
+            //   他连着三版都得到同一句「还在还不支持使用 Siri 执行此操作」，
+            //   后面永远跟着一颗「打开还在」。我去拆了安装包里编译出来的
+            //   `Metadata.appintents`：三条短语、实体、provider、参数全都导得好好的 ——
+            //   **不是编不进去，是系统那一侧的开关没开。**
+            //
+            //   苹果 DTS 工程师在开发者论坛里写得很死：当「快捷指令」里这个 App
+            //   的 Siri 开关是关的，喊短语就会得到 "hasn't added support for that
+            //   with Siri" + 一个「打开」按钮 —— 跟他截图里的一模一样。
+            //
+            //   所以这里放的是系统自带的 `ShortcutsLink`：
+            //   点一下弹出系统的快捷指令面板，他在那儿把开关拨开就行，
+            //   **不用自己新建快捷指令、不用接四个动作**。
+            ShortcutsLink()
+                .shortcutsLinkStyle(.automaticOutline)
+
             // 装完必须打开一次 App，系统才会把这几句登记进去 ——
             // 没打开过就是「这个 App 不支持用 Siri 做这件事」。
             // 这句只在他还没成功用过时才有价值，所以直接写死一行小字，不做判断。
-            Text("装完先打开一次 App，Siri 才认识它 · 每句都要先喊「嘿 Siri」")
+            Text("说「不支持」就先点上面那颗 → 把它打开 · 装完先打开一次 App · 每句先喊「嘿 Siri」")
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)

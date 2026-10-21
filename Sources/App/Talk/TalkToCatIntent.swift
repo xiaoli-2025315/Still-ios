@@ -381,6 +381,28 @@ enum PetBook {
 struct StillShortcuts: AppShortcutsProvider {
 
     static var appShortcuts: [AppShortcut] {
+        // ★★★ 2026-10-22 06:50 真机定案（他截图：豆包的卡片区有「问豆包 / 语音通话 / 视频通话」四个，
+        //   我们的「还在」那一栏只有两个）。
+        //
+        //   **快捷指令那个「所有快捷指令」页面上，App 名字下面的那排图标，
+        //   只显示 `AppShortcutsProvider` 里注册过的东西 —— 不是"所有 AppIntent"。**
+        //   普通 `AppIntent`（上一版 `AskCatIntent` 就是）确实在系统里，
+        //   但只出现在页面底部的「搜索操作」里，**不在卡片区**。
+        //   他要的是"一进来就看见、点一下就用"，那就必须注册成 AppShortcut。
+        //
+        //   ★ 短语写纯文本（只有 App 名，不带任何参数位），
+        //     所以不会踩「任意字符串参数」那个坑；它的 message 是必填的，
+        //     只在动作运行时追问（`requestValueDialog`），跟豆包的「问豆包」一模一样。
+        //   ★ 放在第一个 —— 豆包也是把「问豆包」摆在最前。
+        AppShortcut(
+            intent: AskCatIntent(),
+            phrases: [
+                "问\(.applicationName)",
+                "问\(.applicationName)一句话"
+            ],
+            shortTitle: "问它",
+            systemImageName: "bubble.left"
+        )
         AppShortcut(
             intent: TalkToCatIntent(),
             phrases: [

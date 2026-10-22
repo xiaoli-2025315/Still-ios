@@ -168,7 +168,13 @@ struct StatusPanelView: View {
             // 装完必须打开一次 App，系统才会把这几句登记进去 ——
             // 没打开过就是「这个 App 不支持用 Siri 做这件事」。
             // 这句只在他还没成功用过时才有价值，所以直接写死一行小字，不做判断。
-            Text("点上面那颗能看到系统收下了哪几句 · 装完先打开一次 App · 每句先喊「嘿 Siri」")
+            // ★ v66：小窗上那个键现在跑的是「问它」，而「问它」要在快捷指令里存在一次。
+            //   这一步是他自己点的（苹果没给第三方 App 写快捷指令库的接口），
+            //   但**只点一次**，之后就一直是「按小窗键 → 弹框 → 画中画不动」。
+            Text("点上面那颗 → 找到「问它」→ 点「添加」，做一次就行 · 之后按小窗上那个键就是它")
+                .font(.system(size: 10))
+                .foregroundStyle(Cfg.Palette.faint)
+                .fixedSize(horizontal: false, vertical: true)
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)

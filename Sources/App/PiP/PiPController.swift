@@ -755,34 +755,27 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
             //     先留一个「待办」标记（`requestTalk`），再把 App 叫起来；
             //     App 一激活（`scenePhase == .active`）就会读到这个标记、把输入条弹出来。
             //   代价是正在用的 App 会被顶一下、小窗随之收起 —— 这是他自己选的那一种。
-            StillIntentBridge.requestQuickAsk()
-
-            // ★★★ v65（他真机截图：按小窗键还是来了一条通知，不是输入框）。
+            // ★★★ v66 —— 他 08:12 一巴掌打醒我的根本误解（原话）：
+            //   「按问它根本不会开启 App，它就是直接出现那个头顶的输入框，
+            //     你没看到画中画和问它的对话框同时存在吗？」
             //
-            //   上一版只用了 `UIApplication.shared.open("still://talk")` —— **不够**。
-            //   打开自己的 scheme 只是把 URL **投递**给自己：App 已经在运行时，
-            //   系统不会因此把前台切过来。App 还在后台，那个输入框自然弹不出来。
+            //   我原来以为那个输入框是自己画的 —— 错了。
+            //   **它是「快捷指令」那一层画出来的**：我们的 App 根本不用到前台，
+            //   所以画中画也不会被收掉。这从头到尾都是对的，是我想歪了。
             //
-            //   ⇒ 真正「把 App 顶到前台」的 API 是
-            //     `requestSceneSessionActivation(_:userActivity:options:errorHandler:)`。
-            //   传一个 `NSUserActivity`，App 到前台后会走
-            //   `.onContinueUserActivity("com.still.Still.talk")`（见 MainHomeView）。
-            //   两条都调用：open 负责投递，activation 负责切前后台，缺一不可。
+            //   ⇒ 所以「暂停键 ＝ 问它」的正确做法不是「把我们 App 顶到前台自己弹一个框」
+            //     （那样必把画中画收掉，正是他不要的），
+            //     **而是让「快捷指令」去跑「问它」**，让它按它自己那一套把框弹出来。
             //
-            //   ★ 不再退回通知 —— 他明确说过「图一那个就不要了」。
-            //     只有 activation **失败**（errorHandler 才会被调）时才留一条兜底，
-            //     保证「按了完全没反应」这种事不会发生。
-            if let u = URL(string: "still://talk") {
+            //   代价只有一处：这条快捷指令的名字叫「问它」，
+            //   得先在快捷指令库里存在一次（在那一栏点「问它」→ 添加）。
+            //   之后按小窗键就是：弹出那个框，App 不开、画中画不动。
+            let name = "问它".addingPercentEncoding(
+                withAllowedCharacters: .urlQueryAllowed) ?? "问它"
+            if let u = URL(string: "shortcuts://run-shortcut?name=\(name)") {
                 UIApplication.shared.open(u, options: [:]) { _ in }
             }
-            let act = NSUserActivity(activityType: "com.still.Still.talk")
-            act.title = "talk"
-            UIApplication.shared.requestSceneSessionActivation(
-                nil, userActivity: act, options: nil
-            ) { _ in
-                Notifier.askInput()
-            }
-            self.note = "小窗上按了一下 —— 回来写字"
+            self.note = "小窗上按了一下 —— 快捷指令在问你说什么"
         }
     }
 

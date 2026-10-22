@@ -66,7 +66,7 @@ final class Listening: ObservableObject {
 
     // MARK: 内部
 
-    private let engine = AVAudioEngine()
+    private let micEngine = AVAudioEngine()
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
 
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -209,7 +209,7 @@ final class Listening: ObservableObject {
         try s.setActive(true)
 
         if !tapOn {
-            let input = engine.inputNode
+            let input = micEngine.inputNode
             let fmt = input.outputFormat(forBus: 0)
             guard fmt.sampleRate > 0, fmt.channelCount > 0 else {
                 throw NSError(domain: "still.listen", code: 2, userInfo: [
@@ -222,8 +222,8 @@ final class Listening: ObservableObject {
             tapOn = true
         }
 
-        engine.prepare()
-        try engine.start()
+        micEngine.prepare()
+        try micEngine.start()
 
         startRecognizer()
         flag.value = true
@@ -397,9 +397,9 @@ final class Listening: ObservableObject {
         request?.endAudio()
         request = nil
 
-        if engine.isRunning { engine.stop() }
+        if micEngine.isRunning { micEngine.stop() }
         if tapOn {
-            engine.inputNode.removeTap(onBus: 0)
+            micEngine.inputNode.removeTap(onBus: 0)
             tapOn = false
         }
 

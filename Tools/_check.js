@@ -97,8 +97,21 @@ roomsMembers.add('all'); roomsMembers.add('byId'); roomsMembers.add('home');
 // ─────────────────────────────────────────── 3. 检查引用
 
 // engine.xxx
+//
+// ★ 2026-10-22：以前是把全工程拼成一大坨再扫 `engine.`，结果别的文件里一个叫
+//   engine 的**局部变量**（v71 的 Listening.swift 用 AVAudioEngine）会被当成
+//   PetEngine，凭空报三条「没有成员 inputNode/prepare/isRunning」，CI 当场挂掉 ——
+//   而那条 commit 其实一行都没错。
+//
+//   ★ 改成**逐文件**看：这个文件自己声明了 engine（let/var engine），
+//     那它里面的 engine.xxx 就不是 PetEngine，跳过。
 const engineRefs = new Set();
-for (const m of all.matchAll(/\bengine\.(\w+)/g)) engineRefs.add(m[1]);
+for (const [f, code] of Object.entries(src)) {
+  // 本文件里有没有叫 engine 的变量/常量声明（含属性）
+  const declares = /^\s*(?:private\s+|internal\s+|fileprivate\s+|public\s+)?(?:let|var)\s+engine\b/m.test(code);
+  if (declares) continue;
+  for (const m of code.matchAll(/\bengine\.(\w+)/g)) engineRefs.add(m[1]);
+}
 for (const r of engineRefs) {
   if (!engineMembers.has(r)) problems.push(`PetEngine 没有成员 "${r}"（被 engine.${r} 引用）`);
 }

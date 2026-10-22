@@ -23,8 +23,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.64.0"
-    CURRENT_PROJECT_VERSION: "64"
+    MARKETING_VERSION: "1.65.0"
+    CURRENT_PROJECT_VERSION: "65"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -75,6 +75,10 @@ targets:
           - CFBundleURLName: "com.still.Still.talk"
             CFBundleURLSchemes:
               - "still"
+        # ★ v65：小窗那个键「把自己叫到前台」用的 activity 类型。
+        #   不声明也能收，但声明了系统才不会把它当成陌生的 Handoff 丢掉。
+        NSUserActivityTypes:
+          - "com.still.Still.talk"
         NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
         # ★ 画中画的硬前提。缺了它 PiP 会**静默失效**：不报错、不崩溃，就是什么都不发生。

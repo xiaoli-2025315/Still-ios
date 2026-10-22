@@ -220,6 +220,12 @@ struct MainHomeView: View {
         } message: {
             Text("说完它会当场动一下")
         }
+        // ★★★ v65：小窗上那个键把 App 叫到前台，走的就是这个 activity。
+        //   `requestSceneSessionActivation` 传过来的 `NSUserActivity`，
+        //   到前台后由这里接住 —— 接住就弹框，一步都不绕。
+        .onContinueUserActivity("com.still.Still.talk") { _ in
+            quickAsk = true
+        }
         // 角色（动作库）：安卓那边是「它」这屏上的「角色」格子点进去的那一页
         .fullScreenCover(isPresented: $actOpen) {
             ActLibPage()

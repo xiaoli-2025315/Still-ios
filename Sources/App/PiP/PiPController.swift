@@ -739,7 +739,7 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
         //
         //   判据其实很简单：真按了那个键，**小窗还在**；关窗引起的，小窗就没了。
         //   所以延后 0.7 秒再看一眼 —— 窗还在才发。
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
             guard self.pip?.isPictureInPictureActive == true else { return }  // 关窗 → 不发
             // 节流：连着按也只发一条
@@ -756,12 +756,30 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
             //     App 一激活（`scenePhase == .active`）就会读到这个标记、把输入条弹出来。
             //   代价是正在用的 App 会被顶一下、小窗随之收起 —— 这是他自己选的那一种。
             StillIntentBridge.requestQuickAsk()
+
+            // ★★★ v65（他真机截图：按小窗键还是来了一条通知，不是输入框）。
+            //
+            //   上一版只用了 `UIApplication.shared.open("still://talk")` —— **不够**。
+            //   打开自己的 scheme 只是把 URL **投递**给自己：App 已经在运行时，
+            //   系统不会因此把前台切过来。App 还在后台，那个输入框自然弹不出来。
+            //
+            //   ⇒ 真正「把 App 顶到前台」的 API 是
+            //     `requestSceneSessionActivation(_:userActivity:options:errorHandler:)`。
+            //   传一个 `NSUserActivity`，App 到前台后会走
+            //   `.onContinueUserActivity("com.still.Still.talk")`（见 MainHomeView）。
+            //   两条都调用：open 负责投递，activation 负责切前后台，缺一不可。
+            //
+            //   ★ 不再退回通知 —— 他明确说过「图一那个就不要了」。
+            //     只有 activation **失败**（errorHandler 才会被调）时才留一条兜底，
+            //     保证「按了完全没反应」这种事不会发生。
             if let u = URL(string: "still://talk") {
-                UIApplication.shared.open(u, options: [:]) { ok in
-                    // 系统万一没让我们起来，退回通知 —— 绝不能按了什么都不发生
-                    if !ok { Notifier.askInput() }
-                }
-            } else {
+                UIApplication.shared.open(u, options: [:]) { _ in }
+            }
+            let act = NSUserActivity(activityType: "com.still.Still.talk")
+            act.title = "talk"
+            UIApplication.shared.requestSceneSessionActivation(
+                nil, userActivity: act, options: nil
+            ) { _ in
                 Notifier.askInput()
             }
             self.note = "小窗上按了一下 —— 回来写字"

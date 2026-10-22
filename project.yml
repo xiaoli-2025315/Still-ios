@@ -112,7 +112,10 @@ targets:
         # ★ v48：这一版新开的三样能力，每一句都要说清「用来干什么」——
         #   审核和用户看到的都是这句，写「需要相机权限」会被拒。
         NSCameraUsageDescription: "「带它进现实」要用相机，把它放进你眼前的真实画面里；「扫一扫」也要用它读那张派遣单的码。"
-        NSMicrophoneUsageDescription: "按住小爪说话要把你的话录下来转成文字；相机录像时也会收音。"
+        # ★ v71：原来这句写的是「按住小爪说话」，那是**安卓浮窗**的用法。
+        #   iOS 这边现在是「按一下小窗上那个键，它就开始听」—— 用户弹窗里看到的
+        #   必须是眼前真要发生的那件事，所以改成中性的说法，两种入口都盖得住。
+        NSMicrophoneUsageDescription: "让它听着你说的话，把话变成文字。相机录像时也会收音。"
         NSSpeechRecognitionUsageDescription: "把你说的话转成文字，才能让它听懂。语音只在这台手机上转换。"
         NSPhotoLibraryUsageDescription: "选一张它的照片来登记角色，或者挑一段动作视频交给台子抠像。"
         NSPhotoLibraryAddUsageDescription: "把拍下来的照片、录下来的视频、还有派它出门那张二维码存进相册。"

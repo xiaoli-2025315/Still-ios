@@ -69,6 +69,10 @@ final class Listening: ObservableObject {
     private let micEngine = AVAudioEngine()
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
 
+    /// 连续「一句都没听清」的次数。用来在识别器彻底抽风时停手，
+    /// 别无限重开刷屏 / 刷麦克风。
+    private var consecutiveFails = 0
+
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var tapOn = false
@@ -251,10 +255,11 @@ final class Listening: ObservableObject {
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        // 能离线就离线：话不出这台手机，也不用联网
-        if recognizer.supportsOnDeviceRecognition {
-            req.requiresOnDeviceRecognition = true
-        }
+        // ★ 2026-10-22 修正：不再强制离线识别。
+        //   离线识别第一次用必须联网下载语言包；画中画里一开就静默失败、
+        //   一个字都听不到（前台在线能用、画中画挂，正是这条引起的）。
+        //   不设 requiresOnDeviceRecognition 时，系统自己决定：
+        //   有网走在线（稳、准），无网且语言包已就绪才走离线。
         request = req
 
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
@@ -289,6 +294,12 @@ final class Listening: ObservableObject {
 
         guard !text.isEmpty else {
             busy = false
+            consecutiveFails += 1
+            if consecutiveFails > 6 {
+                fail("语音识别这会儿用不了，稍后再试")
+                stop(reason: "语音识别用不了")
+                return
+            }
             reopen()
             return
         }
@@ -300,6 +311,7 @@ final class Listening: ObservableObject {
         }
         lastSent = text
         lastSentAt = Date()
+        consecutiveFails = 0
 
         DispatchQueue.main.async {
             self.heard = text

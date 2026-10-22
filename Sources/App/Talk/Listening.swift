@@ -95,10 +95,14 @@ final class Listening: ObservableObject {
 
     private var ticker: Timer?
     private var busy = false
+    /// 这一句是否已经交出去（定稿）。兜底定时器靠它判断还需不需要强交。
+    private var finalized = false
 
     /// 静音门限（RMS，0~1）。说话大概 0.02~0.15，安静房间 0.001~0.006。
-    /// `voiceChat` 模式自带自动增益，所以别调太低 —— 低了会把底噪当人声。
-    private static let voiceFloor: Float = 0.016
+    /// ★ v73 修正：上一版设成 0.016，但 `voiceChat` 模式自带自动增益会把正常说话的
+    ///   音量压到 0.01~0.02 之间 —— 正好被这道门关在门外，识别器收不到声音、
+    ///   连续空结果 → 「语音识别这会儿用不了」。降到 0.005：说话稳过，底噪大多仍在门下。
+    private static let voiceFloor: Float = 0.005
 
     /// 苹果单次识别有上限（约一分钟），到点必重开
     private static let reopenAfter: TimeInterval = 55
@@ -186,8 +190,11 @@ final class Listening: ObservableObject {
                     return
                 }
                 do {
+                    // 识别期间把猫自己的声音关掉，免得麦克风收进去
+                    SoundKit.shared.mute()
                     try self.openEngine()
                 } catch {
+                    SoundKit.shared.unmute()
                     self.fail("开不了麦克风：\(error.localizedDescription)")
                 }
             }
@@ -250,6 +257,7 @@ final class Listening: ObservableObject {
         task?.cancel()
         task = nil
         ending = false
+        finalized = false
         partial = ""
         lastVoiceAt = Date.distantPast
 
@@ -288,6 +296,7 @@ final class Listening: ObservableObject {
     private func finishSentence() {
         guard !busy else { return }
         busy = true
+        finalized = true
 
         let text = partial.trimmingCharacters(in: .whitespacesAndNewlines)
         partial = ""
@@ -394,6 +403,15 @@ final class Listening: ObservableObject {
            Date().timeIntervalSince(lastVoiceAt) > Self.silenceToEnd {
             ending = true
             request?.endAudio()
+            // ★ 兜底：画中画/后台里，识别器常在 endAudio 之后不再回调
+            //   （系统把后台 App 的语音识别挂起），于是 finishSentence 永不被调用 ——
+            //   话送不出去、红点一直亮、猫毫无反应。
+            //   1.2 秒后若这一句还没定稿，就拿手里这段 partial 直接交出去。
+            let ddl = Date().addingTimeInterval(1.2)
+            DispatchQueue.main.asyncAfter(deadline: ddl) { [weak self] in
+                guard let self, self.shape != .off, self.ending, !self.finalized else { return }
+                self.finishSentence()
+            }
         }
     }
 
@@ -421,6 +439,8 @@ final class Listening: ObservableObject {
         partial = ""
         note = reason ?? "不听了"
 
+        SoundKit.shared.unmute()
+
         // ★ 只把 category 换回「放片」，**不** deactivate 会话 ——
         //   小窗要靠这个会话活着，一 deactivate 它就从屏幕上消失了。
         let s = AVAudioSession.sharedInstance()
@@ -432,6 +452,7 @@ final class Listening: ObservableObject {
 
     private func fail(_ msg: String) {
         DispatchQueue.main.async {
+            SoundKit.shared.unmute()
             self.problem = msg
             self.note = msg
             if self.flag.value { self.stop(reason: msg) }

@@ -26,6 +26,12 @@ final class SoundKit {
         didSet { UserDefaults.standard.set(on, forKey: key) }
     }
 
+    /// v73：识别期间临时把猫自己的声音关掉（不写进设置，结束就恢复），
+    /// 免得麦克风把猫的声音收进去、把识别搞乱。
+    private var muted = false
+    func mute() { muted = true }
+    func unmute() { muted = false }
+
     // MARK: - 给人调的那几个
 
     func tap() { play("tap", volume: 0.25) }
@@ -37,7 +43,7 @@ final class SoundKit {
     // MARK: - 播
 
     private func play(_ name: String, volume: Float) {
-        guard on else { return }
+        guard on, !muted else { return }
         let p: AVAudioPlayer?
         if let cached = players[name] {
             p = cached

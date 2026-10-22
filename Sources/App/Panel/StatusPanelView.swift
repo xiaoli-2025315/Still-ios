@@ -21,6 +21,8 @@ struct StatusPanelView: View {
     @State private var soundOn: Bool = SoundKit.shared.on
     /// 登录制：面板上要显示「现在登的是哪个号」，并且能换号。
     @ObservedObject private var auth = StillAuth.shared
+    /// v71：小窗那个键开/关的「听」
+    @ObservedObject private var listen = Listening.shared
 
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
@@ -174,47 +176,64 @@ struct StatusPanelView: View {
             ShortcutsLink()
                 .shortcutsLinkStyle(.automaticOutline)
 
-            // ★★★ v69（他的原话：「帮我做一个快捷跳转，用户在 App 里点了直接跳到快捷指令那边添加」）。
+            // ★★★ v71：小窗上那个键现在真的接到了东西 —— 开 / 关「听」。
             //
-            //   为什么必须要有这一下：`run-shortcut?name=` 只认**库里真实存在**的那一条，
-            //   App 提供的动作名它不认（v67 真机：按了完全没反应）。
-            //   所以「问它」得先进库 —— 而苹果没给第三方 App 往快捷指令库里写条目的接口，
-            //   这一步只能由用户点。
+            //   ★ 为什么把 v69 那个「让小窗上那个键能用」（跳快捷指令）删了：
+            //     那条路已经证死。按小窗键的那一刻我们在后台，而 **iOS 不许后台 App
+            //     打开别的 App** —— 命令被系统直接丢掉，不报错、不回调。
+            //     他真的去库里建了「问它」，按下去照样没反应，正好证死这一点。
+            //     留着这颗按钮只会让人以为「照做就能用」，比没有更坏。
             //
-            //   ★ 能做的是**把这一下压到最短**：点这里直接跳到快捷指令 App，
-            //     进去就是「还在」那一页，点「问它」→ 添加，两下完事。
-            //     （比当初建「叫奶娃」那四步少得多。）
+            //   ★ 现在这条路不唤起任何人：开麦克风、在后台一直录，是允许的
+            //     （小窗能活着靠的就是那份 audio 后台资格）。微信电话挂着的原理一样。
             Button {
-                if let u = URL(string: "shortcuts://") {
-                    UIApplication.shared.open(u, options: [:]) { _ in }
-                }
+                listen.toggleSwitch()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 11))
-                    // ★ 文案一律说「这件事会发生什么」，不说内部机制。
-                    //   「加进快捷指令库」是我这边的说法，他看到只会问「那是啥」。
-                    Text("让小窗上那个键能用")
+                    Image(systemName: listen.shape == .off ? "mic.slash" : "mic.fill")
+                        .font(.system(size: 12))
+                    // 文案只说「会发生什么」，不说内部机制
+                    Text(listen.shape == .off ? "让它听着（跟它说话）" : "正在听 · 点一下关掉")
                         .font(.system(size: 11))
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Cfg.Palette.faint)
+                    if listen.shape != .off {
+                        Text("小窗角上有红点")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Cfg.Palette.faint)
+                    }
                 }
                 .foregroundStyle(.primary)
-                .padding(.vertical, 7)
+                .padding(.vertical, 8)
                 .padding(.horizontal, 9)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Cfg.Palette.faint.opacity(0.5), lineWidth: 1)
+                        .fill(listen.shape == .off ? Color.clear : Cfg.Palette.accent.opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Cfg.Palette.faint.opacity(0.5), lineWidth: 1)
+                        )
                 )
             }
             .buttonStyle(.plain)
 
-            Text("点一下会打开手机里的「快捷指令」→ 找到「问它」点一下就好 · 只做一次，之后按小窗键就弹出输入框")
+            Text("小窗上看一眼：按一下那个键听你说一句，说完自己停；连按两下让它一直听着。顶上那个橙点是系统在提醒「有人在用麦克风」，关掉就灭。")
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if !listen.heard.isEmpty {
+                Text("刚听成：「\(listen.heard)」")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !listen.problem.isEmpty {
+                Text(listen.problem)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Cfg.Palette.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             // 你的号（v70 登录制）—— 只说人话：现在是谁在用它，怎么换。
             Divider().padding(.vertical, 10)

@@ -235,6 +235,7 @@ final class LiveFramePump {
 
         if let pb = fresh {
             SayBubble.shared.paint(on: pb)          // 字直接画在这一帧上
+            ListenMark.paint(on: pb)                // 在听的时候，右上角那个小标记
             guard let sb = makeSample(pb) else { return }
             lastSample = sb
             enqueue(sb, on: layer)
@@ -262,6 +263,7 @@ final class LiveFramePump {
 
         guard let pb = compose(pack, actKey: want) else { return }
         SayBubble.shared.paint(on: pb)
+        ListenMark.paint(on: pb)
         guard let sb = makeSample(pb) else { return }
         lastSample = sb
         enqueue(sb, on: layer)

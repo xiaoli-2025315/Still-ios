@@ -268,6 +268,15 @@ final class PiPController: NSObject, ObservableObject {
         //      小窗自己就有后台资格，不需要靠抢音频通道来续命。
         activateAudio()
 
+        // ★ v71：开关麦克风会把音频会话的 category 换掉（playback ⇄ playAndRecord），
+        //   系统可能顺手把播放器按停。Listening 每次切完回调这里，让画面接着走。
+        //   ★ 这里**不能**再调 activateAudio() —— 那会把 category 改回 playback，
+        //     麦克风当场就断了。只能让它接着播。
+        Listening.shared.afterSessionChange = { [weak self] in
+            guard let self else { return }
+            if self.cat.player.rate == 0 { self.cat.player.play() }
+        }
+
         // 注意签名：`init(contentSource:)` 是**非可失败**的
         //（可失败的只有老的 `init?(playerLayer:)`）。写成 guard let 编不过。
         let c = AVPictureInPictureController(contentSource: source)
@@ -730,64 +739,32 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
         guard !playing else { return }
         guard Date().timeIntervalSince(pipStartedAt) > 1.5 else { return }
 
-        // ★★★ v42：这里原来直接 `Notifier.askInput()`，导致他说的
-        //   「只要小窗一关就弹通知」。
-        //
-        //   根因：系统在**关窗**、**切回 App**、**窗口消失**的时候，
-        //   同样会调一次 `setPlaying(false)`。原代码没有分辨，
-        //   一律当成「他按了那个说话键」。
-        //
-        //   判据其实很简单：真按了那个键，**小窗还在**；关窗引起的，小窗就没了。
-        //   所以延后 0.7 秒再看一眼 —— 窗还在才发。
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        // ★ 0.25 秒后再看一眼：真按了那个键，小窗还挂着；
+        //   关窗、切回 App、窗口被系统收掉 引起的那一次，小窗已经没了。
+        //   不分辨的话，表现就是「小窗一关就自己开始听」。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
-            guard self.pip?.isPictureInPictureActive == true else { return }  // 关窗 → 不发
-            // 节流：连着按也只发一条
-            guard Date().timeIntervalSince(self.lastAskSentAt) > 2.0 else { return }
+            guard self.pip?.isPictureInPictureActive == true else { return }
+            // 防抖 0.3 秒（比双击判定窗口短，别把「连按第二下」吃掉）
+            guard Date().timeIntervalSince(self.lastAskSentAt) > 0.3 else { return }
             self.lastAskSentAt = Date()
 
-            // ★★★ v63（他的原话：「就是变成弹出现在这个问它」）：
-            //   按一下 → **把 App 顶到前台、输入条弹出来、键盘自己起来**，
-            //   写完按返回就回到他原来那个 App。
-            //   不再发通知 —— 通知得下拉才见输入框，他说那不算「点一下就能写」。
+            // ★★★ v71：这个键终于接到了它自己身上 —— 开 / 关「听」。
             //
-            //   ★ 小窗是系统的独立窗口，**App 的 UI 画不进去**，所以只有这一条路：
-            //     先留一个「待办」标记（`requestTalk`），再把 App 叫起来；
-            //     App 一激活（`scenePhase == .active`）就会读到这个标记、把输入条弹出来。
-            //   代价是正在用的 App 会被顶一下、小窗随之收起 —— 这是他自己选的那一种。
-            // ★★★ v66 —— 他 08:12 一巴掌打醒我的根本误解（原话）：
-            //   「按问它根本不会开启 App，它就是直接出现那个头顶的输入框，
-            //     你没看到画中画和问它的对话框同时存在吗？」
+            //   前面几版全错在这条线上，记清楚别再绕：
+            //     v63/v65 想「把 App 顶到前台弹输入框」→ 小窗当场被系统收掉，不是他要的。
+            //     v66~v68 想「跑快捷指令」→ **后台不许打开别的 App**，系统直接把命令丢掉。
+            //       他后来真去库里建了「问它」，按下去仍然没反应 —— 这正好证死了那一条，
+            //       跟「库里有没有」无关，是命令在最前面就被系统拦了。
             //
-            //   我原来以为那个输入框是自己画的 —— 错了。
-            //   **它是「快捷指令」那一层画出来的**：我们的 App 根本不用到前台，
-            //   所以画中画也不会被收掉。这从头到尾都是对的，是我想歪了。
+            //   ★ 而「开麦克风一直录」后台是**允许**的（我们本来就持有 audio 后台资格，
+            //     小窗能活着全靠它）。微信电话挂着的原理就是它。
+            //     这条路不唤起任何人，所以碰不到那条死线。
             //
-            //   ⇒ 所以「暂停键 ＝ 问它」的正确做法不是「把我们 App 顶到前台自己弹一个框」
-            //     （那样必把画中画收掉，正是他不要的），
-            //     **而是让「快捷指令」去跑「问它」**，让它按它自己那一套把框弹出来。
-            //
-            //   ★★★ v68 真机（他：「点了暂停没任何反应」）：
-            //     `shortcuts://run-shortcut?name=问它` **对不存在于快捷指令库里的名字完全不响应** ——
-            //     它只认库里真实存在的那一条，我们 App 提供的动作名它不认。
-            //     所以 v67 按下去了，什么都没发生。
-            //
-            //   ⇒ 改成：**优先跑「问它」；跑不动就直接把快捷指令 App 打开**。
-            //     打开它不算打断：我们 App 没到前台，**画中画照样在**，
-            //     他在里面点一下「问它」，框就弹出来了。
-            //     （等他把「问它」添加进库，第一条就直接命中，按一下即弹框。）
-            //   ★★ 前提（v67 真机：「点了暂停没任何反应」）：
-            //     `run-shortcut?name=` **只认快捷指令库里真实存在的那一条**，
-            //     App 提供的动作名它不认。所以「问它」必须先被添加进库一次。
-            //     这跟「跟它说话」完全一样 —— 他库里早就有一条（他叫它「叫奶娃」），
-            //     所以那条能跑；「问它」是这一版新加的，还没添加，才按了没反应。
-            //     两个都是快捷指令，性质一模一样，差别只在"库里有没有"。
-            let name = "问它".addingPercentEncoding(
-                withAllowedCharacters: .urlQueryAllowed) ?? "问它"
-            if let u = URL(string: "shortcuts://run-shortcut?name=\(name)") {
-                UIApplication.shared.open(u, options: [:]) { _ in }
-            }
-            self.note = "小窗上按了一下 —— 跑「问它」"
+            //   ★ 单击 = 听一句，说完自己停；0.7 秒内连按两下 = 一直听，再按一下关。
+            //     长按做不了：系统只给「按了一下」这一次回调，永远收不到「松手」。
+            Listening.shared.keyPressed()
+            self.note = Listening.shared.note
         }
     }
 
@@ -811,8 +788,9 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
         skipByInterval skipInterval: CMTime,
         completion completionHandler: @escaping () -> Void
     ) {
-        Notifier.askInput()
-        note = "小窗上按了一下 —— 通知里等你说一句"
+        // ★ v71：万一系统还是把这两个键画出来，按它们也走同一条路（开/关听）。
+        Listening.shared.keyPressed()
+        note = Listening.shared.note
         completionHandler()
     }
 

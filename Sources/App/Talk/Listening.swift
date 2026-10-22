@@ -407,8 +407,8 @@ final class Listening: ObservableObject {
             //   （系统把后台 App 的语音识别挂起），于是 finishSentence 永不被调用 ——
             //   话送不出去、红点一直亮、猫毫无反应。
             //   1.2 秒后若这一句还没定稿，就拿手里这段 partial 直接交出去。
-            let ddl = Date().addingTimeInterval(1.2)
-            DispatchQueue.main.asyncAfter(deadline: ddl) { [weak self] in
+            // deadline 要的是 DispatchTime，不是 Date（写成 Date 编译不过）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                 guard let self, self.shape != .off, self.ending, !self.finalized else { return }
                 self.finishSentence()
             }

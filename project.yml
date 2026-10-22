@@ -138,6 +138,11 @@ targets:
         #   组件用不上它，排除掉最干净。
         excludes:
           - "Diag.swift"
+          # ★ v70 登录制：CatBrain 会给台子的请求贴票（`req.stillStamp()`），
+          #   而登录那一套（钥匙串、票）**只在主 App 里**，扩展不该有凭证。
+          #   组件里也没有任何地方用它（只有 Talk/CatTalk.swift 用）——
+          #   留在扩展里只会编译不过。
+          - "CatBrain.swift"
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
       # 组件里那张静态猫图。★ 显式写 buildPhase：png 是资源不是源码，

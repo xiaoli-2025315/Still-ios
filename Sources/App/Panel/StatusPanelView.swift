@@ -184,7 +184,9 @@ struct StatusPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 11))
-                    Text("把「问它」加进快捷指令")
+                    // ★ 文案一律说「这件事会发生什么」，不说内部机制。
+                    //   「加进快捷指令库」是我这边的说法，他看到只会问「那是啥」。
+                    Text("让小窗上那个键能用")
                         .font(.system(size: 11))
                     Spacer()
                     Image(systemName: "chevron.right")
@@ -201,10 +203,9 @@ struct StatusPanelView: View {
             }
             .buttonStyle(.plain)
 
-            Text("进去点「还在」→「问它」→ 添加，只做一次 · 之后按小窗上那个键一下就弹框，App 不开、画中画不动")
+            Text("点一下会打开手机里的「快捷指令」→ 找到「问它」点一下就好 · 只做一次，之后按小窗键就弹出输入框")
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)
-                .fixedSize(horizontal: false, vertical: true)
                 .fixedSize(horizontal: false, vertical: true)
 
             // 它的声音（v48）：关了它照样跑跳，只是不出声 —— 跟安卓那个开关是同一条。

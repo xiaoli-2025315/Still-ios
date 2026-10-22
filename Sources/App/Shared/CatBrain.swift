@@ -36,6 +36,7 @@ enum CatBrain {
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
 
         var req = URLRequest(url: cloudURL)
+        req.stillStamp()      // ★ 登录制：贴票
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -103,6 +103,7 @@ enum Diag {
         else { return }
 
         var req = URLRequest(url: URL(string: base + "/api/diag")!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 12

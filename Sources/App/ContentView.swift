@@ -12,7 +12,7 @@ enum AppVersion {
     ///   它曾经停在 "v30" 停了三个版本（v31/v32/v33 都忘了改）——
     ///   直接后果：他装完不知道手机上到底是不是新版，
     ///   排查「改了没效果」时连「装的是哪一版」都确定不了。
-    static let tag = "v69"
+    static let tag = "v70"
 }
 
 // MARK: - 入口
@@ -27,8 +27,29 @@ enum AppVersion {
 //   · 诊断面板收进右上角「我」里 —— 首页只留它自己。
 
 struct ContentView: View {
+    @ObservedObject private var auth = StillAuth.shared
+    /// 手里那张票问过台子了没有 —— 没问过之前别闪一下登录页。
+    @State private var checked = false
+
     var body: some View {
-        MainHomeView()
+        Group {
+            if !checked {
+                // 只在冷启动的头一两百毫秒出现：背景色＋一个转圈，不要白屏。
+                ZStack {
+                    Cfg.Palette.bg.ignoresSafeArea()
+                    ProgressView().tint(Cfg.Palette.faint)
+                }
+            } else if auth.signedIn {
+                MainHomeView()
+            } else {
+                LoginView()
+            }
+        }
+        .task {
+            guard !checked else { return }
+            await auth.restore()
+            checked = true
+        }
     }
 }
 

@@ -102,6 +102,7 @@ final class LabFeed: ObservableObject {
     private func get<T: Decodable>(_ path: String) async throws -> T {
         guard let u = URL(string: Self.base + path) else { throw URLError(.badURL) }
         var req = URLRequest(url: u)
+        req.stillStamp()      // ★ 登录制：贴票
         req.timeoutInterval = 12
         let (data, _) = try await URLSession.shared.data(for: req)
         return try JSONDecoder().decode(T.self, from: data)

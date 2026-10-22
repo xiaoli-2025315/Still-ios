@@ -38,6 +38,7 @@ extension ActLab {
             comp.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -55,6 +56,7 @@ extension ActLab {
             comp.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.httpMethod = "POST"
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -336,6 +336,7 @@ final class CatPackStore: ObservableObject {
         var comp = URLComponents(string: ActLab.base + "/api/act/charpack")!
         comp.queryItems = [URLQueryItem(name: "char", value: charId)]
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         // 43–63MB，给足时间；不要让它 20 秒就放弃
         req.timeoutInterval = 300
 

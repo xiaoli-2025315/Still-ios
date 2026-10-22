@@ -19,6 +19,8 @@ struct StatusPanelView: View {
     @State private var widgetCount: Int? = nil
     /// 声音开关（存在手机里，跟着 SoundKit 走）
     @State private var soundOn: Bool = SoundKit.shared.on
+    /// 登录制：面板上要显示「现在登的是哪个号」，并且能换号。
+    @ObservedObject private var auth = StillAuth.shared
 
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
@@ -43,6 +45,12 @@ struct StatusPanelView: View {
             return "系统里没登记到组件 → 先长按桌面把旧的删掉，重新加一个。"
         }
         return ""
+    }
+
+    /// 手机号中间打码 —— 面板是给人瞄一眼的，不用把整串摊开。
+    private func maskPhone(_ p: String) -> String {
+        guard p.count == 11 else { return p }
+        return "\(p.prefix(3))****\(p.suffix(4))"
     }
 
     /// 改名。
@@ -204,6 +212,34 @@ struct StatusPanelView: View {
             .buttonStyle(.plain)
 
             Text("点一下会打开手机里的「快捷指令」→ 找到「问它」点一下就好 · 只做一次，之后按小窗键就弹出输入框")
+                .font(.system(size: 10))
+                .foregroundStyle(Cfg.Palette.faint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // 你的号（v70 登录制）—— 只说人话：现在是谁在用它，怎么换。
+            Divider().padding(.vertical, 10)
+
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Cfg.Palette.faint)
+                Text("现在用的号")
+                    .font(.system(size: 11))
+                Spacer()
+                Text(auth.me?.phone.isEmpty == false ? maskPhone(auth.me?.phone ?? "") : "还没登录")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Cfg.Palette.faint)
+                Button {
+                    auth.logout()
+                } label: {
+                    Text("换一个")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Cfg.Palette.accent)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("你的猫、你的存档，只在这个号里。换号就等于换一个人用这台手机。")
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)

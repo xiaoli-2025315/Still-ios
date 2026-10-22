@@ -330,6 +330,7 @@ enum ActLab {
             URLQueryItem(name: "char", value: charId),
         ]
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.httpMethod = "POST"
         // 视频比图片大得多；30MB 的手机网要传几分钟，别让它中途超时
         req.timeoutInterval = 600
@@ -365,6 +366,7 @@ enum ActLab {
         var comp = URLComponents(string: base + "/api/gen")!
         comp.queryItems = [URLQueryItem(name: "job", value: job)]
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.timeoutInterval = 25
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -386,6 +388,7 @@ enum ActLab {
             URLQueryItem(name: "ext", value: "jpg"),
         ]
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.httpMethod = "POST"
         req.timeoutInterval = 120
         req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
@@ -438,6 +441,7 @@ enum ActLab {
         var comp = URLComponents(string: base + path)!
         comp.queryItems = query
         var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
         req.httpMethod = "POST"
         req.timeoutInterval = 25
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -451,6 +455,7 @@ enum ActLab {
 
     private static func get<T: Decodable>(absURL: URL) async throws -> T {
         var req = URLRequest(url: absURL)
+        req.stillStamp()      // ★ 登录制：贴票
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, resp) = try await URLSession.shared.data(for: req)

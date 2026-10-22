@@ -1,6 +1,7 @@
 import SwiftUI
 import WidgetKit
 import AppIntents   // ShortcutsLink（系统自带的「在 Siri 里用它」入口）
+import UIKit        // UIApplication.shared.open（跳快捷指令那颗按钮要用）
 
 // MARK: - 状态面板
 //
@@ -165,21 +166,45 @@ struct StatusPanelView: View {
             ShortcutsLink()
                 .shortcutsLinkStyle(.automaticOutline)
 
-            // 装完必须打开一次 App，系统才会把这几句登记进去 ——
-            // 没打开过就是「这个 App 不支持用 Siri 做这件事」。
-            // 这句只在他还没成功用过时才有价值，所以直接写死一行小字，不做判断。
-            // ★ v67：他 08:17 指出「跟它说话也不用添加就能触发，那你直接换一个绑定就好了」——
-            //   对。App 提供的动作本来就能被直接调用，**不需要先添加进快捷指令库**。
-            //   我上一版写的「先添加一次」是多此一举，撤掉。
-            // ★ 实话实说：`run-shortcut?name=` 只认**库里真实存在**的那一条，
-            //   所以「问它」得先被添加进快捷指令库一次（在那一栏点它 → 添加，两下）。
-            //   做完之后，小窗上那个键按一下就是那个输入框，App 不开、画中画不动。
-            Text("先把「问它」添加进快捷指令一次（在「还在」那栏点它 → 添加）· 之后按小窗键一下就弹框")
+            // ★★★ v69（他的原话：「帮我做一个快捷跳转，用户在 App 里点了直接跳到快捷指令那边添加」）。
+            //
+            //   为什么必须要有这一下：`run-shortcut?name=` 只认**库里真实存在**的那一条，
+            //   App 提供的动作名它不认（v67 真机：按了完全没反应）。
+            //   所以「问它」得先进库 —— 而苹果没给第三方 App 往快捷指令库里写条目的接口，
+            //   这一步只能由用户点。
+            //
+            //   ★ 能做的是**把这一下压到最短**：点这里直接跳到快捷指令 App，
+            //     进去就是「还在」那一页，点「问它」→ 添加，两下完事。
+            //     （比当初建「叫奶娃」那四步少得多。）
+            Button {
+                if let u = URL(string: "shortcuts://") {
+                    UIApplication.shared.open(u, options: [:]) { _ in }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 11))
+                    Text("把「问它」加进快捷指令")
+                        .font(.system(size: 11))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Cfg.Palette.faint)
+                }
+                .foregroundStyle(.primary)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Cfg.Palette.faint.opacity(0.5), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            Text("进去点「还在」→「问它」→ 添加，只做一次 · 之后按小窗上那个键一下就弹框，App 不开、画中画不动")
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)
-                .font(.system(size: 10))
-                .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)
 
             // 它的声音（v48）：关了它照样跑跳，只是不出声 —— 跟安卓那个开关是同一条。

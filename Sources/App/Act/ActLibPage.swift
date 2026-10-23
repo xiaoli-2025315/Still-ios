@@ -1568,6 +1568,6 @@ extension ActLab.GenJob {
     static func stub(stage: String, progress: Int? = nil, failed: Bool = false) -> ActLab.GenJob {
         ActLab.GenJob(job: nil, stage: nil, phase: stage, msg: nil, progress: progress,
                       allDone: nil, failed: failed ? true : nil, done: nil,
-                      acts: nil, each: nil, redo: nil, leftover: nil)
+                      acts: nil, each: nil, redo: nil, leftover: nil, pending: nil)
     }
 }

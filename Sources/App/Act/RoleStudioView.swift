@@ -112,7 +112,7 @@ struct GifView: View {
     }
 
     /// 台子上那一段的地址（按宽度分档，格子和中间那个大框不是一档）。
-    static func url(_ charId: String, _ act: String, width: Int) -> URL? {
+    static func makeURL(_ charId: String, _ act: String, width: Int) -> URL? {
         let w = max(120, min(width, 900))
         var s = ActLab.base + "/assets/acts/"
         s += charId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? charId
@@ -281,7 +281,7 @@ final class StudioModel: ObservableObject {
                 if !sitOk { sitPct = s.pct ?? sitPct }
             } else {
                 if s.matteDone {
-                    done[act] = true
+                    done.insert(act)
                     pct[act] = 100
                 } else {
                     pct[act] = s.pct ?? 0
@@ -414,7 +414,7 @@ struct RoleStudioView: View {
                 .fill(m.sitReady ? Tw.gray100 : Tw.gray100)
 
             if m.sitReady {
-                GifView(url: GifView.url(m.charId, "sit", width: 520))
+                GifView(url: GifView.makeURL(m.charId, "sit", width: 520))
                     .padding(10)
                     .transition(.opacity)
                 VStack {
@@ -471,7 +471,7 @@ struct RoleStudioView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Tw.gray100)
             if ok {
-                GifView(url: GifView.url(m.charId, key, width: 260))
+                GifView(url: GifView.makeURL(m.charId, key, width: 260))
                     .padding(6)
             } else {
                 VStack(spacing: 7) {

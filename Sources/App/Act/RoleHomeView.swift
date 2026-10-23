@@ -118,7 +118,7 @@ struct RoleHomeView: View {
         VStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Tw.gray100)
-                GifView(url: GifView.url(char.id, names.contains("sit") ? "sit" : (has.first?.key ?? "sit"),
+                GifView(url: GifView.makeURL(char.id, names.contains("sit") ? "sit" : (has.first?.key ?? "sit"),
                                          width: 620))
                     .padding(10)
             }
@@ -151,7 +151,7 @@ struct RoleHomeView: View {
     private var topBox: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Tw.gray100)
-            GifView(url: GifView.url(char.id, names.contains("sit") ? "sit" : (has.first?.key ?? "sit"),
+            GifView(url: GifView.makeURL(char.id, names.contains("sit") ? "sit" : (has.first?.key ?? "sit"),
                                      width: 480))
                 .padding(8)
         }
@@ -235,7 +235,7 @@ struct RoleHomeView: View {
         Button { watching = key } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Tw.gray100)
-                GifView(url: GifView.url(char.id, key, width: 260))
+                GifView(url: GifView.makeURL(char.id, key, width: 260))
                     .padding(6)
                 VStack {
                     Spacer(minLength: 0)
@@ -306,7 +306,7 @@ struct BigPreview: View {
             }
             .padding(.top, 14)
 
-            GifView(url: GifView.url(charId, act, width: 900))
+            GifView(url: GifView.makeURL(charId, act, width: 900))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Text("点右上角关上就行")

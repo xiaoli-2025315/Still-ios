@@ -1581,7 +1581,8 @@ struct NewRoleSheet: View {
     /// 台子上记着哪些豆包号。拿不到就空着 —— 显示「还没登号」，不装作有。
     private func loadAccounts() async {
         guard let d = try? await ActLab.rawGet("/api/login/accounts", timeout: 15),
-              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let obj = try? JSONSerialization.jsonObject(with: d),
+              let o = obj as? [String: Any],
               let arr = o["账号"] as? [[String: Any]] else { return }
         var out: [Acc] = []
         for x in arr {

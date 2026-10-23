@@ -155,6 +155,30 @@ struct RingProgress: View {
     }
 }
 
+/// 「准备开始抠图」后面那串反复滚动的省略号。
+/// ★★★ v2.78（他 2026-10-23）：「片子拿到的过程直到送去抠图这中间，
+///   要有『准备开始抠图』然后跟一个反复省略号的动画」。
+/// ★ 它只是「在等」的节奏，**不代表任何进度** —— 这一段到底要多久，机器也不知道。
+struct DotsLabel: View {
+
+    let base: String
+    var size: CGFloat = 10
+    @State private var n = 0
+
+    var body: some View {
+        Text(base + String(repeating: ".", count: n))
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(Tw.red600)
+            .monospacedDigit()
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 420_000_000)
+                    n = (n + 1) % 4
+                }
+            }
+    }
+}
+
 /// 生成阶段那层「会呼吸」的底色 —— 他说的「背景是一个动态的，这样有生成的感觉」。
 /// ★ 只是氛围，**不带任何数字**：豆包那边根本不报进度，编一个百分比就是假进度。
 struct GenGlow: View {
@@ -206,12 +230,17 @@ final class StudioModel: ObservableObject {
     @Published var done: Set<String> = []
 
     /// 把机器上的原话翻成格子上的一种状态。取值都来自 gen/serve.js、act_queue.py 真写进去的字。
-    static func stateOf(_ stage: String?, _ pct: Int, _ matteDone: Bool) -> String {
+    static func stateOf(_ stage: String?, _ pct: Int, _ matteDone: Bool, _ saved: Bool) -> String {
         if matteDone { return "done" }
         let s = stage ?? ""
+        // ★ 先判「正在往台子送」：那时 stage 里也带「抠像」两个字，但它其实还没开始抠。
+        if s.contains("送进") { return "saved" }
         if s.contains("抠") || s.contains("抽帧") || s.contains("打包") || pct > 0 { return "matte" }
-        if s.contains("送进") || s.contains("落盘") { return "saved" }
         if s.contains("画好了") { return "done" }
+        // ★★★ v2.78（他 2026-10-23）：「片子拿到的过程直到送去抠图，这中间要有
+        //   『准备开始抠图』然后跟一个反复省略号的动画」。
+        //   判据是**这条片子真的已经落到机器上了**（tSaved／落盘），不是"看着在排队"。
+        if saved || s.contains("落盘") { return "saved" }
         if s.contains("已发送") || s.contains("生成") || s.contains("重收") { return "gen" }
         if s.contains("排队") { return "queued" }
         return s.isEmpty ? "idle" : "warn"
@@ -386,12 +415,14 @@ final class StudioModel: ObservableObject {
         var sitMatte = false
         for s in each {
             let act = s.act ?? ""
-            let one = StudioModel.stateOf(s.stage, s.pct ?? 0, s.matteDone)
+            let one = StudioModel.stateOf(s.stage, s.pct ?? 0, s.matteDone, s.saved)
             if act == "sit" {
                 if s.matteDone { sitMatte = true; sitStage = "done"; sitPct = 100 }
-                // ★ 只有真在抠背景时才动这个数字；生成阶段豆包不报进度，一个数都不编。
-                else if one == "matte" { sitStage = "matte"; sitPct = max(sitPct, s.pct ?? 0) }
-                else { sitStage = one }
+                else {
+                    sitStage = one
+                    // ★ 只有真在抠背景时才动这个数字；生成阶段豆包不报进度，一个数都不编。
+                    if one == "matte" { sitPct = max(sitPct, s.pct ?? 0) }
+                }
                 continue
             }
             if s.matteDone {
@@ -551,6 +582,8 @@ struct RoleStudioView: View {
                 VStack(spacing: 12) {
                     if m.sitStage == "matte" {
                         RingProgress(pct: m.sitPct)
+                    } else if m.sitStage == "saved" {
+                        DotsLabel(base: "准备开始抠图", size: 15)
                     } else {
                         Text(m.sitStage == "queued" ? "排队中" : "正在生成中")
                             .font(.system(size: 15, weight: .semibold))
@@ -574,7 +607,7 @@ struct RoleStudioView: View {
             }
         }
         .overlay {
-            if !m.sitReady && m.sitStage != "matte" && m.sitStage != "queued" {
+            if !m.sitReady && m.sitStage != "matte" && m.sitStage != "queued" && m.sitStage != "saved" {
                 GenGlow().clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .allowsHitTesting(false)
             }
@@ -609,6 +642,9 @@ struct RoleStudioView: View {
             if ok {
                 GifView(url: GifView.makeURL(m.charId, key, width: 260))
                     .padding(6)
+            } else if s == "saved" {
+                // ★ v2.78：片子已经拿到手、正在送去抠 —— 这段给一串反复的省略号
+                DotsLabel(base: "准备开始抠图", size: 10)
             } else if s == "matte" {
                 // ★ 只有这一段是**我们自己跑的**，才有真百分比
                 VStack(spacing: 7) {

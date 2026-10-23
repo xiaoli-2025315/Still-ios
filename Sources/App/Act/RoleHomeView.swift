@@ -36,6 +36,10 @@ struct RoleHomeView: View {
     @State private var watching: String?
     /// 一条动作都没有时那两句 —— 「还没开始做」／「前面还有几条在做」
     @State private var queueLine = ""
+    /// ★★★ 2026-10-23（「下单回执」）：这一只**已经有一趟在跑/在排**的话，正在做的动作名。
+    ///   他说过不止一次：「我点了接着做，退出去就像没点过，只能再下一单」。
+    ///   所以这一页只要它在做，就必须把「已经下了这一单」挂在明面上。
+    @State private var inFlight: [String] = []
 
     private var has: [(key: String, label: String)] {
         ActLab.official.filter { names.contains($0.key) }
@@ -197,6 +201,19 @@ struct RoleHomeView: View {
             Text("点这个框，看它会做的所有动作")
                 .font(.system(size: 12))
                 .foregroundStyle(Tw.gray400)
+
+            // ★ 下单回执：已经在做的时候，这一屏也得说出来 ——
+            //   他点进角色唯一的目的就是「看看做到哪了」，不是再下一单。
+            if !inFlight.isEmpty {
+                HStack(spacing: 6) {
+                    Circle().fill(Color(hex: 0xB45309)).frame(width: 6, height: 6)
+                    Text("正在做：\(inFlight.prefix(3).joined(separator: "、"))"
+                         + (inFlight.count > 3 ? " 等 \(inFlight.count) 条" : ""))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Color(hex: 0xB45309))
+                }
+                .padding(.top, 2)
+            }
         }
         .padding(.top, 2)
     }
@@ -210,19 +227,27 @@ struct RoleHomeView: View {
     }
 
     private var continueCard: some View {
-        Button { onStudio() } label: {
+        // ★★★ 2026-10-23（「下单回执」）：这一只**已经在做**的时候，
+        //   这颗键不许再写「接着做剩下的 N 个」—— 那是在邀请他再下一单。
+        //   他自己的比喻：点了酒、人离桌、回来桌上什么都没有，只能再点一次。
+        let busy = !inFlight.isEmpty
+        let doing = inFlight.prefix(3).joined(separator: "、")
+            + (inFlight.count > 3 ? " 等 \(inFlight.count) 条" : "")
+        return Button { onStudio() } label: {
             VStack(spacing: 4) {
-                Text("接着做剩下的 \(missingActs) 个")
-                    .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(Tw.white)
-                Text("趴下、舔毛、睡觉这些基础动作还没做")
+                Text(busy ? "看看做到哪了" : "接着做剩下的 \(missingActs) 个")
+                    .font(.system(size: busy ? 13.5 : 14.5, weight: .semibold))
+                    .foregroundStyle(busy ? Color(hex: 0xB45309) : Tw.white)
+                Text(busy ? "已经在做了：\(doing) —— 这一单下过了，不用再点"
+                          : "趴下、舔毛、睡觉这些基础动作还没做")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Tw.white.opacity(0.8))
+                    .foregroundStyle(busy ? Color(hex: 0x92400E) : Tw.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Tw.red600))
+                .fill(busy ? Color(hex: 0xFFF3E6) : Tw.red600))
         }
         .buttonStyle(PressStyle())
         .padding(.top, 4)
@@ -384,6 +409,18 @@ struct RoleHomeView: View {
                 queueLine = "机器正忙着别的角色 —— 一空出来就轮到它"
             } else {
                 queueLine = "正在做 —— 做好一格就冒出来一格"
+            }
+        }
+        // ★★★ 2026-10-23（下单回执）：不管做没做齐，只要这只猫**有一趟还在跑/在排**，
+        //   就把「正在做哪几条」挂出来。退出再进来还在，直到它真的做完。
+        inFlight = []
+        if let g = try? await ActLab.genMine() {
+            for list in [g.当前, g.队列] {
+                for j in list ?? [] where j.char == char.id {
+                    let doing = (j.acts ?? []).map { label(of: $0) }
+                    if !doing.isEmpty { inFlight = doing }
+                    else if inFlight.isEmpty { inFlight = ["这一批"] }
+                }
             }
         }
         loading = false

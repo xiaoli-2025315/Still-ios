@@ -398,7 +398,7 @@ final class CatPackStore: ObservableObject {
             Task { @MainActor in self?.progress = f }
         }
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw ActLab.LabError("台子没给包（HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)）")
+            throw ActLab.LabError("服务器没给动作画面（HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)）")
         }
 
         // 先落到临时的，成功了再换上去 —— 中途断网不会留下半个坏包
@@ -470,7 +470,7 @@ final class CatPackStore: ObservableObject {
             let task = URLSession.shared.downloadTask(with: req) { url, resp, err in
                 if let err = err { cont.resume(throwing: err); return }
                 guard let url, let resp else {
-                    cont.resume(throwing: ActLab.LabError("没接到台子的回话"))
+                    cont.resume(throwing: ActLab.LabError("没接到服务器的回话"))
                     return
                 }
                 let keep = FileManager.default.temporaryDirectory

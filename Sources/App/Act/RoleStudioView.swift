@@ -583,7 +583,7 @@ struct RoleStudioView: View {
                     if m.sitStage == "matte" {
                         RingProgress(pct: m.sitPct)
                     } else if m.sitStage == "saved" {
-                        DotsLabel(base: "准备开始抠图", size: 15)
+                        DotsLabel(base: "准备开始去掉背景", size: 15)
                     } else {
                         Text(m.sitStage == "queued" ? "排队中" : "正在生成中")
                             .font(.system(size: 15, weight: .semibold))
@@ -644,7 +644,7 @@ struct RoleStudioView: View {
                     .padding(6)
             } else if s == "saved" {
                 // ★ v2.78：片子已经拿到手、正在送去抠 —— 这段给一串反复的省略号
-                DotsLabel(base: "准备开始抠图", size: 10)
+                DotsLabel(base: "准备开始去掉背景", size: 10)
             } else if s == "matte" {
                 // ★ 只有这一段是**我们自己跑的**，才有真百分比
                 VStack(spacing: 7) {

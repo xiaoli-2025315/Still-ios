@@ -49,14 +49,14 @@ final class DoubaoLoginModel: ObservableObject {
 
     func refresh() async {
         do { state = try await ActLab.loginState() }
-        catch { err = "问不到台子：\(error.localizedDescription)" }
+        catch { err = "连不上服务器：\(error.localizedDescription)" }
     }
 
     /// 读完手机网页里的 cookie，交给台子。
     func give() async {
         busy = true
         err = nil
-        note = "正在从网页里取登录态…"
+        note = "正在从网页里取登录…"
         let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cont.resume(returning: $0) }
         }
@@ -83,7 +83,7 @@ final class DoubaoLoginModel: ObservableObject {
             try await ActLab.loginGive(cookie: jar,
                                        ua: currentUA,
                                        name: "手机上登的豆包")
-            note = "交上去了（\(mine.count) 条）· 台子现在用的是你这个号"
+            note = "交上去了（\(mine.count) 条）· 服务器现在用的是你这个号"
             await refresh()
         } catch {
             note = ""
@@ -98,7 +98,7 @@ final class DoubaoLoginModel: ObservableObject {
         err = nil
         do {
             try await ActLab.loginForget()
-            note = "台子已经忘掉上一个账号了 · 现在在网页里登一个新的"
+            note = "服务器已经忘掉上一个账号了 · 现在在网页里登一个新的"
             await clearWebCookies()
             await refresh()
         } catch {
@@ -236,7 +236,7 @@ struct DoubaoLoginPage: View {
                 Circle()
                     .fill((model.state?.loggedIn == true) ? Tw.green500 : Tw.gray300)
                     .frame(width: 7, height: 7)
-                Text((model.state?.loggedIn == true) ? "台子现在认的是：\(loginName)" : "台子现在没有登录态")
+                Text((model.state?.loggedIn == true) ? "服务器现在认的是：\(loginName)" : "服务器现在没认着号")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Tw.gray900)
                 Spacer(minLength: 0)
@@ -302,7 +302,7 @@ struct DoubaoLoginPage: View {
                 } label: {
                     HStack(spacing: 7) {
                         if model.busy { ProgressView().tint(.white) }
-                        Text("我登录好了 · 把它交给台子")
+                        Text("我登录好了 · 把它交给服务器")
                             .font(.system(size: 14, weight: .semibold))
                     }
                     .foregroundStyle(Tw.white)
@@ -347,7 +347,7 @@ struct DoubaoLoginPage: View {
                 }
                 .buttonStyle(PressStyle(scale: 0.96))
                 Spacer(minLength: 0)
-                Text("登录态只交给你自己的台子")
+                Text("登录只交给服务器")
                     .font(.system(size: 10))
                     .foregroundStyle(Tw.gray400)
             }

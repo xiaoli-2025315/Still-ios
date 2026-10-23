@@ -195,7 +195,7 @@ final class StillAuth: ObservableObject {
                 return
             }
             guard let t = obj["token"] as? String, !t.isEmpty else {
-                error = "台子没给票，再试一次"
+                error = "服务器没认下这个号，再试一次"
                 return
             }
             Ticket.save(t)
@@ -205,7 +205,7 @@ final class StillAuth: ObservableObject {
                      name: u["name"] as? String ?? "",
                      owner: u["owner"] as? Bool ?? false))
         } catch {
-            self.error = "连不上台子 —— 看看网络"
+            self.error = "连不上服务器 —— 看看网络"
         }
     }
 

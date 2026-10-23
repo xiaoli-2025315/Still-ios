@@ -98,7 +98,7 @@ enum CatBrain {
 
     /// 界面上显示「现在用的是谁」。填了就是他自己接的那家，没填就是台子上那把。
     static func providerLabel(_ k: String) -> String {
-        if k.isEmpty { return "台子上那把（不用填也能说话）" }
+        if k.isEmpty { return "服务器上那把（不用填也能说话）" }
         return isZhipu(k) ? "智谱 GLM-4-Flash" : "DeepSeek"
     }
 

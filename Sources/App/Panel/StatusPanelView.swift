@@ -72,7 +72,7 @@ struct StatusPanelView: View {
         // 换了模型，之前那几句上下文就别带过去了 —— 说话的味儿不一样。
         BrainMemory.shared.clear()
         brainNote = brainKey.isEmpty
-            ? "清掉了 · 又回到台子上那把"
+            ? "清掉了 · 又回到服务器上那把"
             : "存好了 · 这只猫现在用它自己的钥匙（\(CatBrain.providerLabel(brainKey))）"
     }
 
@@ -94,7 +94,7 @@ struct StatusPanelView: View {
                     brainNote = "会说话了（\(used)）· 它刚回：\(r)"
                 } else {
                     brainNote = brainKey.isEmpty
-                        ? "还没接上 —— 台子那边没插模型钥匙。你可以在上面填一把自己的。"
+                        ? "还没接上 —— 服务器那边没插模型钥匙。你可以在上面填一把自己的。"
                         : "这把钥匙没通 —— 看看是不是贴全了、或者额度用完了。"
                 }
             }
@@ -356,7 +356,7 @@ struct StatusPanelView: View {
             }
 
             Text(brainNote.isEmpty
-                 ? "填了就是你自己的模型（每只猫可以填不同的）；不填也能说话，走的是台子上那把。"
+                 ? "填了就是你自己的模型（每只猫可以填不同的）；不填也能说话，走的是服务器上那把。"
                  : brainNote)
                 .font(.system(size: 10))
                 .foregroundStyle(Cfg.Palette.faint)

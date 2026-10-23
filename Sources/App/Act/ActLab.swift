@@ -195,7 +195,7 @@ enum ActLab {
                     if s.contains("卡在豆包") { return s }
                     return s
                 }
-                if saved { return "画好了，正送进台子" }
+                if saved { return "画好了，正送到服务器" }
                 if sent { return "已发给豆包，正在画" }
                 return "排着队"
             }
@@ -206,7 +206,7 @@ enum ActLab {
             case phase    = "阶段"
             case progress = "进度"
             case allDone  = "全完成"
-            case matteAllDone = "抠像完成"
+            case matteAllDone = "背景去掉了"
             case each     = "每条"
             case redo     = "可重收"
             case leftover = "剩"
@@ -244,7 +244,7 @@ enum ActLab {
 
         var line: String {
             if isDone { return "整套做完了，动作已经可以用了" }
-            if isBad { return "没成 —— " + (phaseText.isEmpty ? "看台子上的日志" : phaseText) }
+            if isBad { return "没成 —— " + (phaseText.isEmpty ? "看服务器上的记录" : phaseText) }
             let st = phaseText.isEmpty ? "排队中" : phaseText
             // ★ 只有「真在跑」才带百分比：停了的那趟进度是假的（1% 那个坑就在这儿）
             if stopped { return st }
@@ -370,9 +370,9 @@ enum ActLab {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, resp) = try await URLSession.shared.upload(for: req, fromFile: video)
-        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("台子说 HTTP \(http.statusCode)：\(snip(data))")
+            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
         }
         let r = try? JSONDecoder().decode(SubmitResp.self, from: data)
         // ★ 传过同一段视频时台子回 ok=false + dup=true。这不是故障，是它省了一次重复抠像。
@@ -380,10 +380,10 @@ enum ActLab {
             throw LabError(r.why?.isEmpty == false ? r.why! : "这段视频传过了，没有重复处理。")
         }
         if let r, r.ok == false {
-            throw LabError(r.why?.isEmpty == false ? r.why! : "台子没收这段视频")
+            throw LabError(r.why?.isEmpty == false ? r.why! : "服务器没收这段视频")
         }
         guard let j = r?.job else {
-            throw LabError("台子没给任务号（回的是：\(snip(data))）")
+            throw LabError("服务器没给单号（回的是：\(snip(data))）")
         }
         return j
     }
@@ -427,9 +427,9 @@ enum ActLab {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, resp) = try await URLSession.shared.upload(for: req, from: photo)
-        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("台子说 HTTP \(http.statusCode)：\(snip(data))")
+            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
         }
         let r = try? JSONDecoder().decode(NewResp.self, from: data)
         if let r, r.ok == false {
@@ -481,8 +481,8 @@ enum ActLab {
         let r = try? JSONDecoder().decode(SayResp.self, from: data)
         if let r, r.ok == true { return r.say ?? "" }
         if let w = r?.why, !w.isEmpty { throw LabError(w) }
-        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
-        throw LabError("台子说 HTTP \(http.statusCode)：\(snip(data))")
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
+        throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
     }
 
     private static func get<T: Decodable>(absURL: URL) async throws -> T {
@@ -491,9 +491,9 @@ enum ActLab {
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("台子说 HTTP \(http.statusCode)：\(snip(data))")
+            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
         }
         return try JSONDecoder().decode(T.self, from: data)
     }

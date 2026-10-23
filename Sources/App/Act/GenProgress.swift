@@ -53,7 +53,7 @@ final class GenModel: ObservableObject {
         if !note.isEmpty { return note }
         if let s = state { return s.line }
         if job.isEmpty { return "还没做。点下面的「做整套」或「重做一遍」开始。" }
-        return "正在问台子…"
+        return "正在问服务器…"
     }
 
     func poll() async {
@@ -72,7 +72,7 @@ final class GenModel: ObservableObject {
             if msg.contains("404") || msg.contains("没这个任务") {
                 remember("")
                 state = nil
-                err = "这一趟台子上已经没有了（机器重启过）。已经在墙上的那些不受影响。"
+                err = "这一趟服务器上已经没有了（机器重启过）。已经在墙上的那些不受影响。"
             } else {
                 err = msg
             }
@@ -86,7 +86,7 @@ final class GenModel: ObservableObject {
         do {
             let r = try await ActLab.genStart(charId: charId, replace: replace)
             remember(r.job)
-            state = ActLab.GenJob.stub(stage: "下单了，台子正在排队（\(r.acts.count) 条）")
+            state = ActLab.GenJob.stub(stage: "下单了，服务器正在排队（\(r.acts.count) 条）")
             note = ""
         } catch {
             note = ""
@@ -195,8 +195,8 @@ struct GenProgressPage: View {
             }
             Button("先不做", role: .cancel) {}
         } message: {
-            Text("台子会按词库把动作重新画一遍，然后重新抠像。"
-                 + "这一步花的是你豆包账号的额度 —— 只是想补几条的话，用「一键修复」或者「接着做下一批」更省。")
+            Text("服务器会按那套动作清单把动作重新画一遍，然后重新把背景去掉。"
+                 + "这一步花的是你豆包账号的额度 —— 只是想补几条的话，用「修一下」或者「接着做下一批」更省。")
         }
     }
 
@@ -344,7 +344,7 @@ struct GenProgressPage: View {
                     .foregroundStyle(Tw.gray500)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("做动作花的是你豆包账号的额度。抠像不花额度。")
+            Text("做动作花的是你豆包账号的额度。去掉背景不花额度。")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Tw.gray400)
         }

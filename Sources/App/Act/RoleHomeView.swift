@@ -303,7 +303,7 @@ struct RoleHomeView: View {
                     Image(systemName: "bandage")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text(repairing ? "正在修，别退出…" : "一键修复（不花额度）")
+                Text(repairing ? "正在修，别退出…" : "修一下（不花额度）")
                     .font(.system(size: 12.5, weight: .semibold))
                 Spacer(minLength: 0)
                 if !repairNote.isEmpty {
@@ -588,7 +588,7 @@ struct AddActionSheet: View {
                     .disabled(desc.isEmpty)
                     .padding(.top, 22)
 
-                    Text("写一句话就能加一条动作 —— 现在台子只认固定的那 11 条，"
+                    Text("写一句话就能加一条动作 —— 现在服务器只认固定的那 11 条，"
                          + "随手写的还接不了。你写的这句会留着，等能做了直接拿它去做。")
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)
@@ -613,7 +613,7 @@ struct AddActionSheet: View {
 
     private func make() async {
         // ★ 真的做不了，就真的说做不了 —— 描述留着，不清空。
-        told = "还做不了：「\(desc)」这句台子现在接不了。"
+        told = "还做不了：「\(desc)」这句服务器现在接不了。"
             + "它只认固定那 11 条动作，任意描述要等方舟那把钥匙。"
             + "\n你写的这句我留在这儿了。"
     }

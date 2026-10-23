@@ -34,7 +34,7 @@ final class ActLibModel: ObservableObject {
             dropped = all.filter { $0.isDropped }
             loadedOnce = true
         } catch {
-            err = "没取上台子：\(error.localizedDescription)"
+            err = "没连上服务器：\(error.localizedDescription)"
         }
         loading = false
     }
@@ -99,7 +99,7 @@ struct ActLibPage: View {
                     }
 
                     if model.loadedOnce && model.chars.isEmpty && model.err == nil {
-                        Text("台子上还没有角色。右上角「＋」登记一只。")
+                        Text("服务器上还没有角色。点右上角「＋」登记一只。")
                             .font(.system(size: 12))
                             .foregroundStyle(Tw.gray400)
                             .padding(.horizontal, 20)
@@ -413,7 +413,7 @@ struct ActLibPage: View {
     private var loadingRow: some View {
         HStack(spacing: 8) {
             ProgressView().scaleEffect(0.8)
-            Text("正在从台子上取…")
+            Text("正在从服务器上取…")
                 .font(.system(size: 12))
                 .foregroundStyle(Tw.gray500)
         }
@@ -568,11 +568,11 @@ struct ActWallSheet: View {
             guard let it else { return }
             Task { await uploadToSlot(it) }
         }
-        .confirmationDialog("让台子做整套动作？", isPresented: $askGen, titleVisibility: .visible) {
+        .confirmationDialog("让服务器做整套动作？", isPresented: $askGen, titleVisibility: .visible) {
             Button("做（会花豆包额度）") { Task { await startGen() } }
             Button("先不做", role: .cancel) {}
         } message: {
-            Text("台子会按 12 个标准动作各生成一条，然后再抠像。"
+            Text("服务器会按 12 个标准动作各做一条，然后再把背景去掉。"
                  + "这一步花的是你机器上的豆包额度；已经有、正在做的会自己跳过。")
         }
         .confirmationDialog("把「\(labelOf(renameFrom))」改到哪一格？",
@@ -591,7 +591,7 @@ struct ActWallSheet: View {
         } message: {
             Text("退下来只是不显示这一格，文件一个都不删，以后还能恢复。")
         }
-        .confirmationDialog("一键修复", isPresented: $askRepair, titleVisibility: .visible) {
+        .confirmationDialog("修一下", isPresented: $askRepair, titleVisibility: .visible) {
             Button("只修卡住的（不花额度）") { Task { await repair(force: false) } }
             Button("连已经好了的也重抠一遍") { Task { await repair(force: true) } }
             Button("先不修", role: .cancel) {}
@@ -717,7 +717,7 @@ struct ActWallSheet: View {
             return "\(j.line) · 不花额度"
         }
         if let bad = actJobs.first(where: { $0.isBad }) {
-            return "有一段没成：\(bad.err?.isEmpty == false ? bad.err! : (bad.stage ?? "")) —— 点「一键修复」"
+            return "有一段没成：\(bad.err?.isEmpty == false ? bad.err! : (bad.stage ?? "")) —— 点「修一下」"
         }
         return "点这一行看进度 · 想补几条就传视频，或点「做整套」"
     }
@@ -923,8 +923,8 @@ struct ActWallSheet: View {
     private var footNote: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(pack == nil
-                 ? "这一只的动作还没取下来。灰格子＝台子上还没有这一条。"
-                 : "点一格就看它怎么动。这台子上没有的动作会是灰的。")
+                 ? "这一只的动作还没取下来。灰格子＝服务器上还没有这一条。"
+                 : "点一格就看它怎么动。服务器上没有的动作会是灰的。")
                 .font(.system(size: 11))
                 .foregroundStyle(Tw.gray400)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -957,7 +957,7 @@ struct ActWallSheet: View {
                 Button {
                     askRepair = true
                 } label: {
-                    pill(icon: "wrench.and.screwdriver.fill", text: "一键修复",
+                    pill(icon: "wrench.and.screwdriver.fill", text: "修一下",
                          on: false, busy: false)
                 }
                 .buttonStyle(PressStyle())
@@ -993,7 +993,7 @@ struct ActWallSheet: View {
                 Button {
                     Task { await refreshPack() }
                 } label: {
-                    pill(icon: "arrow.down.circle", text: "台子上多了 \(labDone - (pack?.acts.count ?? 0)) 条 · 更新到手机",
+                    pill(icon: "arrow.down.circle", text: "服务器上多了 \(labDone - (pack?.acts.count ?? 0)) 条 · 更新到手机",
                          on: true, busy: false)
                 }
                 .buttonStyle(PressStyle())
@@ -1038,7 +1038,7 @@ struct ActWallSheet: View {
             return "整套生成：" + g.line
         }
         if let j = actJobs.first(where: { !$0.isDone && !$0.isBad }) {
-            return "抠像：" + (j.display?.isEmpty == false ? j.display! : (j.name ?? "")) + " · " + j.line
+            return "去掉背景：" + (j.display?.isEmpty == false ? j.display! : (j.name ?? "")) + " · " + j.line
         }
         if let bad = actJobs.first(where: { $0.isBad }) {
             return "有一段没成：" + (bad.err?.isEmpty == false ? bad.err! : (bad.stage ?? ""))
@@ -1094,7 +1094,7 @@ struct ActWallSheet: View {
     // MARK: 一键修复 / 改格 / 删格 / 换视频
 
     private func repair(force: Bool) async {
-        hint = force ? "正在叫台子把每一条都重抠一遍…" : "正在叫台子修卡住的那些…"
+        hint = force ? "正在叫服务器把每一条都重做一遍…" : "正在叫服务器修卡住的那些…"
         do {
             hint = try await ActLab.actRepair(charId: char.id, force: force)
             await refreshLab()
@@ -1107,7 +1107,7 @@ struct ActWallSheet: View {
         hint = "正在把「\(labelOf(from))」改到「\(labelOf(to))」…"
         do {
             try await ActLab.actRename(charId: char.id, name: from, to: to)
-            hint = "改好了 · 台子要重打一遍包，约半分钟"
+            hint = "改好了 · 服务器要重新整理一遍，约半分钟"
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             await refreshPack()
         } catch {
@@ -1142,7 +1142,7 @@ struct ActWallSheet: View {
                 upNote = "这段视频读不出来 —— 换一段（要相册里的视频，不是照片）"
                 return
             }
-            upNote = "正在传给台子…"
+            upNote = "正在传给服务器…"
             let msg = try await ActLab.replaceVideo(charId: char.id, slot: slot, video: box.url)
             try? FileManager.default.removeItem(at: box.url)
             upNote = ""
@@ -1169,10 +1169,10 @@ struct ActWallSheet: View {
                 return
             }
             let mb = (try? FileManager.default.attributesOfItem(atPath: box.url.path)[.size] as? Int64) ?? 0
-            upNote = "正在传 \(max(1, mb / 1_048_576)) MB… 传完台子就开始抠"
+            upNote = "正在传 \(max(1, mb / 1_048_576)) MB… 传完服务器就开始去掉背景"
             let j = try await ActLab.submitVideo(charId: char.id, video: box.url)
             try? FileManager.default.removeItem(at: box.url)
-            upNote = "收到了 · \(j.display ?? j.name ?? "这条动作") 正在抠像"
+            upNote = "收到了 · \(j.display ?? j.name ?? "这条动作") 正在去掉背景"
             actJobs = [j] + actJobs
             // 一上传完就盯紧一点
             await refreshLab()
@@ -1190,7 +1190,7 @@ struct ActWallSheet: View {
             let r = try await ActLab.genStart(charId: char.id)
             genJob = r.job
             UserDefaults.standard.set(r.job, forKey: GenModel.key(char.id))
-            genState = ActLab.GenJob.stub(stage: "下单了，台子正在排队（\(r.acts.count) 条）")
+            genState = ActLab.GenJob.stub(stage: "下单了，服务器正在排队（\(r.acts.count) 条）")
             await refreshLab()
         } catch {
             genBusy = false
@@ -1580,7 +1580,7 @@ struct NewRoleSheet: View {
                         Button("先不加", role: .cancel) {}
                     }
 
-                    Text("做动作花的是这个号的额度。号在你手机上交，台子只记着用哪个。")
+                    Text("做动作花的是这个号的额度。号在你手机上登录，服务器只记着用哪个。")
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1784,7 +1784,7 @@ struct AddModelSheet: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
 
-                    Text("钥匙先留在台子上。等这台机器把它接上，"
+                    Text("钥匙先存在服务器上。等那边接好了，"
                          + "这里会亮成「已接好」，那时候就能挑它来做。")
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)

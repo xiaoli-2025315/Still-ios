@@ -806,7 +806,7 @@ struct HerPane: View {
 
                 HStack(spacing: 10) {
                     tile("背包", "别人给它的东西", "bag.fill") { showBag = true }
-                    tile("工作台", "台子的网页画布", "square.grid.2x2.fill") { showWork = true }
+                    tile("工作台", "服务器上的网页画布", "square.grid.2x2.fill") { showWork = true }
                 }
                 .padding(.bottom, 10)
 
@@ -1032,7 +1032,7 @@ struct CommPane: View {
     private var loadingView: some View {
         VStack(spacing: 10) {
             ProgressView()
-            Text("正在从台子上取…")
+            Text("正在从服务器上取…")
                 .font(.system(size: 12))
                 .foregroundStyle(Tw.gray400)
         }
@@ -1091,7 +1091,7 @@ struct RankPane: View {
             if feed.loading && feed.staff.isEmpty {
                 VStack(spacing: 10) {
                     ProgressView()
-                    Text("正在从台子上取…")
+                    Text("正在从服务器上取…")
                         .font(.system(size: 12))
                         .foregroundStyle(Tw.gray400)
                 }

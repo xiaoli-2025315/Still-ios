@@ -42,9 +42,9 @@ extension ActLab {
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("台子说 HTTP \(http.statusCode)：\(snipText(data))")
+            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snipText(data))")
         }
         return data
     }
@@ -67,9 +67,9 @@ extension ActLab {
             req.httpBody = Data()
         }
         let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到台子的回话") }
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("台子说 HTTP \(http.statusCode)：\(snipText(data))")
+            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snipText(data))")
         }
         return data
     }
@@ -120,13 +120,13 @@ extension ActLab {
         let d = try await rawPost("/api/login/session",
                                   body: ["cookie": cookie, "ua": ua, "name": name])
         let m = try? JSONDecoder().decode(Msg.self, from: d)
-        if let m, !m.isOK { throw LabError(m.text.isEmpty ? "台子没收这份登录态" : m.text) }
+        if let m, !m.isOK { throw LabError(m.text.isEmpty ? "服务器没认这个登录" : m.text) }
     }
 
     static func loginForget() async throws {
         let d = try await rawPost("/api/login/clear")
         let m = try? JSONDecoder().decode(Msg.self, from: d)
-        if let m, !m.isOK { throw LabError(m.text.isEmpty ? "台子没换掉账号" : m.text) }
+        if let m, !m.isOK { throw LabError(m.text.isEmpty ? "服务器没换掉账号" : m.text) }
     }
 
     /// 体检：豆包认不认这份登录态。返回一句人话。
@@ -226,7 +226,7 @@ extension ActLab {
             throw LabError((o?["错误"] as? String) ?? "生成服务拒了这一单")
         }
         guard let jid = o?["job"] as? String, !jid.isEmpty else {
-            throw LabError("没拿到生成任务号（回的是：\(snipText(d))）")
+            throw LabError("没拿到单号（回的是：\(snipText(d))）")
         }
         return (jid, (o?["acts"] as? [String]) ?? [])
     }
@@ -243,7 +243,7 @@ extension ActLab {
             throw LabError((o?["错误"] as? String) ?? "没修起来")
         }
         let n = (o?["重抠"] as? [Any])?.count ?? (o?["排上"] as? [Any])?.count ?? 0
-        return n > 0 ? "排上了 \(n) 条，重新抠一遍（不花额度）" : "已经排上了，台子会一条条重抠"
+        return n > 0 ? "排上了 \(n) 条，重新抠一遍（不花额度）" : "已经排上了，服务器会一条条重做"
     }
 
     /// 改格：把这一格改到另一个标准动作上（机器认错了、或者你自己想换）。

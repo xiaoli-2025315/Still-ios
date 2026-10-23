@@ -167,7 +167,13 @@ final class StudioModel: ObservableObject {
     @Published var err = ""
 
     @Published var sitPct = 0
+    /// 坐立**整条走完**了：生成 → 抠图 → 抽帧回来、手机真能播。
+    /// ★ 只有它为真，才放行「确认，继续做其它动作」。
     @Published var sitReady = false
+    /// 台子说抠好了、正在把片子取回来（这时候框里还是加载态，不许亮「好了」）
+    @Published var sitFetching = false
+    /// 现在在等什么（排队／机器忙／没接活）—— 直接显示给他看，别让他以为坏了
+    @Published var wait = ""
     @Published var stage2 = false
     @Published var allDone = false
     @Published var leftover = 0
@@ -225,12 +231,33 @@ final class StudioModel: ObservableObject {
             hasSit = m.names.contains("sit")
         }
         if hasSit {
-            sitReady = true
-            note = ""
-            if have > 1 { stage2 = true }
+            // ★★★ 2026-10-23（他点名的）：**第一页就干一件事 —— 等坐立真的走完**。
+            //   台子上有 ≠ 手机能播：还得取回来、解得开才算。
+            //   ★ 别的动作已经有一些了，也**不许自动进第二阶段** ——
+            //     必须他亲自点「确认」。
+            _ = have
+            note = "正在把坐立接回来…"
+            await prefetchSit()
             return
         }
         await order("sit")
+    }
+
+    /// 坐立成片在台子上的地址（跟大框里放的是**同一条**，别下两遍）。
+    /// ★ 宽度跟大框里那张**用同一档**（520）—— 不然要下一遍两份。
+    private var sitURL: URL? { GifView.makeURL(charId, "sit", width: 520) }
+
+    /// 台子说「抠好了」不等于手机能播 —— 真的取回来、解得出帧，才算这一条做好了。
+    func prefetchSit() async {
+        if sitReady || sitFetching { return }
+        sitFetching = true
+        defer { sitFetching = false }
+        guard let u = sitURL else { return }
+        guard let (d, _) = try? await URLSession.shared.data(from: u),
+              let src = CGImageSourceCreateWithData(d as CFData, nil),
+              CGImageSourceGetCount(src) > 0 else { return }
+        sitReady = true
+        note = ""
     }
 
     /// 下一单。`action` 留空 = 词库全做（机器自己会跳过已经有的）。
@@ -265,33 +292,54 @@ final class StudioModel: ObservableObject {
 
     // MARK: 把机器的进度画上去
 
+    /// 还没开工的时候，告诉用户「在等什么」—— 他原话：
+    /// 「因为他正在排队但用户不知道…这样用户才不会感觉我们的APP坏了或者很慢」。
+    private func waitLine(_ j: ActLab.GenJob) -> String {
+        guard j.queued == true else { return "" }
+        if j.gateOff == true {
+            let why = (j.gateWhy ?? "").trimmingCharacters(in: .whitespaces)
+            return "机器这会儿没接活" + (why.isEmpty ? "" : "（\(why)）") + " —— 你的单已经排上了，一开就做"
+        }
+        let ahead = j.ahead ?? 0
+        if ahead > 0 { return "前面还有 \(ahead) 条在做 —— 轮到它就自动开始" }
+        if j.busy == true { return "机器正忙着别的角色 —— 一空出来就轮到它" }
+        return "排上队了，马上开始"
+    }
+
     private func apply(_ j: ActLab.GenJob) {
         err = ""
+        wait = waitLine(j)
+        if !wait.isEmpty { note = wait }
+
         let each = j.each ?? []
-        var sitOk = false
+        var sitMatte = false
         var doneN = 0
         for s in each {
             let act = s.act ?? ""
             if s.matteDone { doneN += 1 }
-            if act == "sit", s.matteDone {
-                sitOk = true
-                sitPct = 100
-            }
             if act == "sit" {
-                if !sitOk { sitPct = s.pct ?? sitPct }
-            } else {
-                if s.matteDone {
-                    done.insert(act)
-                    pct[act] = 100
-                } else {
-                    pct[act] = s.pct ?? 0
+                if s.matteDone { sitMatte = true; sitPct = 100 }
+                else if j.queued != true {
+                    let p = s.pct ?? 0
+                    if p > 0 { sitPct = max(sitPct, p) }
+                    // ★ 生成阶段台子没有百分比：让它一点点往前走（最多 90），
+                    //   别死停在 0 让人以为卡死了。
+                    else { sitPct = min(90, sitPct + 2) }
                 }
+                continue
+            }
+            if s.matteDone {
+                done.insert(act)
+                pct[act] = 100
+            } else {
+                pct[act] = s.pct ?? 0
             }
         }
 
-        if sitOk && !sitReady {
-            sitReady = true
-            note = ""
+        // ★ 抠好了 ⇒ 去把片子接回来；**接到能播**才算做好（见 prefetchSit）。
+        //   注意别在这里先把 sitFetching 设成 true —— prefetchSit 开头就拿它当闸门。
+        if sitMatte && !sitReady {
+            Task { await prefetchSit() }
         }
 
         let fin = (j.allDone == true) || (j.matteAllDone == true)
@@ -309,7 +357,8 @@ final class StudioModel: ObservableObject {
             done.insert(n)
             pct[n] = 100
         }
-        if m.names.contains("sit") { sitReady = true }
+        // ★ 墙上有坐立 ≠ 手机能播 —— 还是走同一条「取回来、解得开」的判定
+        if m.names.contains("sit") { await prefetchSit() }
     }
 
     /// 这一批里有几条已经做好了（分母用的是词库条数，别写死数字）
@@ -436,7 +485,8 @@ struct RoleStudioView: View {
                     Text("坐立")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Tw.gray900)
-                    Text(m.note.isEmpty ? "机器正在画 · 画好这一条再来问你" : m.note)
+                    Text(m.sitFetching ? "做好了，正在把它接回来…"
+                         : (m.note.isEmpty ? "机器正在画 · 画好这一条再来问你" : m.note))
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)
                         .multilineTextAlignment(.center)

@@ -31,6 +31,8 @@ struct RoleHomeView: View {
     @State private var repairNote = ""
     @State private var showAdd = false
     @State private var watching: String?
+    /// 一条动作都没有时那两句 —— 「还没开始做」／「前面还有几条在做」
+    @State private var queueLine = ""
 
     private var has: [(key: String, label: String)] {
         ActLab.official.filter { names.contains($0.key) }
@@ -54,6 +56,7 @@ struct RoleHomeView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     grid
+                    if names.isEmpty { emptyState }
                     Spacer(minLength: 20)
                 }
                 .padding(.horizontal, 16)
@@ -208,6 +211,31 @@ struct RoleHomeView: View {
         }
     }
 
+    /// 一条都没有的时候：告诉他在等什么（排队／机器忙／还没开始），
+    /// 并且给他一颗直接去看的键 —— ★ 他原话：
+    /// 「因为他正在排队但用户不知道…这样用户才不会感觉我们的APP坏了或者很慢」。
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Text(queueLine.isEmpty ? "这一只还没开始做动作。" : queueLine)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Tw.gray500)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button { onStudio() } label: {
+                Text(queueLine.isEmpty ? "让它开始做" : "去看做到哪了")
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(Tw.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Tw.red600))
+            }
+            .buttonStyle(PressStyle())
+        }
+        .padding(.top, 6)
+    }
+
     /// ★ 第一格永远是它 —— 他要的「加号在第一个位置」，不用翻到列表底下去找。
     private var addCell: some View {
         Button { showAdd = true } label: {
@@ -266,6 +294,18 @@ struct RoleHomeView: View {
             err = ""
         } catch {
             err = "没取到它有哪些动作：" + error.localizedDescription
+        }
+        // 一条都没有 ⇒ 顺手问一句「它现在是在做、还是排在别人后面」
+        if names.isEmpty, let g = try? await ActLab.genMine(), let j = g.of(char.id), j.queued == true {
+            if j.gateOff == true {
+                queueLine = "排上队了 —— 机器这会儿没接活，一开就做"
+            } else if (j.ahead ?? 0) > 0 {
+                queueLine = "前面还有 \(j.ahead ?? 0) 条在做 —— 轮到它就自动开始"
+            } else if j.busy == true {
+                queueLine = "机器正忙着别的角色 —— 一空出来就轮到它"
+            } else {
+                queueLine = "正在做 —— 做好一格就冒出来一格"
+            }
         }
         loading = false
     }

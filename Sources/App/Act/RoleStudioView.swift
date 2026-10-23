@@ -296,9 +296,9 @@ final class StudioModel: ObservableObject {
     /// 「因为他正在排队但用户不知道…这样用户才不会感觉我们的APP坏了或者很慢」。
     private func waitLine(_ j: ActLab.GenJob) -> String {
         guard j.queued == true else { return "" }
+        // ★ 闸门那行原因（"不是本人下单，先止血"那种）是给机器自己看的，不该糊到用户脸上。
         if j.gateOff == true {
-            let why = (j.gateWhy ?? "").trimmingCharacters(in: .whitespaces)
-            return "机器这会儿没接活" + (why.isEmpty ? "" : "（\(why)）") + " —— 你的单已经排上了，一开就做"
+            return "机器这会儿没接活 —— 你的单已经排上了，一开就做"
         }
         let ahead = j.ahead ?? 0
         if ahead > 0 { return "前面还有 \(ahead) 条在做 —— 轮到它就自动开始" }

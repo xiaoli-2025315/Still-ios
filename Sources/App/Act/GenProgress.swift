@@ -126,7 +126,7 @@ final class GenModel: ObservableObject {
         busy = true
         err = nil
         do {
-            note = try await ActAPI.genDecide(job: job, 选: 选)
+            note = try await ActLab.genDecide(job: job, 选: 选)
             await poll()
         } catch {
             err = "没办成：\(error.localizedDescription)"

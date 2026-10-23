@@ -40,6 +40,9 @@ struct RoleHomeView: View {
     ///   他说过不止一次：「我点了接着做，退出去就像没点过，只能再下一单」。
     ///   所以这一页只要它在做，就必须把「已经下了这一单」挂在明面上。
     @State private var inFlight: [String] = []
+    /// ★★★ 2026-10-23：这一趟卡在链路哪一段。以前只写「已经在做了」，
+    ///   可豆包生成那 3–5 分钟里他根本看不出是在等，还是会怀疑没点上。
+    @State private var flightWord = ""
 
     private var has: [(key: String, label: String)] {
         ActLab.official.filter { names.contains($0.key) }
@@ -208,7 +211,8 @@ struct RoleHomeView: View {
                 HStack(spacing: 6) {
                     Circle().fill(Color(hex: 0xB45309)).frame(width: 6, height: 6)
                     Text("正在做：\(inFlight.prefix(3).joined(separator: "、"))"
-                         + (inFlight.count > 3 ? " 等 \(inFlight.count) 条" : ""))
+                         + (inFlight.count > 3 ? " 等 \(inFlight.count) 条" : "")
+                         + (flightWord.isEmpty ? "" : " · \(flightWord)"))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Color(hex: 0xB45309))
                 }
@@ -226,6 +230,25 @@ struct RoleHomeView: View {
         ActLab.official.filter { !names.contains($0.key) }.count
     }
 
+    /// 这一趟现在卡在链路哪一段 —— 大白话，取值全是机器真的写进去的字。
+    private func stageWord(of j: ActLab.GenJob) -> String {
+        var gen = false, queued = false, any = false
+        for s in j.each ?? [] {
+            let t = s.stage ?? ""
+            any = true
+            if s.matteDone { continue }
+            if t.contains("抠") || t.contains("抽帧") || t.contains("打包") { return "正在抠背景" }
+            if t.contains("已发送") || t.contains("生成") || t.contains("落盘") || t.contains("送进") {
+                gen = true
+            } else if t.contains("排队") {
+                queued = true
+            }
+        }
+        if gen { return "豆包正在生成，一条大概 3–5 分钟" }
+        if queued { return "排着队，轮到它就开始" }
+        return any ? "" : ""
+    }
+
     private var continueCard: some View {
         // ★★★ 2026-10-23（「下单回执」）：这一只**已经在做**的时候，
         //   这颗键不许再写「接着做剩下的 N 个」—— 那是在邀请他再下一单。
@@ -238,7 +261,9 @@ struct RoleHomeView: View {
                 Text(busy ? "看看做到哪了" : "接着做剩下的 \(missingActs) 个")
                     .font(.system(size: busy ? 13.5 : 14.5, weight: .semibold))
                     .foregroundStyle(busy ? Color(hex: 0xB45309) : Tw.white)
-                Text(busy ? "已经在做了：\(doing) —— 这一单下过了，不用再点"
+                Text(busy ? "这一单已经下过了：\(doing)"
+                          + (flightWord.isEmpty ? "" : " · \(flightWord)")
+                          + " —— 不用再点"
                           : "趴下、舔毛、睡觉这些基础动作还没做")
                     .font(.system(size: 10.5))
                     .foregroundStyle(busy ? Color(hex: 0x92400E) : Tw.white.opacity(0.8))
@@ -414,12 +439,17 @@ struct RoleHomeView: View {
         // ★★★ 2026-10-23（下单回执）：不管做没做齐，只要这只猫**有一趟还在跑/在排**，
         //   就把「正在做哪几条」挂出来。退出再进来还在，直到它真的做完。
         inFlight = []
+        flightWord = ""
         if let g = try? await ActLab.genMine() {
             for list in [g.当前, g.队列] {
                 for j in list ?? [] where j.char == char.id {
-                    let doing = (j.acts ?? []).map { label(of: $0) }
+                    // ★ 只报「还没做好」的那几条 —— 已经好了的不用再占这行字
+                    let open = (j.each ?? []).filter { $0.matteDone != true }
+                        .map { label(of: $0.act ?? "") }
+                    let doing = open.isEmpty ? (j.acts ?? []).map { label(of: $0) } : open
                     if !doing.isEmpty { inFlight = doing }
                     else if inFlight.isEmpty { inFlight = ["这一批"] }
+                    flightWord = stageWord(of: j)
                 }
             }
         }

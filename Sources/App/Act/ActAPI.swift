@@ -174,6 +174,18 @@ extension ActLab {
         return "回去收片了（不花额度）"
     }
 
+    /// ★ 2026-10-23（他要的）：**做不出来的那几条，由他一句话定夺**。
+    /// - `选` 只有两种：`明天自动`（额度刷新了机器自己补）/ `放弃`（这条以后不提了）
+    /// - `act` 留空 = 这一趟所有悬着的条一起按这个办。
+    static func genDecide(job: String, act: String = "", 选: String) async throws -> String {
+        var q: [String: String] = ["job": job, "选": 选]
+        if !act.isEmpty { q["act"] = act }
+        let d = try await rawPost("/api/gen/decide", query: q, timeout: 60)
+        let m = try? JSONDecoder().decode(Msg.self, from: d)
+        if let m, !m.isOK { throw LabError(m.text.isEmpty ? "没办成" : m.text) }
+        return 选 == "放弃" ? "知道了 —— 这几条以后不再提" : "约好了 —— 明天额度刷新了机器自己补上"
+    }
+
     /// 只补一条动作（省额度用）。action 为空 = 整批。
     static func genStart(charId: String, action: String = "", replace: Bool = false) async throws -> (job: String, acts: [String]) {
         var body: [String: Any] = ["char": charId]

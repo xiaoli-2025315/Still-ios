@@ -139,6 +139,17 @@ enum ActLab {
         /// 这一趟没做、留给下一批的 —— 按钮写成「接着做下一批（还有 N 段）」
         let leftover: [String]?
 
+        /// ★★★ 2026-10-23（他要的）：**做不出来的那几条** —— 由他一句话定夺。
+        ///   以前这些条（今天的免费额度用完了 / 豆包在等他点确认）只会让整趟
+        ///   一直挂着"还在跑"，永远不收尾。现在单独拎出来给他两颗键。
+        struct Pending: Decodable, Identifiable {
+            let act: String?
+            let why: String?
+            var id: String { act ?? UUID().uuidString }
+            enum CodingKeys: String, CodingKey { case act; case why = "为什么" }
+        }
+        let pending: [Pending]?
+
         struct GenSeg: Decodable, Identifiable {
             let act: String?
             let stage: String?
@@ -184,6 +195,7 @@ enum ActLab {
             case each     = "每条"
             case redo     = "可重收"
             case leftover = "剩"
+            case pending  = "要你定的"
         }
 
         /// ★★★ 这一版修的那件事：台子把「已经停了」的趟次统一钳到 1%。

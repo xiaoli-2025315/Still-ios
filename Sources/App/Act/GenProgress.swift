@@ -118,6 +118,21 @@ final class GenModel: ObservableObject {
         }
         busy = false
     }
+
+    /// ★ 2026-10-23（他要的）：那些做不出来的条，**由他说了算** ——
+    ///   `明天自动`＝明天额度刷新了机器自己补上；`放弃`＝这条以后不再提。
+    func decide(_ 选: String) async {
+        guard !job.isEmpty else { return }
+        busy = true
+        err = nil
+        do {
+            note = try await ActAPI.genDecide(job: job, 选: 选)
+            await poll()
+        } catch {
+            err = "没办成：\(error.localizedDescription)"
+        }
+        busy = false
+    }
 }
 
 @MainActor
@@ -145,6 +160,10 @@ struct GenProgressPage: View {
                     bigCard
                     if let s = model.state, let each = s.each, !each.isEmpty {
                         eachCard(each)
+                    }
+                    // ★ 2026-10-23：有做不出来的条 ⇒ 停在这儿等他一句话（不再一直转圈）
+                    if let pd = model.state?.pending, !pd.isEmpty {
+                        decideCard(pd)
                     }
                     if let e = model.err {
                         Text(e)
@@ -387,6 +406,46 @@ struct GenProgressPage: View {
         .background(Tw.white.overlay(alignment: .top) {
             Rectangle().fill(Tw.gray200).frame(height: 0.5)
         })
+    }
+
+    /// ★ 2026-10-23（他要的）：**做不出来那几段的处置卡** —— 两颗键，他说了算。
+    ///   以前这些段只会让整趟一直挂着"还在跑"，永远不收尾。
+    private func decideCard(_ list: [ActLab.GenJob.Pending]) -> some View {
+        let why = list.compactMap { $0.why }.first ?? ""
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("有 \(list.count) 段没做出来")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(Tw.gray900)
+            if !why.isEmpty {
+                Text(why)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.gray500)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("已经做好的那些在墙上随时能用。差的这几段你说了算：")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Tw.gray500)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button { Task { await model.decide("明天自动") } } label: {
+                    pill("明天有额度了自动做", on: true, busy: model.busy)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(model.busy)
+
+                Button { Task { await model.decide("放弃") } } label: {
+                    pill("这段不要了", on: false, busy: model.busy)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(model.busy)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Tw.white)
+        )
     }
 
     private func pill(_ text: String, on: Bool, busy: Bool) -> some View {

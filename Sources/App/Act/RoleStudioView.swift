@@ -222,9 +222,22 @@ final class StudioModel: ObservableObject {
         }
     }
 
+    /// 这一只猫在后台**已经有一趟在跑、或者排在队里**。
+    ///
+    /// ★★★ 2026-10-23（他原话，归成「下单回执」这一类）：
+    ///   「我点击一次这个按钮之后，他确实出现了制作没错，但当我退出了这个页面之后，
+    ///     他就消失了…后厨已经在做了，但我验证他做的方式却是要在下一单」。
+    ///   ⇒ 进制作页时，只要这只猫已经有一趟，就不许再下一单。
+    private func hasRunningBatch() async -> Bool {
+        guard let m = try? await ActLab.genMine() else { return false }
+        for list in [m.当前, m.队列] {
+            for j in list ?? [] where j.char == charId { return true }
+        }
+        return false
+    }
+
     /// 机器上没有这一趟 ⇒ 看动作墙上已经做到哪儿了，决定「下一批坐立」还是「直接进第二阶段」。
-    private func autoStart() async {
-        if Date() < quietUntil { return }
+    private func autoStart() async {        if Date() < quietUntil { return }
         lookedAtWall = true
         quietUntil = Date().addingTimeInterval(5)
 
@@ -232,6 +245,13 @@ final class StudioModel: ObservableObject {
         if skipToStage2 && !stage2 {
             stage2 = true
             await prefetchSit()
+            // ★★★ 2026-10-23（「下单回执」）：这一只**已经在跑/在排**了，就只挂进度，
+            //   绝不再下一单 —— 他退出去再进来一次，以前等于又下一单，
+            //   而他根本没法知道上一单到底开没开工。
+            if await hasRunningBatch() {
+                note = "这一批已经在做了，不用再点"
+                return
+            }
             await order("")
             return
         }

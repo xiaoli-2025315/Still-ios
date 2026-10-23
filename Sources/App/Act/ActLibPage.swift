@@ -54,6 +54,10 @@ struct ActLibPage: View {
 
     @State private var showNew = false
     @State private var watching: ActLab.Char?
+    /// ★ 2026-10-23：建完角色直接进生产页（不再让他自己去动作墙里找）
+    @State private var studio: ActLab.Char?
+    /// 正在「用它」的那只（下包要一会儿，按钮上要转圈）
+    @State private var usingId = ""
     /// 正在问「真要删吗」的那一只（非 nil 就弹确认框）
     @State private var askingDrop: ActLab.Char?
     /// 删 / 放回来 失败时的一句人话（显示在列表上方，不弹第二个 alert）
@@ -118,17 +122,19 @@ struct ActLibPage: View {
             NewRoleSheet { c in
                 await model.load()
                 guard let c else { return }
-                // ★ 登记完直接把这只的动作墙打开 —— 他的原话是
-                //   「在 APP 上直接制作新的一个角色并可以取回来使用」，
-                //   所以「建完就接着做」这一步不该让他自己再点一次。
-                //   等半秒是为了让上面这张表先收干净，两张表同时开会互相吃掉。
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                watching = c
+                // ★ 2026-10-23：建完不落地到列表让他自己找 —— 直接进生产页做坐立。
+                //   等这半秒是为了让上面这张表先收干净，两张表同时开会互相吃掉。
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                studio = c
             }
             .presentationDetents([.large])
         }
+        .sheet(item: $studio) { c in
+            RoleStudioView(char: c)
+                .presentationDetents([.large])
+        }
         .sheet(item: $watching) { c in
-            ActWallSheet(char: c) { await model.load() }
+            RoleHomeView(char: c, showcase: false)
                 .presentationDetents([.large])
         }
         // ★ 删角色：先问一次，并把后果说成人话（几条动作一起撤、手机上那份也会清、能不能恢复）。
@@ -286,6 +292,25 @@ struct ActLibPage: View {
 
             Spacer(minLength: 0)
 
+            // ★★★ 2026-10-23（他要的）：每只猫右边一颗「用它」——
+            //   点了就把这只的动作包下下来、把手机里住着的那只换成它。
+            //   已经在用的那颗写「在用」，灰底、点不动（不是隐藏，让他看得见状态）。
+            Button {
+                Task { await useIt(c) }
+            } label: {
+                HStack(spacing: 4) {
+                    if usingId == c.id { ProgressView().scaleEffect(0.55) }
+                    Text(store.isCurrent(c.id) ? "在用" : (usingId == c.id ? "在换…" : "用它"))
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(store.isCurrent(c.id) ? Tw.gray500 : Tw.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(store.isCurrent(c.id) ? Tw.gray200 : Tw.red600))
+            }
+            .buttonStyle(PressStyle(scale: 0.95))
+            .disabled(store.isCurrent(c.id) || !usingId.isEmpty)
+
             // ★★★ 2026-10-21（他的原话：「现在已经做了的角色删除不了，给角色加一个整个删除」）：
             //   这里是那只「整个删掉」的键。**常驻、不按条件藏** —— 只有样板不给删
             //   （台子也会拒）。字必须是「删掉」三个字：只画一个垃圾桶，他不会觉得那是能点的。
@@ -325,6 +350,19 @@ struct ActLibPage: View {
         // 套在一起的话点删除会连带把动作墙也打开。
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture { watching = c }
+    }
+
+    /// 换成这一只：下包 → 换过去。失败就说人话，不装作换好了。
+    private func useIt(_ c: ActLab.Char) async {
+        if !usingId.isEmpty { return }
+        usingId = c.id
+        defer { usingId = "" }
+        do {
+            let p = try await CatPackStore.shared.install(charId: c.id)
+            CatPackStore.shared.use(p)
+        } catch {
+            opErr = "换到「\(c.title)」没成：" + error.localizedDescription
+        }
     }
 
     /// 通道标签：台子上有三种值 —— official（台子自带样板）/ free / paid。
@@ -1346,12 +1384,52 @@ struct NewRoleSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
-    @State private var channel = "free"
+    /// ★ 2026-10-23：新链路里没有「免费/付费通道」那张卡了 —— 建角色就是要它做动作。
+    ///   `channel` 还留着给台子（那边按它决定要不要生成整套）。
+    @State private var channel = "paid"
     @State private var picked: PhotosPickerItem?
     @State private var photo: Data?
     @State private var photoName = ""
     @State private var busy = false
     @State private var err: String?
+
+    // ★ 2026-10-23（他要的）：模型 + 豆包号两条下拉。
+    //   模型现在只有一个（跟安卓一模一样），下拉里就一项 —— 但入口要在，
+    //   以后多一个模型，这里加一行就行，不用改页面。
+    @State private var models = ["豆包 · Seedance 2.0 mini"]
+    @State private var modelName = "豆包 · Seedance 2.0 mini"
+    @State private var slot = "1"
+    @State private var accounts: [Acc] = []
+
+    struct Acc: Identifiable {
+        let slot: String
+        let name: String
+        let ok: Bool
+        var id: String { slot }
+    }
+
+    private var slotLabel: String {
+        if let a = accounts.first(where: { $0.slot == slot }) {
+            return "\(a.name) · \(a.ok ? "已登录" : "没登录")"
+        }
+        return "豆包\(slot) · 还没登号"
+    }
+
+    private func dropdownRow(_ s: String) -> some View {
+        HStack(spacing: 8) {
+            Text(s)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Tw.gray900)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Tw.gray400)
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 13)
+        .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Tw.gray100))
+    }
 
     var body: some View {
         NavigationStack {
@@ -1405,16 +1483,45 @@ struct NewRoleSheet: View {
                         .foregroundStyle(Tw.gray400)
                         .padding(.top, 6)
 
-                    Text("它走哪条通道")
+                    Text("用哪个模型")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Tw.gray500)
                         .padding(.top, 20)
-                        .padding(.bottom, 8)
+                        .padding(.bottom, 6)
 
-                    HStack(spacing: 8) {
-                        chanBox("免费", "自己传动作视频\n我们免费帮你抠像", "free")
-                        chanBox("付费", "平台按角色照片\n帮你生成整套动作", "paid")
+                    Menu {
+                        ForEach(models, id: \.self) { m in
+                            Button(m) { modelName = m }
+                        }
+                    } label: {
+                        dropdownRow(modelName)
                     }
+
+                    Text("用哪个豆包号")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Tw.gray500)
+                        .padding(.top, 16)
+                        .padding(.bottom, 6)
+
+                    Menu {
+                        if accounts.isEmpty {
+                            Button("豆包1 · 还没登号") { slot = "1" }
+                        } else {
+                            ForEach(accounts, id: \.slot) { a in
+                                Button("\(a.name) · \(a.ok ? "已登录" : "没登录")") {
+                                    slot = a.slot
+                                }
+                            }
+                        }
+                    } label: {
+                        dropdownRow(slotLabel)
+                    }
+
+                    Text("做动作花的是这个号的额度。号在你手机上交，台子只记着用哪个。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Tw.gray400)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 6)
 
                     if let e = err {
                         Text(e)
@@ -1429,7 +1536,7 @@ struct NewRoleSheet: View {
                     } label: {
                         HStack(spacing: 8) {
                             if busy { ProgressView().tint(.white) }
-                            Text(busy ? "正在登记…" : "登记这个角色")
+                            Text(busy ? "正在登记…" : "下一步")
                                 .font(.system(size: 15, weight: .semibold))
                         }
                         .foregroundStyle(Tw.white)
@@ -1443,8 +1550,8 @@ struct NewRoleSheet: View {
                     .disabled(!canSubmit)
                     .padding(.top, 22)
 
-                    Text("登记完，这只就出现在台子的角色表里。"
-                         + "免费那条要你自己在动作墙里传 12 段视频；付费那条台子按照片生成。")
+                    Text("点「下一步」就进去做动作：先做一条坐立给你看，"
+                         + "你点头它才接着把别的动作一条条做出来。")
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1457,6 +1564,7 @@ struct NewRoleSheet: View {
             .background(Tw.gray50.ignoresSafeArea())
             .navigationTitle("登记一个新角色")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await loadAccounts() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("先不登记") { dismiss() }
@@ -1470,33 +1578,22 @@ struct NewRoleSheet: View {
         !busy && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photo != nil
     }
 
-    private func chanBox(_ title: String, _ sub: String, _ value: String) -> some View {
-        let on = channel == value
-        return Button {
-            channel = value
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Tw.gray900)
-                Text(sub)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Tw.gray500)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(on ? Tw.red600.opacity(0.06) : Tw.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(on ? Tw.red600 : Tw.gray200, lineWidth: on ? 1.6 : 1)
-                    )
-            )
+    /// 台子上记着哪些豆包号。拿不到就空着 —— 显示「还没登号」，不装作有。
+    private func loadAccounts() async {
+        guard let d = try? await ActLab.rawGet("/api/login/accounts", timeout: 15),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let arr = o["账号"] as? [[String: Any]] else { return }
+        var out: [Acc] = []
+        for x in arr {
+            let s = (x["slot"] as? String) ?? "1"
+            let n = (x["名字"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "豆包\(s)"
+            let ok = (x["登着没"] as? Bool) ?? false
+            out.append(Acc(slot: s, name: n, ok: ok))
         }
-        .buttonStyle(PressStyle())
+        accounts = out
+        if !out.isEmpty, !out.contains(where: { $0.slot == slot }) {
+            slot = out[0].slot
+        }
     }
 
     // MARK: - 选照片
@@ -1566,8 +1663,8 @@ struct MovieBox: Transferable {
 extension ActLab.GenJob {
     /// 本地先摆一句「下单了」用，别等台子回话才有字。
     static func stub(stage: String, progress: Int? = nil, failed: Bool = false) -> ActLab.GenJob {
-        ActLab.GenJob(job: nil, stage: nil, phase: stage, msg: nil, progress: progress,
-                      allDone: nil, failed: failed ? true : nil, done: nil,
+        ActLab.GenJob(job: nil, char: nil, stage: nil, phase: stage, msg: nil, progress: progress,
+                      allDone: nil, matteAllDone: nil, failed: failed ? true : nil, done: nil,
                       acts: nil, each: nil, redo: nil, leftover: nil, pending: nil)
     }
 }

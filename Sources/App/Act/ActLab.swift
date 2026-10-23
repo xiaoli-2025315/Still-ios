@@ -123,6 +123,8 @@ enum ActLab {
 
     struct GenJob: Decodable {
         let job: String?
+        /// 这一趟是给哪只猫做的 —— 生产页要在「我所有的趟次」里挑出这只的那一刻
+        let char: String?
         /// 机器内部的阶段码（准备形象图 / 生成中 / 送进台子 / 抠像中…）
         let stage: String?
         /// 给人看的那句（「豆包正在画（已发 3/12 条）」这种）
@@ -130,6 +132,8 @@ enum ActLab {
         let msg: String?
         let progress: Int?
         let allDone: Bool?
+        /// 整套连抠像都完了 —— 跟 `allDone`（画完了）不是一回事，生产页两样都要认
+        let matteAllDone: Bool?
         let failed: Bool?
         let done: Bool?
         let acts: [String]?
@@ -188,10 +192,11 @@ enum ActLab {
         }
 
         enum CodingKeys: String, CodingKey {
-            case job, stage, msg, acts, failed, done
+            case job, char, stage, msg, acts, failed, done
             case phase    = "阶段"
             case progress = "进度"
             case allDone  = "全完成"
+            case matteAllDone = "抠像完成"
             case each     = "每条"
             case redo     = "可重收"
             case leftover = "剩"

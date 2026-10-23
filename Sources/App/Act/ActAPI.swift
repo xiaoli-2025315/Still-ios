@@ -159,6 +159,35 @@ extension ActLab {
         try JSONDecoder().decode(GenHealth.self, from: try await rawGet("/api/gen/health"))
     }
 
+    /// ★ 2026-10-23：**我这些趟现在都在哪**（不分角色）。
+    ///   台子回三段：`当前`（正在跑）/ `队列`（排着）/ `最近`（跑完的）。
+    ///   生产页靠它找「这只猫那一趟」：正在跑优先，其次最近一条没彻底完成的。
+    struct Mine: Decodable {
+        let 当前: [GenJob]?
+        let 队列: [GenJob]?
+        let 最近: [GenJob]?
+
+        /// 这只猫的那一趟。★ 已经彻底完成的只当兜底 —— 有没做完的，先看没做完的。
+        func of(_ charId: String) -> GenJob? {
+            var fallback: GenJob?
+            for list in [当前, 队列, 最近] {
+                for j in list ?? [] {
+                    guard j.char == charId else { continue }
+                    if j.allDone == true || j.matteAllDone == true {
+                        if fallback == nil { fallback = j }
+                        continue
+                    }
+                    return j
+                }
+            }
+            return fallback
+        }
+    }
+
+    static func genMine() async throws -> Mine {
+        try JSONDecoder().decode(Mine.self, from: try await rawGet("/api/gen", timeout: 25))
+    }
+
     static func genStop(job: String) async throws -> String {
         let d = try await rawPost("/api/gen/stop", query: ["job": job])
         let m = try? JSONDecoder().decode(Msg.self, from: d)

@@ -188,9 +188,13 @@ final class StudioModel: ObservableObject {
     private var quietUntil = Date.distantPast
     private var lookedAtWall = false
 
-    init(char: ActLab.Char) {
+    /// ★ 从动作库「接着做剩下的 N 个」进来：坐立早有了，别再摆一遍等坐立那一屏
+    let skipToStage2: Bool
+
+    init(char: ActLab.Char, skipToStage2: Bool = false) {
         charId = char.id
         charName = char.title
+        self.skipToStage2 = skipToStage2
         jobId = UserDefaults.standard.string(forKey: "still.genjob." + char.id) ?? ""
     }
 
@@ -223,6 +227,14 @@ final class StudioModel: ObservableObject {
         if Date() < quietUntil { return }
         lookedAtWall = true
         quietUntil = Date().addingTimeInterval(5)
+
+        // ★ 从「接着做剩下的 N 个」进来 ⇒ 直接进第二半，坐立那一屏不再走一遍
+        if skipToStage2 && !stage2 {
+            stage2 = true
+            await prefetchSit()
+            await order("")
+            return
+        }
 
         var hasSit = false
         var have = 0
@@ -307,6 +319,10 @@ final class StudioModel: ObservableObject {
     }
 
     private func apply(_ j: ActLab.GenJob) {
+        // ★ 第二阶段里，「只做过坐立」的那条旧单还挂在「最近」里 —— 它永远写着全完成，
+        //   会把这一页骗成「整套都好了」。这种单一律不认。
+        if stage2, let e = j.each, e.count == 1, (e[0].act ?? "") == "sit" { return }
+
         err = ""
         wait = waitLine(j)
         if !wait.isEmpty { note = wait }
@@ -376,9 +392,9 @@ struct RoleStudioView: View {
     /// 全套好了 ⇒ 完成页（就在这一页上面叠着开，关掉还回得来）
     @State private var showHome = false
 
-    init(char: ActLab.Char) {
+    init(char: ActLab.Char, stage2: Bool = false) {
         self.char = char
-        _m = StateObject(wrappedValue: StudioModel(char: char))
+        _m = StateObject(wrappedValue: StudioModel(char: char, skipToStage2: stage2))
     }
 
     var body: some View {

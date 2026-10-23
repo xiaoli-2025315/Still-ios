@@ -19,7 +19,10 @@ struct RoleHomeView: View {
     let char: ActLab.Char
     /// true = 刚做完，先给看完成页；false = 直接进动作库
     var showcase: Bool = false
-    /// 「去把剩下的动作做出来」 —— 完成页里那颗键
+    /// ★ 2026-10-23（他第三次说层级）：从**角色列表**点进来先看「大框」——
+    ///   大框里是它的坐立动图，**点这个大框才进动作库**。
+    var home: Bool = false
+    /// 「去把剩下的动作做出来」 —— 完成页 / 动作库里那颗键
     var onStudio: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
@@ -41,13 +44,20 @@ struct RoleHomeView: View {
     /// 完成页 → 动作库。★ 用一个本地开关翻过去，不重新开页（重开页会把上面那只重置一下）。
     @State private var leftShowcase = false
     private var isShowcase: Bool { showcase && !leftShowcase }
+    /// 「这一只」那一屏（大框）—— 点过框就翻成动作库
+    private var isHome: Bool { home && !leftShowcase }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if isShowcase { showcaseCard } else { topBox }
+                    if isHome {
+                        homeCard
+                    } else {
+                        if isShowcase { showcaseCard } else { topBox }
+                    }
+                    // ★ 自救口常驻 —— 大框那一屏也得有（他从来找不到藏在二级页里的东西）
                     repairBar
                     if !err.isEmpty {
                         Text(err)
@@ -55,8 +65,11 @@ struct RoleHomeView: View {
                             .foregroundStyle(Tw.red600)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    grid
-                    if names.isEmpty { emptyState }
+                    if !isHome {
+                        grid
+                        if names.isEmpty { emptyState }
+                        if missingActs > 0 { continueCard }
+                    }
                     Spacer(minLength: 20)
                 }
                 .padding(.horizontal, 16)
@@ -101,10 +114,11 @@ struct RoleHomeView: View {
             .buttonStyle(PressStyle(scale: 0.9))
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(isShowcase ? char.title : "动作库")
+                Text((isHome || isShowcase) ? char.title : "动作库")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Tw.gray900)
-                Text(isShowcase ? "它已经住进你手机了" : "\(char.title) · \(names.count) 条动作")
+                Text(isHome ? "点下面那个框，看它会做的所有动作"
+                     : (isShowcase ? "它已经住进你手机了" : "\(char.title) · \(names.count) 条动作"))
                     .font(.system(size: 11))
                     .foregroundStyle(Tw.gray400)
             }
@@ -146,8 +160,73 @@ struct RoleHomeView: View {
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Tw.white))
     }
 
-    /// 完成页 → 动作库
+    /// 完成页 / 这一只（大框）→ 动作库
     private func showcaseOff() { leftShowcase = true }
+
+    // MARK: 「这一只」—— 一个大框
+
+    /// ★ 他原话：「角色点进去应该是一个大框，大框是坐立的那个动态动作展示，
+    ///   然后点击这个大框才会进入角色的动作库」。
+    /// ⇒ 这一屏只有这一个框，点它才翻到动作库。别在这儿塞格子、塞按钮。
+    private var homeCard: some View {
+        VStack(spacing: 10) {
+            Button { showcaseOff() } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Tw.gray100)
+                    if names.contains("sit") {
+                        GifView(url: GifView.makeURL(char.id, "sit", width: 720))
+                            .padding(12)
+                    } else {
+                        VStack(spacing: 9) {
+                            Image(systemName: "pawprint.fill")
+                                .font(.system(size: 26))
+                                .foregroundStyle(Tw.gray300)
+                            Text("它还没开始做动作\n点这个框进去，就能让它开始")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Tw.gray400)
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(3)
+                        }
+                    }
+                }
+                .frame(height: 360)
+            }
+            .buttonStyle(PressStyle(scale: 0.98))
+
+            Text("点这个框，看它会做的所有动作")
+                .font(.system(size: 12))
+                .foregroundStyle(Tw.gray400)
+        }
+        .padding(.top, 2)
+    }
+
+    // MARK: 还有基础动作没做 —— 给他一个接着做的口子
+
+    /// ★ 他问的：「他做完坐立之后其他的基础动作怎么办？只剩下一个添加新动作的窗口了」
+    /// ⇒ 11 条没做齐之前，动作库这一页**必须**有这颗键。
+    private var missingActs: Int {
+        ActLab.official.filter { !names.contains($0.key) }.count
+    }
+
+    private var continueCard: some View {
+        Button { onStudio() } label: {
+            VStack(spacing: 4) {
+                Text("接着做剩下的 \(missingActs) 个")
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(Tw.white)
+                Text("趴下、舔毛、睡觉这些基础动作还没做")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Tw.white.opacity(0.8))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Tw.red600))
+        }
+        .buttonStyle(PressStyle())
+        .padding(.top, 4)
+    }
 
     // MARK: 动作库顶上那个小动态框
 

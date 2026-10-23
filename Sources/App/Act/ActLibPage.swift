@@ -56,6 +56,8 @@ struct ActLibPage: View {
     @State private var watching: ActLab.Char?
     /// ★ 2026-10-23：建完角色直接进生产页（不再让他自己去动作墙里找）
     @State private var studio: ActLab.Char?
+    /// 从动作库「接着做剩下的 N 个」进来 —— 生产页直接从「其余动作」那一半开始
+    @State private var studioStage2 = false
     /// 正在「用它」的那只（下包要一会儿，按钮上要转圈）
     @State private var usingId = ""
     /// 正在问「真要删吗」的那一只（非 nil 就弹确认框）
@@ -125,17 +127,24 @@ struct ActLibPage: View {
                 // ★ 2026-10-23：建完不落地到列表让他自己找 —— 直接进生产页做坐立。
                 //   等这半秒是为了让上面这张表先收干净，两张表同时开会互相吃掉。
                 try? await Task.sleep(nanoseconds: 500_000_000)
+                studioStage2 = false
                 studio = c
             }
             .presentationDetents([.large])
         }
         .sheet(item: $studio) { c in
-            RoleStudioView(char: c)
+            RoleStudioView(char: c, stage2: studioStage2)
                 .presentationDetents([.large])
         }
         .sheet(item: $watching) { c in
-            RoleHomeView(char: c, showcase: false)
-                .presentationDetents([.large])
+            // ★ 点一只 ⇒ 先看「这一只」的大框（坐立动图），点大框才进动作库
+            RoleHomeView(char: c, home: true, onStudio: {
+                // 「接着做剩下的 N 个」⇒ 关掉大框页，直接进生产页的第二半
+                watching = nil
+                studioStage2 = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { studio = c }
+            })
+            .presentationDetents([.large])
         }
         // ★ 删角色：先问一次，并把后果说成人话（几条动作一起撤、手机上那份也会清、能不能恢复）。
         //   不弹第二个 alert —— 两个 alert 挂在一个视图上，SwiftUI 只会生效一个，

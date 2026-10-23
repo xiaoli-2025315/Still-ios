@@ -1400,6 +1400,8 @@ struct NewRoleSheet: View {
     @State private var modelName = "豆包 · Seedance 2.0 mini"
     @State private var slot = "1"
     @State private var accounts: [Acc] = []
+    /// 下拉条里那颗「添加豆包账号」—— 点开就是登一个新号的那页
+    @State private var showLogin = false
 
     struct Acc: Identifiable {
         let slot: String
@@ -1513,6 +1515,14 @@ struct NewRoleSheet: View {
                                 }
                             }
                         }
+                        // ★★★ 2026-10-23（他的原话）：「这个下拉条里根本没有添加按钮，
+                        //   这个添加就是让用户用来添加豆包账号的」
+                        //   ⇒ 加号就在他眼前，不用跑到别处去加。
+                        Button {
+                            showLogin = true
+                        } label: {
+                            Label("添加豆包账号", systemImage: "plus")
+                        }
                     } label: {
                         dropdownRow(slotLabel)
                     }
@@ -1565,6 +1575,14 @@ struct NewRoleSheet: View {
             .navigationTitle("登记一个新角色")
             .navigationBarTitleDisplayMode(.inline)
             .task { await loadAccounts() }
+            // ★ 登完一个新号回来，下拉条里要出现它
+            .sheet(isPresented: $showLogin) {
+                DoubaoLoginPage()
+                    .presentationDetents([.large])
+            }
+            .onChange(of: showLogin) { _, now in
+                if !now { Task { await loadAccounts() } }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("先不登记") { dismiss() }

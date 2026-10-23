@@ -22,6 +22,7 @@ enum Tw {
     static let gray400  = Color(hex: 0x9CA3AF)
     static let gray500  = Color(hex: 0x6B7280)
     static let gray600  = Color(hex: 0x4B5563)
+    static let gray700  = Color(hex: 0x374151)
     static let gray900  = Color(hex: 0x111827)
     static let red600   = Color(hex: 0xDC2626)
     static let green500 = Color(hex: 0x22C55E)

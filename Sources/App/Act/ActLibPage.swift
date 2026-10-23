@@ -1393,15 +1393,21 @@ struct NewRoleSheet: View {
     @State private var busy = false
     @State private var err: String?
 
-    // ★ 2026-10-23（他要的）：模型 + 豆包号两条下拉。
-    //   模型现在只有一个（跟安卓一模一样），下拉里就一项 —— 但入口要在，
-    //   以后多一个模型，这里加一行就行，不用改页面。
-    @State private var models = ["豆包 · Seedance 2.0 mini"]
+    // ★★★ 2026-10-23（他的原话）：「就是要合并成一条，并且要加一个添加按钮
+    //   在这个下拉条下面，用来添加新模型和新的豆包账号」。
+    //   以前是两条（用哪个模型 · 用哪个豆包号）—— 现在**一条就定下这两样**，
+    //   下面一颗「＋ 添加」：加新豆包号 / 加新模型，二选一。
+    @State private var models: [Mdl] = [Mdl(id: "doubao", 名字: "豆包 · Seedance 2.0 mini", 接没接通: true)]
+    @State private var modelId = "doubao"
     @State private var modelName = "豆包 · Seedance 2.0 mini"
     @State private var slot = "1"
     @State private var accounts: [Acc] = []
-    /// 下拉条里那颗「添加豆包账号」—— 点开就是登一个新号的那页
+    /// 下拉条下面那颗「＋ 添加」点了之后：选加什么
+    @State private var showAddWhat = false
+    /// 加豆包号＝登一个新号
     @State private var showLogin = false
+    /// 加模型＝填名字 + 它的钥匙
+    @State private var showAddModel = false
 
     struct Acc: Identifiable {
         let slot: String
@@ -1410,11 +1416,53 @@ struct NewRoleSheet: View {
         var id: String { slot }
     }
 
-    private var slotLabel: String {
+    struct Mdl: Identifiable {
+        let id: String
+        let 名字: String
+        let 接没接通: Bool
+    }
+
+    private var acctLabel: String {
         if let a = accounts.first(where: { $0.slot == slot }) {
             return "\(a.name) · \(a.ok ? "已登录" : "没登录")"
         }
         return "豆包\(slot) · 还没登号"
+    }
+
+    /// 下拉条上现在写着什么：模型 + 号。只有一个模型时就不重复写模型名了。
+    private var comboLabel: String {
+        let m = models.first(where: { $0.id == modelId })
+        let tag = (m?.接没接通 == false) ? "（还没接好）" : ""
+        if models.count > 1, let m { return "\(m.名字) · \(acctLabel)\(tag)" }
+        return acctLabel + tag
+    }
+
+    /// 下拉里那一列：一个「模型 × 豆包号」一行。
+    private var comboRows: [(String, String, String)] {
+        var out: [(String, String, String)] = []
+        let list = accounts.isEmpty ? [Acc(slot: "1", name: "豆包1", ok: false)] : accounts
+        for m in models {
+            for a in list {
+                let tag = m.接没接通 ? "" : "（还没接好）"
+                let t = models.count > 1 ? "\(m.名字) · \(a.name) · \(a.ok ? "已登录" : "没登录")\(tag)"
+                                         : "\(a.name) · \(a.ok ? "已登录" : "没登录")\(tag)"
+                out.append((t, m.id, a.slot))
+            }
+        }
+        return out
+    }
+
+    private func pickCombo(_ r: (String, String, String)) {
+        if let m = models.first(where: { $0.id == r.1 }), !m.接没接通 {
+            // ★ 不做假按钮：还没接好的模型选了也不装作能用 —— 明说，手上还是拿豆包做。
+            err = "「\(m.名字)」还没接好 —— 先用豆包给你做"
+            if let first = models.first(where: { $0.接没接通 }) { modelId = first.id; modelName = first.名字 }
+        } else {
+            modelId = r.1
+            modelName = models.first(where: { $0.id == r.1 })?.名字 ?? modelName
+            err = nil
+        }
+        slot = r.2
     }
 
     private func dropdownRow(_ s: String) -> some View {
@@ -1485,46 +1533,42 @@ struct NewRoleSheet: View {
                         .foregroundStyle(Tw.gray400)
                         .padding(.top, 6)
 
-                    Text("用哪个模型")
+                    Text("用哪个来做")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Tw.gray500)
                         .padding(.top, 20)
                         .padding(.bottom, 6)
 
                     Menu {
-                        ForEach(models, id: \.self) { m in
-                            Button(m) { modelName = m }
+                        ForEach(comboRows, id: \.0) { r in
+                            Button(r.0) { pickCombo(r) }
                         }
                     } label: {
-                        dropdownRow(modelName)
+                        dropdownRow(comboLabel)
                     }
 
-                    Text("用哪个豆包号")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Tw.gray500)
-                        .padding(.top, 16)
-                        .padding(.bottom, 6)
-
-                    Menu {
-                        if accounts.isEmpty {
-                            Button("豆包1 · 还没登号") { slot = "1" }
-                        } else {
-                            ForEach(accounts, id: \.slot) { a in
-                                Button("\(a.name) · \(a.ok ? "已登录" : "没登录")") {
-                                    slot = a.slot
-                                }
-                            }
+                    // ★★★ 2026-10-23（他的原话）：「要加一个添加按钮在这个下拉条下面，
+                    //   用来添加新模型和新的豆包账号」—— 加号就在下拉条下面，不用跑到别处。
+                    Button { showAddWhat = true } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("添加新模型 / 新豆包号")
+                                .font(.system(size: 13, weight: .semibold))
                         }
-                        // ★★★ 2026-10-23（他的原话）：「这个下拉条里根本没有添加按钮，
-                        //   这个添加就是让用户用来添加豆包账号的」
-                        //   ⇒ 加号就在他眼前，不用跑到别处去加。
-                        Button {
-                            showLogin = true
-                        } label: {
-                            Label("添加豆包账号", systemImage: "plus")
-                        }
-                    } label: {
-                        dropdownRow(slotLabel)
+                        .foregroundStyle(Tw.gray700)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(Tw.gray300, lineWidth: 1)
+                        )
+                    }
+                    .padding(.top, 8)
+                    .confirmationDialog("添加什么", isPresented: $showAddWhat, titleVisibility: .visible) {
+                        Button("添加豆包账号") { showLogin = true }
+                        Button("添加新模型") { showAddModel = true }
+                        Button("先不加", role: .cancel) {}
                     }
 
                     Text("做动作花的是这个号的额度。号在你手机上交，台子只记着用哪个。")
@@ -1574,7 +1618,7 @@ struct NewRoleSheet: View {
             .background(Tw.gray50.ignoresSafeArea())
             .navigationTitle("登记一个新角色")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await loadAccounts() }
+            .task { await loadAccounts(); await loadModels() }
             // ★ 登完一个新号回来，下拉条里要出现它
             .sheet(isPresented: $showLogin) {
                 DoubaoLoginPage()
@@ -1582,6 +1626,11 @@ struct NewRoleSheet: View {
             }
             .onChange(of: showLogin) { _, now in
                 if !now { Task { await loadAccounts() } }
+            }
+            // ★ 加一个新模型
+            .sheet(isPresented: $showAddModel) {
+                AddModelSheet { Task { await loadModels() } }
+                    .presentationDetents([.medium])
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -1612,6 +1661,27 @@ struct NewRoleSheet: View {
         accounts = out
         if !out.isEmpty, !out.contains(where: { $0.slot == slot }) {
             slot = out[0].slot
+        }
+    }
+
+    /// 这台机器上有哪些模型 —— 他自己加的那些也会在这里出现。拿不到就只留内置那个。
+    private func loadModels() async {
+        guard let d = try? await ActLab.rawGet("/api/gen/models", timeout: 15),
+              let obj = try? JSONSerialization.jsonObject(with: d),
+              let o = obj as? [String: Any],
+              let arr = o["模型"] as? [[String: Any]] else { return }
+        var out: [Mdl] = []
+        for x in arr {
+            let id = (x["id"] as? String) ?? ""
+            let n = (x["名字"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "没名字的模型"
+            let on = (x["接没接通"] as? Bool) ?? false
+            out.append(Mdl(id: id, 名字: n, 接没接通: on))
+        }
+        guard !out.isEmpty else { return }
+        models = out
+        if !out.contains(where: { $0.id == modelId }) {
+            modelId = out[0].id
+            modelName = out[0].名字
         }
     }
 
@@ -1650,6 +1720,124 @@ struct NewRoleSheet: View {
             await onDone(c)
         } catch {
             err = "登记失败：\(error.localizedDescription)"
+        }
+        busy = false
+    }
+}
+
+
+// MARK: - 添加新模型
+//
+// ★★★ 2026-10-23（他的原话）：「添加按钮…用来添加新模型和新的豆包账号」。
+//   ★ 存是真存、列表里是真出现 —— 但**接没接好不骗人**：
+//   刚记下的模型机器还没真拿它做过东西，所以标「还没接好」，
+//   选它的时候明说「先用豆包给你做」。
+
+struct AddModelSheet: View {
+
+    var onDone: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var key = ""
+    @State private var busy = false
+    @State private var err: String?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("它叫什么")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Tw.gray500)
+                        .padding(.bottom, 6)
+
+                    TextField("比如 方舟 · Seedance", text: $name)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Tw.gray900)
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Tw.gray100))
+                        .autocorrectionDisabled()
+
+                    Text("它的钥匙（key）")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Tw.gray500)
+                        .padding(.top, 18)
+                        .padding(.bottom, 6)
+
+                    TextField("没有就先空着", text: $key)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Tw.gray900)
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Tw.gray100))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+
+                    Text("钥匙先留在台子上。等这台机器把它接上，"
+                         + "这里会亮成「已接好」，那时候就能挑它来做。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Tw.gray400)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
+
+                    if let e = err {
+                        Text(e)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Tw.red600)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 14)
+                    }
+
+                    Button { Task { await save() } } label: {
+                        HStack(spacing: 8) {
+                            if busy { ProgressView().tint(.white) }
+                            Text(busy ? "正在记…" : "记下来")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        .foregroundStyle(Tw.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(canSave ? Tw.red600 : Tw.gray300))
+                    }
+                    .disabled(!canSave)
+                    .padding(.top, 22)
+
+                    Spacer(minLength: 30)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+            }
+            .background(Tw.gray50.ignoresSafeArea())
+            .navigationTitle("添加新模型")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("算了") { dismiss() }
+                        .foregroundStyle(Tw.gray500)
+                }
+            }
+        }
+    }
+
+    private var canSave: Bool {
+        !busy && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func save() async {
+        let nm = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nm.isEmpty else { return }
+        busy = true
+        err = nil
+        do {
+            _ = try await ActLab.rawPost("/api/gen/models",
+                                         body: ["名字": nm, "钥匙": key.trimmingCharacters(in: .whitespacesAndNewlines)])
+            dismiss()
+            onDone()
+        } catch {
+            err = "没记下来：\(error.localizedDescription)"
         }
         busy = false
     }

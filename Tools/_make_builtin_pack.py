@@ -38,10 +38,15 @@ OUT = os.path.join(ROOT, 'out', 'builtin_pack')
 DEST = os.path.join(ROOT, '..', 'Resources', 'builtin_pack.zip')
 EXE = imageio_ffmpeg.get_ffmpeg_exe()
 
-FW, FH = 384, 216        # 包里的帧尺寸（跟台子的包完全一致）
+# ★ 这几个数可以用环境变量压小 —— 从这台机器往 GitHub 推大文件时链路很慢，
+#   8.6MB 推到一半会被重置，所以给一档「小包」：(PACK_FPS=10 PACK_W=320 PACK_H=180 PACK_Q=60 PACK_MAX=100)
+FW = int(os.environ.get("PACK_W", "384"))
+FH = int(os.environ.get("PACK_H", "216"))
+QUALITY = int(os.environ.get("PACK_Q", "72"))
+MAXF = int(os.environ.get("PACK_MAX", "0"))     # 0 = 每段全要
 CAT_H = 0.72             # 猫高占帧高
 GROUND = 0.90            # 脚线占帧高
-FPS = 15                 # 帧率（跟小窗喂帧的频率一样，再高也看不出来）
+FPS = int(os.environ.get("PACK_FPS", "15"))   # 帧率（跟小窗喂帧的频率一样，再高也看不出来）
 REF = '坐立张望'          # 基准段：用它定「猫多大、站哪儿」
 
 # 台子上的动作名 ← 本地素材目录名
@@ -101,6 +106,10 @@ def plan():
 
 
 def build(k, fw, fh, ox, oy, check_only=False):
+    # ★ 上一轮的文件必须先清掉：帧数会变（15fps→10fps、151 帧→90 帧），
+    #   不清的话旧的第 90~150 帧会被一起打进 zip —— 体积翻三倍，而且帧数对不上。
+    import shutil
+    shutil.rmtree(os.path.join(OUT, 'acts'), ignore_errors=True)
     os.makedirs(OUT, exist_ok=True)
     man_acts = []
     total = 0
@@ -125,6 +134,8 @@ def build(k, fw, fh, ox, oy, check_only=False):
         raw = proc.stdout
         one = FW * FH * 4
         n = len(raw) // one
+        if MAXF > 0:
+            n = min(n, MAXF)
         if n == 0:
             print('✗ %s：一帧都没解出来（%s）' % (name, proc.stderr[:200]))
             continue
@@ -134,7 +145,7 @@ def build(k, fw, fh, ox, oy, check_only=False):
         for i in range(n):
             im = Image.frombytes('RGBA', (FW, FH), raw[i * one:(i + 1) * one])
             im.save(os.path.join(adir, 'f_%s_%04d.webp' % (name, i)),
-                    'WEBP', quality=72, method=4)
+                    'WEBP', quality=QUALITY, method=4, alpha_quality=70)
         total += n
         man_acts.append({
             'name': name, 'display': display, 'frames': n,

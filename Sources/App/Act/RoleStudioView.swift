@@ -155,6 +155,22 @@ struct RingProgress: View {
     }
 }
 
+/// 生成阶段那层「会呼吸」的底色 —— 他说的「背景是一个动态的，这样有生成的感觉」。
+/// ★ 只是氛围，**不带任何数字**：豆包那边根本不报进度，编一个百分比就是假进度。
+struct GenGlow: View {
+
+    @State private var on = false
+
+    var body: some View {
+        LinearGradient(colors: [Tw.red600.opacity(0.13), Tw.red600.opacity(0.02)],
+                       startPoint: .topLeading,
+                       endPoint: .bottomTrailing)
+            .opacity(on ? 1 : 0.2)
+            .animation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
 // MARK: - 这一趟的账
 
 @MainActor
@@ -180,7 +196,26 @@ final class StudioModel: ObservableObject {
     @Published var pendingCount = 0
     /// 每条动作各到哪了（只有第二阶段才画格子）
     @Published var pct: [String: Int] = [:]
+    /// ★★★ 2026-10-23（他点名）：**每一格现在到底在哪一段**。
+    ///   idle＝还没做 / queued＝排队中 / gen＝豆包正在生成（3–5 分钟，没有百分比）
+    ///   saved＝片子拿到了正在送 / matte＝正在抠背景（**只有这一段有真百分比**）/ warn＝这条没做成
+    ///   以前这里一格都没有，全部画成 0% 的圈 —— 就是在编进度。
+    @Published var st: [String: String] = [:]
+    /// 坐立那一条现在在哪一段（同上；另外 done＝真做好了）
+    @Published var sitStage = ""
     @Published var done: Set<String> = []
+
+    /// 把机器上的原话翻成格子上的一种状态。取值都来自 gen/serve.js、act_queue.py 真写进去的字。
+    static func stateOf(_ stage: String?, _ pct: Int, _ matteDone: Bool) -> String {
+        if matteDone { return "done" }
+        let s = stage ?? ""
+        if s.contains("抠") || s.contains("抽帧") || s.contains("打包") || pct > 0 { return "matte" }
+        if s.contains("送进") || s.contains("落盘") { return "saved" }
+        if s.contains("画好了") { return "done" }
+        if s.contains("已发送") || s.contains("生成") || s.contains("重收") { return "gen" }
+        if s.contains("排队") { return "queued" }
+        return s.isEmpty ? "idle" : "warn"
+    }
 
     private var jobId = ""
     private var alive = true
@@ -349,26 +384,23 @@ final class StudioModel: ObservableObject {
 
         let each = j.each ?? []
         var sitMatte = false
-        var doneN = 0
         for s in each {
             let act = s.act ?? ""
-            if s.matteDone { doneN += 1 }
+            let one = StudioModel.stateOf(s.stage, s.pct ?? 0, s.matteDone)
             if act == "sit" {
-                if s.matteDone { sitMatte = true; sitPct = 100 }
-                else if j.queued != true {
-                    let p = s.pct ?? 0
-                    if p > 0 { sitPct = max(sitPct, p) }
-                    // ★ 生成阶段台子没有百分比：让它一点点往前走（最多 90），
-                    //   别死停在 0 让人以为卡死了。
-                    else { sitPct = min(90, sitPct + 2) }
-                }
+                if s.matteDone { sitMatte = true; sitStage = "done"; sitPct = 100 }
+                // ★ 只有真在抠背景时才动这个数字；生成阶段豆包不报进度，一个数都不编。
+                else if one == "matte" { sitStage = "matte"; sitPct = max(sitPct, s.pct ?? 0) }
+                else { sitStage = one }
                 continue
             }
             if s.matteDone {
                 done.insert(act)
                 pct[act] = 100
+                st[act] = "done"
             } else {
                 pct[act] = s.pct ?? 0
+                st[act] = one
             }
         }
 
@@ -517,7 +549,18 @@ struct RoleStudioView: View {
                 .padding(12)
             } else {
                 VStack(spacing: 12) {
-                    RingProgress(pct: m.sitPct)
+                    if m.sitStage == "matte" {
+                        RingProgress(pct: m.sitPct)
+                    } else {
+                        Text(m.sitStage == "queued" ? "排队中" : "正在生成中")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(m.sitStage == "queued" ? Tw.gray400 : Tw.red600)
+                        if m.sitStage != "queued" {
+                            Text("豆包那边一条大概要 3–5 分钟")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Tw.gray400)
+                        }
+                    }
                     Text("坐立")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Tw.gray900)
@@ -528,6 +571,12 @@ struct RoleStudioView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 18)
                 }
+            }
+        }
+        .overlay {
+            if !m.sitReady && m.sitStage != "matte" && m.sitStage != "queued" {
+                GenGlow().clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .allowsHitTesting(false)
             }
         }
         .frame(height: 320)
@@ -553,18 +602,35 @@ struct RoleStudioView: View {
     private func cell(_ key: String, _ label: String) -> some View {
         let ok = m.done.contains(key)
         let p = m.pct[key] ?? 0
+        let s = m.st[key] ?? "idle"
         return ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Tw.gray100)
             if ok {
                 GifView(url: GifView.makeURL(m.charId, key, width: 260))
                     .padding(6)
-            } else {
+            } else if s == "matte" {
+                // ★ 只有这一段是**我们自己跑的**，才有真百分比
                 VStack(spacing: 7) {
                     RingProgress(pct: p, size: 54, line: 6)
-                    Text("正在做")
+                    Text("正在抠背景")
                         .font(.system(size: 10))
                         .foregroundStyle(Tw.gray400)
+                }
+            } else {
+                ZStack {
+                    if s == "gen" { GenGlow() }
+                    VStack(spacing: 5) {
+                        Text(titleOf(s))
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(s == "gen" ? Tw.red600
+                                             : (s == "warn" ? Color(hex: 0xB45309) : Tw.gray400))
+                        if s == "gen" {
+                            Text("大概 3–5 分钟")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Tw.gray400)
+                        }
+                    }
                 }
             }
             VStack {
@@ -572,7 +638,8 @@ struct RoleStudioView: View {
                 HStack {
                     Text(label)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(ok ? Tw.gray900 : Tw.gray500)
+                        .foregroundStyle(ok ? Tw.gray900
+                                         : (s == "idle" ? Tw.gray400 : Tw.gray500))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(Capsule().fill(Tw.white.opacity(ok ? 0.86 : 0.6)))
@@ -582,7 +649,20 @@ struct RoleStudioView: View {
             }
         }
         .aspectRatio(1.35, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .animation(.easeOut(duration: 0.25), value: ok)
+    }
+
+    /// 格子上那行字 —— 全是大白话，而且**只写机器真的在做的状态**。
+    private func titleOf(_ s: String) -> String {
+        switch s {
+        case "queued": return "排队中"
+        case "gen":    return "正在生成中"
+        case "saved":  return "片子拿到了"
+        case "matte":  return "正在抠背景"
+        case "warn":   return "这条没做成"
+        default:       return "还没做"
+        }
     }
 
     // MARK: 底下那张卡（确认 / 接着做 / 进去看看）

@@ -100,10 +100,33 @@ final class LiveFramePump {
 
     /// 画布边长 —— 跟自带的 mp4 一致（720×720），换猫前后不会跳尺寸。
     private static let canvas = 720
-    /// 猫在画布里的高度占比、地面线，跟 Tools/_pip_compose.py 里那两个常数一致。
-    /// ★ 改了这两个值，自带那只猫和装来的猫就会一大一小 —— 必须一起改。
-    private static let catHRatio = 0.56
+    /// ★★★ 猫在画布里的高度占比（＝帧高在画布上的占比），以及地面线。
+    ///
+    ///   ★ 2026-10-23 改了 0.56 → 0.7778，理由是一条实打实的错配：
+    ///     包里的帧是台子 `act_align.py` 摆过的 —— **猫只占帧高的 72%**
+    ///     （上下各有透明留白）。而这里 `h` 指的是**整帧**的高度，
+    ///     原来取 0.56 ⇒ 猫实际只有 0.56×0.72 = 40% 画布高，比自带那段 mp4（56%）小一圈。
+    ///     现在取 0.56 / 0.72 = 0.7778 ⇒ 猫重新回到 56%，**自带那只和装来的猫一样大**。
+    ///   ★ 这两条线跟 `Tools/_make_builtin_pack.py`（CAT_H=0.72 / GROUND=0.90）
+    ///     是同一套数，改一处必须改另一处，否则换猫时会跳一下大小。
+    private static let catHRatio = 0.7778
     private static let groundRatio = 0.80
+
+    /// 猫贴在画布的哪儿（主页框里抓起来拖的时候用）。
+    /// dx/dy 是 720 画布像素；zoom 是缩放；mirror 是水平翻（往右走时猫脸要朝右）。
+    struct CatPose: Equatable {
+        var dx: Double = 0
+        var dy: Double = 0
+        var zoom: Double = 1
+        var mirror: Bool = false
+    }
+    private var pose = CatPose()
+
+    /// 从外面改姿势。**必须走这条路** —— 帧泵在它自己的串行队列上跑，
+    /// 直接在别的线程写属性是数据竞争（而且这种崩在真机上极难查）。
+    func setPose(_ p: CatPose) {
+        queue.async { [weak self] in self?.pose = p }
+    }
 
     /// 上一帧已经画好的样本。这一拍没取到新帧就重发它 ——
     /// display layer 靠「持续有帧进来」维持播放状态，断供会被判成卡住。
@@ -169,6 +192,7 @@ final class LiveFramePump {
             self.pack = p
             self.actName = ""
             self.framePos = 0
+            self.pose = CatPose()      // 换了猫就回正中 —— 别让它一上来就站在上一只被拖到的位置
             self.lastSample = nil
             self.format = nil
             self.pts = 0
@@ -250,14 +274,11 @@ final class LiveFramePump {
     private func tickOwnCat(_ pack: CatPack, on layer: AVSampleBufferDisplayLayer) {
         let clip = clipSource?() ?? ""
 
-        // 空房 = 它不在。这时只画房间、不画猫。
-        // ★ 这一条不能漏：它走了以后小窗里还蹲着一只，是最露馅的那种 bug。
-        let want: String? = (clip == CatPlayer.emptyClip)
-            ? nil
-            : (Self.clipMap[clip] ?? "sit")
+        // ★ 2026-10-23：空房分支已删 —— 小窗里**永远有猫**（他的原话：「别收窗户，把空房间的概念去掉」）。
+        let want: String = Self.clipMap[clip] ?? "sit"
 
-        if (want ?? "") != actName {
-            actName = want ?? ""
+        if want != actName {
+            actName = want
             framePos = 0
         }
 
@@ -271,7 +292,7 @@ final class LiveFramePump {
     }
 
     /// 房间底图 + 当前这一帧的猫 → 一张 720×720 的像素缓冲。
-    private func compose(_ pack: CatPack, actKey: String?) -> CVPixelBuffer? {
+    private func compose(_ pack: CatPack, actKey: String) -> CVPixelBuffer? {
         guard let room = roomImage else { return nil }
         let S = Self.canvas
 
@@ -311,9 +332,10 @@ final class LiveFramePump {
         let full = CGRect(x: 0, y: 0, width: CGFloat(S), height: CGFloat(S))
         drawUpright(room, in: full, ctx)
 
-        // 猫不在：画完房间就收工
-        if let name = actKey, let act = pack.fallback(for: name) {
-            let h = Double(S) * Self.catHRatio
+        // 画完房间就画猫（猫永远在 —— 空房概念 2026-10-23 已删）
+        if let act = pack.fallback(for: actKey) {
+            let p = pose
+            let h = Double(S) * Self.catHRatio * p.zoom
             let fs = pack.frameSize
             let scale = fs.height > 0 ? h / Double(fs.height) : 1
             let w = Double(fs.width) * scale
@@ -324,9 +346,11 @@ final class LiveFramePump {
                 let foot = act.foot > 0 ? act.foot : Double(fs.height)
                 let footScaled = foot * scale
                 let ground = Double(S) * Self.groundRatio
-                let top = ground - footScaled
-                let x = (Double(S) - w) / 2
-                drawUpright(img, in: CGRect(x: x, y: top, width: w, height: h), ctx)
+                // ★ 2026-10-23：加上「被拖到哪儿」的偏移（p.dx / p.dy）
+                let top = ground - footScaled + p.dy
+                let x = (Double(S) - w) / 2 + p.dx
+                drawUpright(img, in: CGRect(x: x, y: top, width: w, height: h),
+                            ctx, mirror: p.mirror)
             }
 
             // 推进帧号（动作自己的 fps，跟喂帧频率不是一回事）
@@ -354,11 +378,18 @@ final class LiveFramePump {
     ///   · v52 第一版我直接把这段翻删了（以为不翻才正），被自检当场拦下 —— 幸好拦住了。
     ///
     /// 教训：这里的方向别再用眼睛判，改了就跑一次自检。它会告诉你顶上是红还是蓝。
-    private func drawUpright(_ img: CGImage, in r: CGRect, _ ctx: CGContext) {
+    private func drawUpright(_ img: CGImage, in r: CGRect, _ ctx: CGContext, mirror: Bool = false) {
         ctx.saveGState()
         // 把这一段局部翻回 y 朝上：y' = (minY + maxY) - y，区间还是它自己，位置不动。
         ctx.translateBy(x: 0, y: r.minY + r.maxY)
         ctx.scaleBy(x: 1, y: -1)
+        // ★ 2026-10-23：往右走的时候水平翻一下。
+        //   素材里的猫都是**朝左**拍的（跟安卓 `CatSprite.Actor.mirror` 同一条规矩），
+        //   不翻的话它会倒着走。
+        if mirror {
+            ctx.translateBy(x: r.minX + r.maxX, y: 0)
+            ctx.scaleBy(x: -1, y: 1)
+        }
         ctx.draw(img, in: CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height))
         ctx.restoreGState()
     }

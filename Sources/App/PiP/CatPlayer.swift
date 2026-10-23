@@ -36,7 +36,10 @@ final class CatPlayer {
         "roll"          // 翻滚
     ]
 
-    /// 「它走了」—— 只剩一间空房。空房不是没画面，是「只有房间、没有猫」。
+    /// ★★★ 2026-10-23：「它走了 —— 只剩一间空房」这段已删。
+    ///   他的原话：「IOS 别收窗户，就把空房间的概念去掉」。
+    ///   `empty.mp4` **仍然要留在包里** —— 它现在是「房间底图」的来源
+    ///   （`LiveFramePump.loadRoomBG` 从它身上抽一帧），只是不再当画面播。
     static let emptyClip = "empty"
 
     /// 穿进穿出（被拎起 / 悬空）。不进房间轮播 —— 留给以后做落点之间的穿梭动画。
@@ -44,6 +47,8 @@ final class CatPlayer {
 
     // MARK: 状态
 
+    /// 它在这间房。**一旦 true 就不会再变回 false** ——
+    /// 小窗里永远有猫（2026-10-23 删掉空房概念后，这里只是「有没有起来过」的意思）。
     private(set) var isHere = false
     /// 此刻这一段的素材名 —— 界面上要看得出它在播哪一段
     private(set) var currentClip = ""
@@ -110,17 +115,12 @@ final class CatPlayer {
     }
 
     /// 它走了 —— 只剩一间空房。
-    func showEmpty() {
-        guard isHere == true else { return }
-        isHere = false
-        // 被叫了一声还没演完就要走：先把指定播放撤掉，否则空房会被那段顶住。
-        pinTimer?.cancel()
-        pinTimer = nil
-        pinned = false
-        // 它都走了，别让一句旧话留在空房里飘着。
-        SayBubble.shared.hide()
-        restart()
-    }
+    ///
+    /// ★ 2026-10-23 已删（他的原话：「IOS 别收窗户，就把空房间的概念去掉」）。
+    ///   原来它会把 `isHere` 置 false、清掉轮播、切到 `empty` 那段，
+    ///   而 iOS 上它只活在画中画里 ⇒ 用户看到的就是「猫没了，只剩屋子」。
+    ///   现在没有任何一处会调用它。
+    ///   如果以后真要做「它出门」的过场，别从「切空房」做，从一个**看得见的动作**做。
 
     /// App 刚起来：直接把播放推起来，别等切换。
     func startIfNeeded() {
@@ -220,8 +220,9 @@ final class CatPlayer {
     }
 
     private func pick() -> String {
-        guard isHere, !Self.hereClips.isEmpty else { return Self.emptyClip }
         let pool = Self.hereClips
+        // ★ 2026-10-23：原来这里有一句「不在就播空房」，现在猫永远在场，已删。
+        guard !pool.isEmpty else { return Self.emptyClip }
         var name = pool[rng.int(pool.count)]
         // 别连着播同一段
         if name == currentClip, pool.count > 1,

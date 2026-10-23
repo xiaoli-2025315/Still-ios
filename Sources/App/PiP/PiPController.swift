@@ -70,8 +70,45 @@ final class PiPController: NSObject, ObservableObject {
     ///   否则会看到新旧两只猫的影子叠一下。
     @MainActor
     func catSwitched() {
-        let p = CatPackStore.shared.current
-        pump.usePack(p)
+        // ★ 2026-10-23：自带那只现在也有包了（Resources/builtin_pack.zip），
+        //   所以「没装猫」不等于「走 mp4」——只有连内置包都读不出来才回退到 mp4。
+        let store = CatPackStore.shared
+        pump.usePack(store.current ?? store.builtin)
+    }
+
+    // MARK: - 主页框里的「抓起 / 拖动 / 走回中间」（2026-10-23）
+    //
+    // ★ 为什么这件事放主页：iOS **做不到在画中画里点它**
+    //   （小窗收不到触摸，系统的硬限制）。安卓那边点的是桌面上的浮窗，
+    //   iOS 没有对等的东西，所以把这套交互搬到主页那个框里。
+    //
+    // ★ 为什么要把猫的偏移交给帧泵：猫是**画进每一帧**的（房间底图 + 透明猫帧），
+    //   不是一块能自己动的视图。要它跟手，只能改每帧里「猫贴在哪」。
+    //   偏移量用 720 画布坐标，跟 `LiveFramePump.canvas` 同一套单位。
+
+    /// 抓起：立刻停下手里的事开始挣扎（`react` 会把轮播钉住，直到放开）。
+    func grabCat() {
+        cat.react("lifted", seconds: 120)
+    }
+
+    /// 放开：先坐着，别马上又去忙别的（观感是「被你放下，愣了一下」）。
+    func dropCat() {
+        cat.react("sit_look", seconds: 6)
+    }
+
+    /// 往回走的那几秒：钉住走动这段。
+    func pinWalk(_ seconds: Double) {
+        cat.react("walk", seconds: seconds)
+    }
+
+    /// 猫贴在画布的哪儿。dx/dy 是 720 画布的像素偏移，mirror = 往右走时水平翻。
+    func setCatPose(dx: Double, dy: Double, zoom: Double = 1, mirror: Bool = false) {
+        pump.setPose(LiveFramePump.CatPose(dx: dx, dy: dy, zoom: zoom, mirror: mirror))
+    }
+
+    /// 回到中间：偏移清零。
+    func resetCatPose() {
+        pump.setPose(LiveFramePump.CatPose())
     }
 
     private var pip: AVPictureInPictureController?
@@ -84,7 +121,6 @@ final class PiPController: NSObject, ObservableObject {
     /// v43：打字态 —— 画面泵和音频都停了，打完再恢复
     private var quiesced = false
     private var wasPlayingBeforeTyping = false
-    private var ticker: Timer?
     private var clipPoll: Timer?
 
     // MARK: 它跟不跟你 / 什么时候走
@@ -99,8 +135,8 @@ final class PiPController: NSObject, ObservableObject {
     ///   那是「对表」，不是「他按了」—— 不挡住的话，每次小窗一出来就白弹一条通知。
     private var pipStartedAt = Date.distantPast
 
-    /// 小窗什么时候自己收 —— 就是它「想出去别的房间」了。
-    private var closesAt: Date?
+    /// ★ 2026-10-23：`closesAt`（小窗什么时候自己收）已删 ——
+    ///   小窗不再自己收，收不收由用户按那个关闭键决定。详见下面那段注释。
 
     /// 上一次因为「小窗上按了一下」发通知的时间（节流用）
     private var lastAskSentAt = Date.distantPast
@@ -229,7 +265,6 @@ final class PiPController: NSObject, ObservableObject {
 
     func stop() {
         clipPoll?.invalidate(); clipPoll = nil
-        stopTicker()
     }
 
     // MARK: - 建小窗
@@ -316,7 +351,6 @@ final class PiPController: NSObject, ObservableObject {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.active = c.isPictureInPictureActive
-                    if c.isPictureInPictureActive { self.startTicker() } else { self.stopTicker() }
                 }
             }
         ]
@@ -564,41 +598,23 @@ final class PiPController: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - 它走了：小窗自己收
-
-    private func startTicker() {
-        stopTicker()
-        scheduleAutoClose()
-        let t = Timer(timeInterval: 15, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(t, forMode: .common)
-        ticker = t
-    }
-
-    private func stopTicker() {
-        ticker?.invalidate()
-        ticker = nil
-        closesAt = nil
-    }
-
-    /// 它「想出去别的房间」了。
-    ///
-    /// 时长是它自己定的（3~14 分钟，按绝对小时确定性掷）—— 这是第 3 条：
-    /// 延迟是设计，不是你能调的旋钮。
-    private func scheduleAutoClose() {
-        var r = SeededRandom(seed: FNV.hash("still.stay")
-                             ^ UInt32(truncatingIfNeeded: Int(Schedule.hourEpoch)))
-        closesAt = Date().addingTimeInterval(r.range(3.0...14.0) * 60)
-    }
-
-    private func tick() {
-        guard let closesAt, Date() >= closesAt else { return }
-        self.closesAt = nil
-        // 先让它走，再收窗 —— 不留一个「它在里面但窗已经关了」的中间态
-        cat.showEmpty()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.pip?.stopPictureInPicture()
-        }
-    }
+    // MARK: - 原来这里的「它走了 · 小窗自己收」整段已删（2026-10-23）
+    //
+    // ★★★ 他的原话：「IOS 别收窗户，就把空房间的概念去掉」。
+    //
+    //   删掉的是三样东西，它们是一条链、必须一起走：
+    //     ① 定时器（每 15 秒比一次时间）+ `closesAt`；
+    //     ② 到点先 `cat.showEmpty()` 再等 0.5 秒收窗；
+    //     ③ `CatPlayer.pick()` 里「它不在就播空房」那条分支。
+    //
+    //   ★ 为什么整段删而不是「把时间调长」：这套语义是**桌面组件版**留下的
+    //     （桌面上它能在几间房之间走，走了那间空着合理）。iOS 上它只活在画中画里，
+    //     「空房」＝用户看到「猫没了，只剩屋子」。而收窗只要被系统拒一次
+    //     （锁屏 / 拖到屏幕边缘 / 切前台），画面就永久停在空房上 —— ticker 已经停了，不会重试。
+    //
+    //   ★ 现在：小窗只要在，画面里永远有猫；不自动收窗，收不收由用户按那个关闭键决定。
+    //     `empty.mp4` 素材**没删**，它是「房间底图」的来源（LiveFramePump.loadRoomBG），
+    //     只是不再有任何一处会把它当画面播出来。
 
     // MARK: - 把自己送回后台
     //
@@ -646,7 +662,6 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         // 窗口真正出现时系统会把控件重建一遍，这里再压一次。
         applyBareControls(c)
         note = "它在小窗里"
-        startTicker()
 
         // 这一次是「借前台把壳放出来」的 —— 小窗已经出来了，可以把 App 收回后台了。
         // 你原来的事不被打断。
@@ -660,7 +675,10 @@ extension PiPController: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerDidStopPictureInPicture(_ c: AVPictureInPictureController) {
         active = false
-        stopTicker()
+        // ★ 2026-10-23：收窗之后**保证画面里是猫**。
+        //   `showHere()` 自己是幂等的（已经在就什么都不做），所以这句没有副作用；
+        //   留着它是当「自救口」：万一哪天别处又把状态弄丢了，开窗一定是猫。
+        cat.showHere()
         note = possible ? "就绪 · 切出去它就跟上" : "画中画暂时不可用"
         // 停着的时候图层被换了：现在可以安全重绑了。
         if pendingRebuild { rebuild(hint: true) }

@@ -54,6 +54,16 @@ struct WantItem: Decodable, Identifiable {
 private struct StaffResp: Decodable { let staff: [StaffItem]? }
 private struct WantResp: Decodable { let wants: [WantItem]? }
 
+// MARK: - 房间框的边长
+// 拖猫的时候要把手指位移换算成 720 画布的像素，所以得知道框有多大。
+
+private struct StageWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// ★ 这个类**不要**标 `@MainActor`：
 ///   `@StateObject private var feed = LabFeed()` 这个默认值是在 View 的 init 里求值的，
 ///   而 View 的 init 不是主线程隔离的 —— 标了就会报
@@ -492,11 +502,9 @@ struct MainHomeView: View {
                 actionPill("叫它来", primary: false) {
                     Notifier.summonNow()
                 }
-                actionPill("重排提醒", primary: false) {
-                    Notifier.reschedule()
-                }
-            }
-            HStack(spacing: 8) {
+                // ★ 2026-10-23（他的原话）：「重排提醒这些去掉」——
+                //   这一格原来在这儿，是三条路里最后漏掉的一处（另两处：更多网格、房间条）。
+                //   它只是"把通知按行程重算一遍"的排障键，用户看不懂也不会用。
                 actionPill("发一条能打字的通知", primary: false) {
                     Notifier.askInput(after: 1.0)
                     showMe = false
@@ -553,38 +561,185 @@ struct HerPane: View {
     @State private var showDispatch = false
     @State private var showWork = false
 
+    // MARK: 主页框里的「抓起来 / 拖动 / 走回中间」（2026-10-23）
+    /// 框的边长 —— 手指位移要换算成 720 画布的像素，没它就只能按比例瞎猜
+    @State private var stageW: CGFloat = 0
+    /// 猫现在的偏移（720 画布像素，`0,0` = 正中）
+    @State private var catDX: Double = 0
+    @State private var catDY: Double = 0
+    /// 拎起来了没有。没拎起来的时候拖动**不接管手指**（否则主页翻不了页）
+    @State private var grabbing = false
+    /// 松手之后「过一会儿自己走回去」的那一趟
+    @State private var backWork: DispatchWorkItem?
+    /// 往回走时的逐帧推进
+    @State private var walkTimer: Timer?
+
+    /// 拖动：只在「已经拎起来」的时候生效（见框上面那段长注释）
+    private var catDrag: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { v in
+                guard grabbing else { return }
+                let s = stageScale
+                pushPose(dx: catDX + Double(v.translation.width) * s,
+                         dy: catDY + Double(v.translation.height) * s)
+            }
+            .onEnded { v in
+                guard grabbing else { return }
+                let s = stageScale
+                catDX = clampX(catDX + Double(v.translation.width) * s)
+                catDY = clampY(catDY + Double(v.translation.height) * s)
+                dropCat()
+            }
+    }
+
+    /// 框上 1pt 等于画布里的几个像素。
+    private var stageScale: Double {
+        stageW > 0 ? 720.0 / Double(stageW) : 1
+    }
+
+    /// 别让它被拖出画面（拖出屏幕外就找不回来了，而且这一拖是「它不见了」级别的 bug）
+    private func clampX(_ v: Double) -> Double { min(240, max(-240, v)) }
+    private func clampY(_ v: Double) -> Double { min(120, max(-160, v)) }
+
+    private func pushPose(dx: Double, dy: Double, mirror: Bool = false) {
+        pip.setCatPose(dx: dx, dy: dy, zoom: 1, mirror: mirror)
+    }
+
+    /// 点一下框：没拎起来就拎起来，已经拎着就放下。
+    private func tapCat() {
+        if grabbing { dropCat() } else { grabCat() }
+    }
+
+    private func grabCat() {
+        cancelBack()
+        stopWalk()
+        grabbing = true
+        pip.grabCat()          // 立刻开始挣扎（被测到的时候要有反应）
+        SoundKit.shared.meow()
+    }
+
+    /// 放下：先坐在原地，5 秒后自己走回正中。
+    private func dropCat() {
+        grabbing = false
+        pip.dropCat()
+        scheduleWalkBack()
+    }
+
+    private func cancelBack() {
+        backWork?.cancel()
+        backWork = nil
+    }
+
+    private func stopWalk() {
+        walkTimer?.invalidate()
+        walkTimer = nil
+    }
+
+    /// 松手之后那 5 秒。
+    /// ★ 为什么不是马上走：他原话是「持续一段时间后都自动走到中心位置」——
+    ///   放下的那一刻它先坐着缓一下，再自己回去，才像活的东西。
+    private func scheduleWalkBack() {
+        cancelBack()
+        guard catDX != 0 || catDY != 0 else { return }
+        let w = DispatchWorkItem { walkBack() }
+        backWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: w)
+    }
+
+    /// 走回正中。**用走动那段素材，不是滑回去** —— 滑回去看着像在拖图片。
+    private func walkBack() {
+        guard !grabbing else { return }
+        let d = (catDX * catDX + catDY * catDY).squareRoot()
+        if d < 6 {
+            catDX = 0; catDY = 0
+            pushPose(dx: 0, dy: 0)
+            return
+        }
+
+        let secs = min(3.2, max(0.9, d / 220.0))
+        let fromX = catDX, fromY = catDY
+        // 往右走（终点在右边）时把猫翻过来 —— 素材里的猫是朝左拍的
+        let mirror = catDX < 0
+        pip.pinWalk(secs + 0.4)
+
+        stopWalk()
+        let t0 = Date()
+        let t = Timer(timeInterval: 1.0 / 20.0, repeats: true) { timer in
+            // 中途又被拎起来：立刻停，别跟手指抢
+            if grabbing {
+                timer.invalidate()
+                walkTimer = nil
+                return
+            }
+            let p = min(1.0, Date().timeIntervalSince(t0) / secs)
+            // 缓入缓出：起步和收尾都慢一点，看起来像「走」，不像被匀速拖
+            let e = p < 0.5 ? 2 * p * p : 1 - pow(-2 * p + 2, 2) / 2
+            let nx = fromX * (1 - e), ny = fromY * (1 - e)
+            catDX = nx; catDY = ny
+            pushPose(dx: nx, dy: ny, mirror: mirror)
+            if p >= 1 {
+                timer.invalidate()
+                walkTimer = nil
+                catDX = 0; catDY = 0
+                pushPose(dx: 0, dy: 0)
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        walkTimer = t
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
                 // 它的房间
+                //
+                // ★★★ 2026-10-23（他的原话）：「因为 IOS 无法在桌面和画中画互动，
+                //   安卓是可以通过点击浮窗互动的，那把这套互动改到主页去，
+                //   点击抓起以及移动这些都搬到主页那个框框里去」。
+                //
+                //   所以这个框现在能碰了：
+                //     · 点一下 → 拎起来（挣扎），再点一下 / 松手 → 放下；
+                //     · 拎着的时候拖 → 它跟着手指走；
+                //     · 松手后原地待 5 秒 → 自己走回正中。
+                //
+                //   ★ 为什么先「点」再「拖」，而不是一按就能拖：
+                //     这个框在 ScrollView 里。一按就抢触摸的话，**从猫身上起手的滑动
+                //     就再也翻不了页了**（这个框占了大半屏，会变成「主页滑不动」）。
+                //     所以拿起来的动作归「点」，拖动只在「已经拿起来」时接管手指。
+                //
+                //   ★ 原来这里有个长按菜单（带它进现实 / 角色 / 背包 / 派它出门 / 扫一扫…）。
+                //     里边七样**下面每一格都有可见的入口**（角色·带它进现实 / 扫一扫·派它出门 /
+                //     背包·工作台 / 放进小窗·叫它来），所以撤掉不丢功能 ——
+                //     而且长按菜单跟「按住猫」本来就会打架。
                 RoomStage(controller: pip)
                     .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.preference(key: StageWidthKey.self, value: g.size.width)
+                        }
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(Color.clear.contentShape(Rectangle()))
-                    .contextMenu {
-                        Button { SoundKit.shared.meow(); Notifier.summonNow() } label: {
-                            Label("叫它来", systemImage: "hand.wave.fill")
-                        }
-                        Button { pip.toggle() } label: {
-                            Label(pip.active ? "收回小窗" : "放进小窗", systemImage: "pip.fill")
-                        }
-                        Button { showCamera = true } label: {
-                            Label("带它进现实", systemImage: "camera.fill")
-                        }
-                        Button { onRole() } label: {
-                            Label("角色 · 做动作", systemImage: "cat.fill")
-                        }
-                        Button { showBag = true } label: {
-                            Label("猫的背包", systemImage: "bag.fill")
-                        }
-                        Button { showDispatch = true } label: {
-                            Label("派它出门", systemImage: "paperplane.fill")
-                        }
-                        Button { showScan = true } label: {
-                            Label("扫一扫", systemImage: "qrcode.viewfinder")
-                        }
+                    .contentShape(Rectangle())
+                    .onPreferenceChange(StageWidthKey.self) { w in
+                        if w > 0 { stageW = w }
+                    }
+                    .onTapGesture { tapCat() }
+                    .highPriorityGesture(catDrag, including: grabbing ? .all : .subviews)
+                    // 这一页重新出现时，猫回正中 ——
+                    // 界面上的偏移和帧泵里的偏移必须是同一个数，不能一个清零一个还记着
+                    .onAppear {
+                        stopWalk()
+                        cancelBack()
+                        grabbing = false
+                        catDX = 0
+                        catDY = 0
+                        pip.resetCatPose()
+                    }
+                    .onDisappear {
+                        stopWalk()
+                        cancelBack()
                     }
                     .padding(.bottom, 8)
 
@@ -666,8 +821,11 @@ struct HerPane: View {
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
-                    tile("重排提醒", "按行程重算", "bell.fill") { Notifier.reschedule() }
-                    tile("更多", "诊断 · 时间机器", "ellipsis.circle.fill") { openMe() }
+                    // ★ 2026-10-23（他的原话）：「重排提醒这些去掉」。
+                    //   「重排提醒」是给排障用的（按行程把通知重算一遍），
+                    //   普通用户点了看不到任何变化，只会以为没生效。
+                    //   通知本身照旧由 Notifier 在后台按行程排，删这颗键不影响它。
+                    tile("更多", "叫它 · 起名 · 换号", "ellipsis.circle.fill") { openMe() }
                 }
 
                 // 长按那间房 —— 那一手跟安卓的「长按爪印」是同一件事

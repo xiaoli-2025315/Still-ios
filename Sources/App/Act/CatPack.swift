@@ -276,7 +276,26 @@ final class CatPackStore: ObservableObject {
     /// 正在用的那只（nil = App 自带那只）
     @Published private(set) var current: CatPack?
 
+    /// ★★★ 2026-10-23：**自带那只也做成包了**。
+    ///
+    ///   原来它是「猫 + 房间合成在一整段 mp4」里的（Tools/_pip_compose.py 做的），
+    ///   画面能看，但「猫」不是一张能移动的图 —— 主页框里抓不起来、也拖不动。
+    ///
+    ///   现在从 4K 透明原片切一套 384×216 的帧，打成跟台子上一模一样的包
+    ///   （Tools/_make_builtin_pack.py → Resources/builtin_pack.zip）。
+    ///   ⇒ 自带那只和装来的猫走**同一条渲染路**，抓 / 拖 / 走回中心全都成立。
+    ///
+    ///   ★ 它**不占 `current`**（`current == nil` 依然表示「用的是自带那只」），
+    ///     因为界面上一堆地方拿 `current != nil` 判断「装过猫没有」，别去动那个含义。
+    private(set) var builtin: CatPack?
+
+    /// ★ 跟 `CatBrain.builtinId` 是同一个值，只留一份 —— 两处各写一个字符串，
+    ///   迟早有一处改了另一处没改，表现是「钥匙存到了另一个名字下，怎么填都不生效」。
+    static let builtinId = CatBrain.builtinId
+
     private static let keyCurrent = "still.catpack.current"
+    /// 包更新过没有 —— 比字节数，够用且不用记版本号
+    private static let keyBuiltinSize = "still.catpack.builtin.size"
 
     var root: URL {
         let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -288,6 +307,7 @@ final class CatPackStore: ObservableObject {
     }
 
     private init() {
+        builtin = Self.installBuiltinIfNeeded()
         if let id = UserDefaults.standard.string(forKey: Self.keyCurrent), !id.isEmpty {
             let dir = root.appendingPathComponent(id, isDirectory: true)
             if let p = CatPack(dir: dir) {
@@ -298,6 +318,40 @@ final class CatPackStore: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: Self.keyCurrent)
             }
         }
+        // 钥匙挂在「现在这只」名下，先把身份告诉脑子那边
+        CatBrain.currentCharId = current?.id ?? Self.builtinId
+        CatBrain.currentCharTitle = current?.title ?? "自带的那只"
+    }
+
+    /// 把包里带的 `builtin_pack.zip` 落到沙盒里，再按普通包打开。
+    ///
+    /// ★ 为什么先复制、而不是直接从 Bundle 里读 zip：
+    ///   `CatPack` 是拿 `FileHandle` 在 zip 上 seek 的，Bundle 里的文件是只读的、
+    ///   而且升级时会被系统换掉（读到一半被换会崩）。复制一份到沙盒，代价 8.6MB，
+    ///   换来「读的那个文件在 App 活着的时候不会变」。
+    /// ★ 为什么比字节数：包换版本时文件大小几乎一定会变，而记版本号要在两处同步，
+    ///   迟早忘一个 —— 忘了的表现是「装了新版，猫还是旧的」。
+    private static func installBuiltinIfNeeded() -> CatPack? {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("cats", isDirectory: true)
+            .appendingPathComponent(builtinId, isDirectory: true)
+        let zip = dir.appendingPathComponent("pack.zip")
+
+        guard let src = Bundle.main.url(forResource: "builtin_pack", withExtension: "zip") else {
+            return nil
+        }
+        let attrs = try? fm.attributesOfItem(atPath: src.path)
+        let srcSize = (attrs?[.size] as? NSNumber)?.intValue ?? 0
+        let known = UserDefaults.standard.integer(forKey: keyBuiltinSize)
+
+        if !fm.fileExists(atPath: zip.path) || known != srcSize {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? fm.removeItem(at: zip)
+            try? fm.copyItem(at: src, to: zip)
+            UserDefaults.standard.set(srcSize, forKey: keyBuiltinSize)
+        }
+        return CatPack(dir: dir)
     }
 
     func dir(of id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
@@ -373,6 +427,10 @@ final class CatPackStore: ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: Self.keyCurrent)
         }
+        // ★ 换猫 = 换人设，钥匙也要换成那一只的（每只猫一把）
+        CatBrain.currentCharId = pack?.id ?? Self.builtinId
+        CatBrain.currentCharTitle = pack?.title ?? "自带的那只"
+        BrainMemory.shared.clear()
         // 换猫 = 画面源变了，帧泵要重新准备底图和动作表
         PiPController.shared?.catSwitched()
     }

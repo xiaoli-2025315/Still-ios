@@ -118,13 +118,8 @@ struct RoomStageBar: View {
                     refresh(after: 1.2)
                 }
 
-                pill(pending > 0 ? "提醒 · \(pending)" : "重排提醒",
-                     on: false,
-                     filled: false,
-                     enabled: true) {
-                    Notifier.reschedule()
-                    refresh(after: 1.5)
-                }
+                // ★ 2026-10-23：「重排提醒」撤了（他要求）——同一颗键不在这儿留第二个入口。
+                //   pending 计数只服务那颗键，现在也没用了，一起收掉。
             }
         }
         .padding(.horizontal, 14)

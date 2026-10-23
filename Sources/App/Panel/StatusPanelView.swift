@@ -17,6 +17,11 @@ struct StatusPanelView: View {
     ///   那就得让他**看得见**它反馈了，不然改完心里没底。
     @State private var note: String = ""
     @State private var widgetCount: Int? = nil
+    /// ★ 2026-10-23：连接大脑 —— 试一句的结果 + 忙不忙
+    @State private var brainNote: String = ""
+    @State private var brainBusy: Bool = false
+    /// 用户自己接的那把钥匙（按角色存，换猫就能换一把）
+    @State private var brainKey: String = ""
     /// 声音开关（存在手机里，跟着 SoundKit 走）
     @State private var soundOn: Bool = SoundKit.shared.on
     /// 登录制：面板上要显示「现在登的是哪个号」，并且能换号。
@@ -53,6 +58,47 @@ struct StatusPanelView: View {
     private func maskPhone(_ p: String) -> String {
         guard p.count == 11 else { return p }
         return "\(p.prefix(3))****\(p.suffix(4))"
+    }
+
+    /// 现在这只猫的身份 —— 钥匙按它存。
+    /// 没装台子上的猫时用自带那只的身份（`__builtin`）。
+    private var brainCharId: String { CatBrain.currentCharId }
+
+    private var brainCharTitle: String { CatBrain.currentCharTitle }
+
+    /// ★ 2026-10-23：把钥匙记在这只猫名下。
+    private func saveBrainKey() {
+        CatBrain.setKey(brainKey, for: brainCharId)
+        // 换了模型，之前那几句上下文就别带过去了 —— 说话的味儿不一样。
+        BrainMemory.shared.clear()
+        brainNote = brainKey.isEmpty
+            ? "清掉了 · 又回到台子上那把"
+            : "存好了 · 这只猫现在用它自己的钥匙（\(CatBrain.providerLabel(brainKey))）"
+    }
+
+    /// ★ 2026-10-23：连接大脑的自检。
+    ///
+    /// 为什么是「试一句」而不是一个开关：这条路上有三个可能坏的地方
+    /// （手机没网 / 台子没起来 / 钥匙填错了），用户分不出来。
+    /// 让他当场问一句，回来的话是模型味儿还是「喵～」，一眼就分得清。
+    private func tryBrain() {
+        guard !brainBusy else { return }
+        brainBusy = true
+        brainNote = "正在问它…"
+        Task {
+            let r = await CatBrain.replyFromCloud(to: "在吗", catName: engine.catName)
+            let used = CatBrain.providerLabel(CatBrain.key(for: brainCharId))
+            await MainActor.run {
+                brainBusy = false
+                if let r, !r.isEmpty {
+                    brainNote = "会说话了（\(used)）· 它刚回：\(r)"
+                } else {
+                    brainNote = brainKey.isEmpty
+                        ? "还没接上 —— 台子那边没插模型钥匙。你可以在上面填一把自己的。"
+                        : "这把钥匙没通 —— 看看是不是贴全了、或者额度用完了。"
+                }
+            }
+        }
     }
 
     /// 改名。
@@ -263,6 +309,61 @@ struct StatusPanelView: View {
                 .foregroundStyle(Cfg.Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Divider().opacity(0.5)
+
+            // ★★★ 2026-10-23（他的原话）：「IOS 也要可以加 key 啊，
+            //   他是用户可以自己接入 API 给每个角色的」。
+            //
+            //   ★ 每只猫一把，存在手机上（`UserDefaults`，key 里带角色 id）：
+            //     · 填了 → 直连模型（智谱 / DeepSeek 自动认），不经过台子；
+            //     · 没填 → 还是走台子那把 —— **装完就能说话这件事不能变**。
+            //   ★ 为什么不单开一页设置：这行右边就挨着「现在用的号」，
+            //     同一类东西（这台手机现在拿谁的身份、谁的额度）放一起。
+            HStack(spacing: 6) {
+                Image(systemName: brainNote.hasPrefix("会说话") || brainNote.hasPrefix("存好了")
+                      ? "bubble.left.and.text.bubble.right.fill"
+                      : "bubble.left.and.exclamationmark.bubble.right")
+                    .font(.system(size: 11))
+                    .foregroundStyle(brainNote.hasPrefix("会说话") || brainNote.hasPrefix("存好了")
+                                     ? .green : Cfg.Palette.accent)
+                Text("连接大脑")
+                    .font(.system(size: 11))
+                Spacer()
+                Text(CatBrain.providerLabel(brainKey))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Cfg.Palette.faint)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 6) {
+                TextField("贴一把钥匙（智谱 / DeepSeek）", text: $brainKey)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                Button("存") { saveBrainKey() }
+                    .buttonStyle(ChipButton())
+            }
+
+            HStack(spacing: 6) {
+                Text("这只猫：\(brainCharTitle)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Cfg.Palette.faint)
+                Spacer()
+                Button(brainBusy ? "正在问…" : "试一句") { tryBrain() }
+                    .buttonStyle(ChipButton())
+                    .disabled(brainBusy)
+            }
+
+            Text(brainNote.isEmpty
+                 ? "填了就是你自己的模型（每只猫可以填不同的）；不填也能说话，走的是台子上那把。"
+                 : brainNote)
+                .font(.system(size: 10))
+                .foregroundStyle(Cfg.Palette.faint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider().opacity(0.5)
+
             // 它的声音（v48）：关了它照样跑跳，只是不出声 —— 跟安卓那个开关是同一条。
             HStack(spacing: 6) {
                 Image(systemName: soundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
@@ -301,70 +402,19 @@ struct StatusPanelView: View {
 
             Divider().opacity(0.5)
 
-            // 撞见概率
-            let c = engine.chanceSummary()
-            VStack(alignment: .leading, spacing: 3) {
-                Text("你平均 \(Int(c.days.rounded())) 天会撞见它一次在走")
-                    .font(.system(size: 12))
-                Text("它一天挪 \((24.0 / ((Cfg.stayHoursMin + Cfg.stayHoursMax) / 2)).rounded()) 次，每次走四五秒。")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider().opacity(0.5)
-
-            // 活动范围 + 小组件自检
-            //
-            // 这块是排障用的：小组件跑在另一个进程里，它到底有没有被执行，
-            // 在 App 里是看不见的。所以让它每次渲染都记一笔，这里读出来。
-            //   刷新 0 次      = 扩展压根没被系统加载（重签时插件没签上，最常见）
-            //   系统登记 0 个  = 组件根本没加上去
-            //   刷新 > 0 还空白 = 代码跑了，是渲染层的事
-            let scope = RoomScope.active(atHour: Schedule.hourEpoch)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(RoomScope.isLive() ? "它只在这几间跑" : "它先在默认的五间跑")
-                    .font(.system(size: 12))
-                Text(scope.compactMap { Rooms.byId[$0]?.name }.joined(separator: " · "))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-
-                Divider().opacity(0.4)
-
-                Text("App Group \(RoomScope.probe() ? "可用" : "不可用")　·　组件已刷新 \(RoomScope.renderCount()) 次")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(RoomScope.renderCount() > 0 ? .secondary : Cfg.Palette.accent)
-                Text(widgetCountText)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(widgetCount == 0 ? Cfg.Palette.accent : .secondary)
-                if !diagnosis.isEmpty {
-                    Text(diagnosis)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Cfg.Palette.accent)
-                }
-            }
-            .onAppear(perform: loadWidgetCount)
-
-            Divider().opacity(0.5)
-
-            // 时间机器
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("时间机器").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(offsetLabel)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Cfg.Palette.accent)
-                }
-                Slider(value: Binding(
-                    get: { engine.hoursNow },
-                    set: { engine.seek(hoursOffset: $0) }
-                ), in: -72...0)
-                .tint(Cfg.Palette.accent)
-            }
+            // ★★★ 2026-10-23（他的原话）：「时间机器也是，还有组件诊断、行程统计都删掉」。
+            //   这三块本来就是**给我排障用的**，不是给他用的：
+            //     · 撞见概率（行程统计）—— 一个算出来的数字，他改不了任何事
+            //     · 活动范围 + App Group / 刷新次数（组件诊断）—— 出问题时才有人看
+            //     · 时间机器（拖时间轴回到几小时前）—— 演示用
+            //   删了不影响任何真实功能：行程表、组件刷新、小窗全照原样跑。
+            //   ★ 唯独「演示速度」保留 —— 它不是一个调试旋钮，而是决定
+            //     「它多久换一次房」的观感；删了就只能永远停在 300 倍（几十秒一挪），
+            //     连调回真实速度的口子都没了。
 
             // 倍速
             HStack(spacing: 6) {
-                Text("演示速度").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("换房速度").font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 ForEach(speeds, id: \.0) { v, label in
                     Button(label) { engine.speed = v }
@@ -384,20 +434,14 @@ struct StatusPanelView: View {
             // 操作
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
-                    Button("跳到它下次挪窝") { engine.jumpToNextMove() }
-                        .buttonStyle(PrimaryButton())
                     Button("喊它") {
                         let came = engine.call()
                         toast = came ? "它从深处走出来了" : "它没应"
                     }
-                    .buttonStyle(ChipButton())
-                }
-                HStack(spacing: 8) {
+                    .buttonStyle(PrimaryButton())
                     // NFC 不再把它拽到另一个房间（那要改写行程表，会破坏唯一性），
                     // 只保证它一定走到你跟前。见 PetEngine.nfcRecall 的注释。
                     Button("碰 NFC 牌") { engine.nfcRecall(); toast = "它走到你跟前了" }
-                        .buttonStyle(ChipButton())
-                    Button("回到现在") { engine.seek(hoursOffset: 0); toast = nil }
                         .buttonStyle(ChipButton())
                     Button("重置行程") { engine.reset(); toast = "行程表已重新生成" }
                         .buttonStyle(ChipButton())
@@ -412,7 +456,11 @@ struct StatusPanelView: View {
             }
         }
         .padding(14)
-        .onAppear { catName = engine.catName }
+        .onAppear {
+            catName = engine.catName
+            // 钥匙按「当前这只猫」取 —— 换猫了就显示那一只的
+            brainKey = CatBrain.key(for: brainCharId)
+        }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 

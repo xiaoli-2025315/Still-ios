@@ -145,11 +145,13 @@ enum ActLab {
 
         /// ★★★ 2026-10-23（他报的）：**排队得说清楚**，不然用户以为 App 坏了。
         ///   「前面还有几个」「机器忙不忙」「电闸关没关」都从台子拿，App 只负责说人话。
-        let queued: Bool?
-        let ahead: Int?
-        let busy: Bool?
-        let gateOff: Bool?
-        let gateWhy: String?
+        //   ★ 给默认值：这样 `GenJob.stub()` 那种手写构造不用一个个补参数
+        //     （v78 第一次 CI 就是漏了这个直接编译失败）。
+        let queued: Bool? = nil
+        let ahead: Int? = nil
+        let busy: Bool? = nil
+        let gateOff: Bool? = nil
+        let gateWhy: String? = nil
 
         /// ★★★ 2026-10-23（他要的）：**做不出来的那几条** —— 由他一句话定夺。
         ///   以前这些条（今天的免费额度用完了 / 豆包在等他点确认）只会让整趟

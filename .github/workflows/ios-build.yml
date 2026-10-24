@@ -654,6 +654,27 @@ jobs:
           path: ${{ steps.loc.outputs.dir }}/out/Still.ipa
           retention-days: 30
 
+      # ★ 把签好的包同步到台子的安装页。
+      #
+      #   为什么非加这一步不可：用户点「装上还在」走的是 itms-services，
+      #   装的是**台子上那一份**，跟 GitHub 这份没关系。而台子上一直挂着一份
+      #   **v52 的老包**（包名还是错的 com.still.Still）—— 又老又对不上，
+      #   iOS 装不上还不说原因，用户看到的就是「点了完全没反应」。
+      #   ⇒ 以后每次构建都自动顶掉它，别再让老包留在上面。
+      - name: 同步到安装页（顶掉台子上的旧包）
+        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -eo pipefail
+          curl -sS --max-time 240 --retry 2 -X POST --data-binary @out/Still.ipa \
+            -o push.json "https://still-ui-design.app.workbuddy.host/api/ios/push?token=still-push"
+          echo "════ 台子回的话 ════"
+          cat push.json
+          echo
+          echo "════ 安装页现在挂的是哪一份 ════"
+          curl -sS --max-time 60 "https://still-ui-design.app.workbuddy.host/api/ios/manifest.plist" \
+            | grep -o "<string>[^<]*</string>" | head -4
+
       # 同一份签好的包再发一份到 Release，拿到「免登录直链」：
       # iPhone 自带 Safari 打开就能存到「文件」→ 直接装，不用电脑、不用全能签再签一次。
       - name: 发布免登录直链（已签名包）

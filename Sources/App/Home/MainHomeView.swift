@@ -25,6 +25,9 @@ enum Tw {
     static let gray700  = Color(hex: 0x374151)
     static let gray900  = Color(hex: 0x111827)
     static let red600   = Color(hex: 0xDC2626)
+    // 2026-10-24：礼物那张卡用的浅红底 + 浅红边（Tailwind red-50 / red-200）
+    static let red50    = Color(hex: 0xFEF2F2)
+    static let red200   = Color(hex: 0xFECACA)
     static let green500 = Color(hex: 0x22C55E)
     static let white    = Color.white
 }
@@ -824,6 +827,11 @@ struct HerPane: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.bottom, 11)
+
+                // ★ 方案 D（2026-10-24）：它自己买礼物送给你 —— 算力回收。
+                //   规矩：**不预告、不询问**，界面上只说「它给你带了东西」，点开才知道是什么。
+                //   人事前只授权一次（一个每月额度），之后它自己决定。详见 `Credit.swift` 顶上。
+                GiftCardsView()
 
                 // ★ v44：原来那颗「跟它说话」的大红按钮没了。
                 //   他要的是「跟豆包一样，主页放个输入框直接打」——

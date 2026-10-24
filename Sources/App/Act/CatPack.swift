@@ -438,7 +438,14 @@ final class CatPackStore: ObservableObject {
     func isCurrent(_ id: String) -> Bool { current?.id == id }
 
     /// 删掉一只（腾空间）。正在用的那只不许删，调用方先换走。
+    ///
+    /// ★ 2026-10-24 补一条：**App 自带那只永远不许删**。
+    ///   他定的：那只官方毛毡猫是**所有用户都能用、一直都在**的公共猫。
+    ///   虽然现在 UI 上没有删它的入口（列表只列台子上的角色），
+    ///   但它一旦被删，要下次启动 `installBuiltinIfNeeded()` 才补回来 ——
+    ///   中间这一整段会话里「换回自带那只」就是空的。这里直接堵死，最省事。
     func remove(_ id: String) {
+        guard id != Self.builtinId else { return }
         guard !isCurrent(id) else { return }
         try? FileManager.default.removeItem(at: dir(of: id))
     }

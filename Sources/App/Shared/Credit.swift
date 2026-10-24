@@ -85,7 +85,7 @@ enum Credit {
 
     /// 翻开了 —— 告诉服务器一声，别每次进来都重新揭一次。
     static func opened(_ id: String) async {
-        await post("/api/credit/reveal", ["号": id])
+        _ = await post("/api/credit/reveal", ["号": id])
     }
 
     /// 事前授权一次。额度 0 = 关掉。

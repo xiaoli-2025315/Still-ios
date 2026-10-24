@@ -398,15 +398,9 @@ jobs:
             fi
           done
 
-          # ★ 导进来的根/中间证书默认是「未指定信任」，Xcode 不认 ——
-          #   显式标成「当作根来信」，链才凑得起来。
-          echo "════ 标成可信 ════"
-          for n in AppleWWDRCAG3.cer AppleWWDRCAG4.cer AppleIncRootCertificate.cer; do
-            [ -f "$RUNNER_TEMP/$n" ] || continue
-            security add-trusted-cert -r trustAsRoot -k "$KC" "$RUNNER_TEMP/$n" 2>&1 | sed "s/^/  $n: /"
-            echo "  ✓ 已信任 $n"
-          done
-
+          # ⚠️ 别在这里用 `security add-trusted-cert` / `dump-trust-settings` ——
+          #   实测它会**卡住等输入**（非交互环境下永远等下去，v87 那次整整挂了 20 分钟
+          #   把整条流水线拖死）。信任锚靠下面把系统钥匙串放回搜索列表就够了。
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" || true
           # ★ 别把原来的钥匙串从搜索列表里挤掉 —— 系统钥匙串里那份 Apple 根证书
           #   才是「被信任的锚」，少了它 Xcode 照样说证书无效。
@@ -423,10 +417,10 @@ jobs:
           echo "════ 证书链自检 ════"
           openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -nokeys \
             -passin pass:"$IOS_SIGNING_CERT_PASSWORD" -out "$RUNNER_TEMP/cert.pem" 2>&1 | tail -2
-          security verify-cert -c "$RUNNER_TEMP/cert.pem" -p codesigning 2>&1 | sed 's/^/  /' \
-            || echo "  （verify-cert 没能验，看上面的返回码）"
-          echo "════ 信任设置 ════"
-          security dump-trust-settings -d 2>&1 | sed 's/^/  /' | head -20
+          # ★ 只给 30 秒：它会联网查吊销状态，网络不通能一直等到天荒地老。
+          #   macOS 没有 timeout 命令，用 perl 的 alarm 兜住。
+          perl -e 'alarm 30; exec(@ARGV)' security verify-cert -c "$RUNNER_TEMP/cert.pem" -p codesigning 2>&1 \
+            | sed 's/^/  /' || echo "  （30 秒内没验完，跳过）"
 
           echo "════ 钥匙串里的签名身份 ════"
           # ★ 用 case 判断，别用 `| grep -q` —— 开了 pipefail 之后

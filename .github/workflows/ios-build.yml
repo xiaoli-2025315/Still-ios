@@ -422,6 +422,19 @@ jobs:
           perl -e 'alarm 30; exec(@ARGV)' security verify-cert -c "$RUNNER_TEMP/cert.pem" -p codesigning 2>&1 \
             | sed 's/^/  /' || echo "  （30 秒内没验完，跳过）"
 
+          # ★★ 判官：直接拿 codesign 试签一个空文件。
+          #   Xcode 那句 "may have been revoked or expired" 是句含糊话，
+          #   codesign 给的才是真原因（revoked / not trusted / no identity）。
+          echo "════ 拿 codesign 试签一个空文件 ════"
+          echo hello > "$RUNNER_TEMP/probe.txt"
+          for who in "iPhone Distribution: HSBC Bank plc" "iPhone Distribution"; do
+            echo "  —— 用身份：$who"
+            perl -e 'alarm 60; exec(@ARGV)' codesign -s "$who" --keychain "$KC" \
+              --force "$RUNNER_TEMP/probe.txt" 2>&1 | sed 's/^/     /' \
+              && echo "     ✓ 签成功了" || echo "     ✗ 没签成（上面是原文）"
+          done
+          codesign -dvvv "$RUNNER_TEMP/probe.txt" 2>&1 | sed 's/^/  /' | head -8
+
           echo "════ 钥匙串里的签名身份 ════"
           # ★ 用 case 判断，别用 `| grep -q` —— 开了 pipefail 之后
           #   grep -q 提前退出会把上一条命令撞成 SIGPIPE，误判成"没身份"。

@@ -575,69 +575,76 @@ jobs:
           APP_UUID: ${{ steps.signprep.outputs.APP_UUID }}
           WIDGET_UUID: ${{ steps.signprep.outputs.WIDGET_UUID }}
         run: |
-          set -o pipefail
+          set -eo pipefail
+          exec > >(tee signarchive.log) 2>&1
 
-          # ExportOptions 里的 key 必须是**真实包名**（原来是 com.still.Still，
-          # 而工程里一直是 com.still.app —— 对不上，导出必失败）。这里按改造后的名字生成。
-          python3 - <<'PY'
-          import os
-          app_uuid = os.environ['APP_UUID']
-          wid_uuid = os.environ.get('WIDGET_UUID', '').strip()
-          bid      = os.environ['IOS_APP_BUNDLE_ID'].strip() or 'com.still.app'
-          method   = os.environ['IOS_EXPORT_METHOD'].strip() or 'enterprise'
-          team     = os.environ['IOS_DEVELOPMENT_TEAM'].strip()
-
-          rows = '        <key>%s</key><string>%s</string>\n' % (bid, app_uuid)
-          if wid_uuid:
-              rows += '        <key>com.still.app.widget</key><string>%s</string>\n' % wid_uuid
-
-          open('ExportOptions.plist', 'w').write(
-              '<?xml version="1.0" encoding="UTF-8"?>\n'
-              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-              '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-              '<plist version="1.0"><dict>\n'
-              '  <key>method</key><string>%s</string>\n'
-              '  <key>teamID</key><string>%s</string>\n'
-              '  <key>signingStyle</key><string>manual</string>\n'
-              '  <key>stripSwiftSymbols</key><true/>\n'
-              '  <key>provisioningProfiles</key><dict>\n'
-              '%s'
-              '  </dict>\n'
-              '</dict></plist>\n' % (method, team, rows))
-          print('导出方式：%s（包名 %s，Team %s）' % (method, bid, team))
-          PY
-          cat ExportOptions.plist
-
-          # ★ TARGETED_DEVICE_FAMILY=1（只要 iPhone）必须在这里显式传。
+          # ★★★ 为什么不让 Xcode 自己签（这一段全是实测，别再回去试那条路）：
           #
-          #   写在 project.yml 的 settings.base 里**不生效** —— 打出来的包
-          #   UIDeviceFamily 一直是 [1, 2]（iPhone + iPad），Info.plist 里显式写也盖不住，
-          #   因为 Xcode 在 Process Info.plist 那一步会用这个 build setting 重新生成它。
-          #   命令行参数的优先级最高，这里传才作数。
+          #   Xcode 一口咬定这张证书 "is not valid for code signing …
+          #   may have been revoked or expired"。可在同一台机器上：
+          #     · security find-identity  → 1 valid identities found
+          #     · security verify-cert    → certificate verification successful
+          #     · 证书和描述文件里的证书 **SHA1 一模一样**（本来就是一对）
+          #     · 证书 2028 年才到期
+          #     · ★ codesign 拿它签一个文件 —— **签成功了**
+          #   ⇒ 证书是好的，卡住的是 Xcode 16 自己那道检查。
+          #   那就绕开它：先「不签」归档 → 用 codesign 手工签 → 自己打成 ipa。
+          BID='${{ env.IOS_APP_BUNDLE_ID }}'
+          KC="$RUNNER_TEMP/still.keychain"
+          IDENT='${{ env.IOS_SIGNING_IDENTITY }}'
+
+          echo "════ ① 不签名地归档 ════"
+          # ★ TARGETED_DEVICE_FAMILY=1（只要 iPhone）必须显式传：
+          #   写在 project.yml 的 settings.base 里不生效（Xcode 会用 build setting
+          #   重新生成 Info.plist），命令行参数优先级最高，这里传才作数。
           xcodebuild -scheme Still -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath Still.xcarchive archive \
             TARGETED_DEVICE_FAMILY=1 \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM='${{ env.IOS_DEVELOPMENT_TEAM }}' \
-            CODE_SIGN_IDENTITY='${{ env.IOS_SIGNING_IDENTITY }}' \
-            PROVISIONING_PROFILE_SPECIFIER="$APP_UUID" \
-            PRODUCT_BUNDLE_IDENTIFIER='${{ env.IOS_APP_BUNDLE_ID }}' 2>&1 | tee archive.log
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BID" 2>&1 | tee archive.log | tail -6
 
-          xcodebuild -exportArchive -archivePath Still.xcarchive \
-            -exportPath out -exportOptionsPlist ExportOptions.plist 2>&1 | tee export.log
+          APP=Still.xcarchive/Products/Applications/Still.app
+          if [ ! -d "$APP" ]; then
+            echo "!! 归档里没找到 $APP，列出归档内容："
+            find Still.xcarchive -maxdepth 4 -name "*.app" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "  包名：$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
 
-          echo "════ 产物 ════"
+          echo "════ ② 把描述文件放进包里 ════"
+          cp "$RUNNER_TEMP/app.mobileprovision" "$APP/embedded.mobileprovision"
+          ls -l "$APP/embedded.mobileprovision"
+
+          echo "════ ③ 权限文件：描述文件给什么就写什么，不多写一项 ════"
+          #   多写一项描述文件里没有的权限，装到手机上会被系统拒。
+          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' \
+            "$RUNNER_TEMP/app.mobileprovision.plist" > entitle.plist
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements' \
+            "$RUNNER_TEMP/app.mobileprovision.plist" | sed 's/^/  /'
+
+          echo "════ ④ 手工签名（先签里面的，再签 App 本体）════"
+          if [ -d "$APP/Frameworks" ]; then
+            for f in "$APP/Frameworks"/*; do
+              echo "  签 $f"
+              codesign -f --keychain "$KC" -s "$IDENT" --timestamp=none "$f" 2>&1 | sed 's/^/    /'
+            done
+          fi
+          codesign -f --keychain "$KC" -s "$IDENT" \
+            --entitlements entitle.plist --generate-entitlement-der \
+            --timestamp=none "$APP" 2>&1 | sed 's/^/  /'
+
+          echo "════ ⑤ 当场验签 ════"
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | sed 's/^/  /'
+          echo "  签名信息："
+          codesign -dvv "$APP" 2>&1 | grep -iE "Identifier|TeamIdentifier|Authority|Signature" | sed 's/^/    /'
+
+          echo "════ ⑥ 打包 ipa ════"
+          rm -rf out && mkdir -p out/Payload
+          cp -R "$APP" out/Payload/
+          (cd out && zip -qry Still.ipa Payload)
           ls -la out
-
-          # 当场验一次：包里到底签上名没有（没签就别往下发）
-          IPA=out/Still.ipa
-          echo "════ 签名自检 ════"
-          unzip -p "$IPA" 'Payload/*.app/embedded.mobileprovision' | \
-            security cms -D -i /dev/stdin 2>/dev/null | \
-            /usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /dev/stdin \
-            || echo "!! 没读到 embedded.mobileprovision —— 这个包没签上"
 
       - name: 上传已签名 .ipa（可直接侧载到手机）
         if: ${{ env.IOS_SIGNING_CERT != '' }}
@@ -688,7 +695,7 @@ jobs:
           DIR="${{ steps.loc.outputs.dir }}"
           gh release view nightly >/dev/null 2>&1 || \
             gh release create nightly --title "Still 每夜构建" --notes "自动构建（含失败日志）"
-          for f in build.log build-device.log archive.log export.log signprep.log signmod.log; do
+          for f in build.log build-device.log archive.log export.log signprep.log signmod.log signarchive.log; do
             if [ -f "$DIR/$f" ]; then gh release upload nightly "$DIR/$f" --clobber || true; fi
           done
           echo "已上传：https://github.com/${{ github.repository }}/releases/download/nightly/build.log"

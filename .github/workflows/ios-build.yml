@@ -374,9 +374,38 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -k "$KC" \
             -P "$IOS_SIGNING_CERT_PASSWORD" \
             -T /usr/bin/codesign -T /usr/bin/security
+
+          # ★★★ 必须把苹果的「中间证书」也导进这把钥匙串。
+          #
+          #   我们导进去的那张 .p12 **只含 HSBC 这一张证书**，不含签发它的
+          #   Apple WWDR。而这把钥匙串是剛新建的、里面除了它什么都没有 ——
+          #   Xcode 验签名时要凑齐「HSBC 证书 → Apple WWDR → Apple 根证书」这一整条链，
+          #   缺了中间那张，它就报：
+          #     Signing certificate is invalid … may have been revoked or expired
+          #   （**不是真的被吊销，是链断了** —— 证书本身到 2028 年才到期，实测过）。
+          echo "════ 补苹果中间证书 ════"
+          for u in \
+            "https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer" \
+            "https://www.apple.com/certificateauthority/AppleWWDRCAG4.cer" \
+            "https://www.apple.com/appleca/AppleIncRootCertificate.cer"; do
+            n=$(basename "$u")
+            if curl -sfL --max-time 30 "$u" -o "$RUNNER_TEMP/$n"; then
+              security import "$RUNNER_TEMP/$n" -k "$KC" -T /usr/bin/codesign \
+                -T /usr/bin/security 2>&1 | sed "s/^/  $n: /"
+              echo "  ✓ $n"
+            else
+              echo "  !! 没下到 $n（继续，钥匙串里本来就有的话不影响）"
+            fi
+          done
+
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" || true
-          security list-keychains -d user -s "$KC"
+          # ★ 别把原来的钥匙串从搜索列表里挤掉 —— 只追加，系统钥匙串里的
+          #   Apple 根证书还要用得上。
+          OTHERS=$(security list-keychains -d user | sed 's/^ *//; s/"//g' | tr '\n' ' ')
+          security list-keychains -d user -s "$KC" $OTHERS
           security default-keychain -s "$KC"
+          echo "════ 搜索列表 ════"
+          security list-keychains -d user
 
           echo "════ 钥匙串里的签名身份 ════"
           # ★ 用 case 判断，别用 `| grep -q` —— 开了 pipefail 之后
@@ -444,7 +473,9 @@ jobs:
         if: ${{ env.IOS_SIGNING_CERT != '' }}
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
-          set -e
+          set -eo pipefail
+          # ★ v87：这一步改完工程长什么样，后面签名对不上一眼看不出来，留一份日志。
+          exec > >(tee signmod.log) 2>&1
           python3 - <<'PY'
           import os, shutil
           p = 'project.yml'
@@ -503,8 +534,10 @@ jobs:
 
           # 用改造后的 yml 重新生成工程（模拟器那一步用的是原工程，互不干扰）
           xcodegen generate
-          echo "════ 改造后工程里的包名 ════"
+          echo "════ 改造后 project.yml 里的包名 ════"
           grep -n "productBundleIdentifier" project.yml
+          echo "════ 生成出来的工程里真正生效的包名 ════"
+          grep -n "PRODUCT_BUNDLE_IDENTIFIER" Still.xcodeproj/project.pbxproj | sort -u
 
       - name: 归档并导出已签名 .ipa
         id: signarchive
@@ -561,7 +594,8 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM='${{ env.IOS_DEVELOPMENT_TEAM }}' \
             CODE_SIGN_IDENTITY='${{ env.IOS_SIGNING_IDENTITY }}' \
-            PROVISIONING_PROFILE_SPECIFIER="$APP_UUID" 2>&1 | tee archive.log
+            PROVISIONING_PROFILE_SPECIFIER="$APP_UUID" \
+            PRODUCT_BUNDLE_IDENTIFIER='${{ env.IOS_APP_BUNDLE_ID }}' 2>&1 | tee archive.log
 
           xcodebuild -exportArchive -archivePath Still.xcarchive \
             -exportPath out -exportOptionsPlist ExportOptions.plist 2>&1 | tee export.log
@@ -626,7 +660,7 @@ jobs:
           DIR="${{ steps.loc.outputs.dir }}"
           gh release view nightly >/dev/null 2>&1 || \
             gh release create nightly --title "Still 每夜构建" --notes "自动构建（含失败日志）"
-          for f in build.log build-device.log archive.log export.log signprep.log; do
+          for f in build.log build-device.log archive.log export.log signprep.log signmod.log; do
             if [ -f "$DIR/$f" ]; then gh release upload nightly "$DIR/$f" --clobber || true; fi
           done
           echo "已上传：https://github.com/${{ github.repository }}/releases/download/nightly/build.log"

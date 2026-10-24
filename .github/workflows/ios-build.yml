@@ -48,8 +48,20 @@ jobs:
       IOS_SIGNING_CERT: ${{ secrets.IOS_SIGNING_CERT }}                     # 开发证书 P12（base64）
       IOS_SIGNING_CERT_PASSWORD: ${{ secrets.IOS_SIGNING_CERT_PASSWORD }}   # P12 导出密码
       IOS_PROVISION_PROFILE_APP: ${{ secrets.IOS_PROVISION_PROFILE_APP }}       # 主 App 描述文件（base64）
-      IOS_PROVISION_PROFILE_WIDGET: ${{ secrets.IOS_PROVISION_PROFILE_WIDGET }} # Widget 扩展描述文件（base64）
-      IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}             # 10 位 Team ID
+      IOS_PROVISION_PROFILE_WIDGET: ${{ secrets.IOS_PROVISION_PROFILE_WIDGET }} # Widget 扩展描述文件（base64，可空）
+
+      # ↓↓↓ 下面四个都给了默认值，【企业证书（In-House）】这条路上一个都不用填。
+      #   默认值 = 2026-10-24 他给的那张证书实测出来的结果：
+      #     证书主题  iPhone Distribution: HSBC Bank plc（企业分发，不是开发证书）
+      #     Team      B8BGPMF2XK
+      #     描述文件  hk.com.hsbc.enterprise.hsbchkrewards.local2 InHouse（App ID 写死，不是通配）
+      #     到期      描述文件 2027-05-04 / 证书 2028-04-29
+      #   ★ 换句话说：只要填了 IOS_SIGNING_CERT，就默认按「企业分发」签，
+      #     包名会被换成描述文件里写死的那个 —— 这正是他自己用全能签装出来的那个包。
+      IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY || 'iPhone Distribution' }}
+      IOS_EXPORT_METHOD: ${{ secrets.IOS_EXPORT_METHOD || 'enterprise' }}
+      IOS_APP_BUNDLE_ID: ${{ secrets.IOS_APP_BUNDLE_ID || 'hk.com.hsbc.enterprise.hsbchkrewards.local2' }}
+      IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM || 'B8BGPMF2XK' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -366,30 +378,150 @@ jobs:
           }
           echo "════ 安装描述文件 ════"
           APP_UUID=$(install_profile app "$IOS_PROVISION_PROFILE_APP" | tail -1)
-          WIDGET_UUID=$(install_profile widget "$IOS_PROVISION_PROFILE_WIDGET" | tail -1)
+          # ★ 扩展的描述文件**可以不给**：企业（In-House）描述文件的 App ID 常常是写死的，
+          #   只覆盖主 App 一个 ID，扩展没有对应的可签（见下一步「为什么砍掉小组件」）。
+          WIDGET_UUID=""
+          if [ -n "$IOS_PROVISION_PROFILE_WIDGET" ]; then
+            WIDGET_UUID=$(install_profile widget "$IOS_PROVISION_PROFILE_WIDGET" | tail -1)
+          else
+            echo "  widget →（没给，下一步会把小组件从工程里摘掉）"
+          fi
           echo "APP_UUID=$APP_UUID"       >> "$GITHUB_OUTPUT"
           echo "WIDGET_UUID=$WIDGET_UUID" >> "$GITHUB_OUTPUT"
+
+          echo "════ 描述文件里的 App ID（包名必须跟它一模一样）════"
+          security cms -D -i "$RUNNER_TEMP/app.mobileprovision" \
+            | /usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /dev/stdin
+          echo "════ 描述文件里的权限（工程里声明了它没给的，签名会失败）════"
+          security cms -D -i "$RUNNER_TEMP/app.mobileprovision" \
+            | /usr/libexec/PlistBuddy -c 'Print :Entitlements' /dev/stdin
+
+      # ── 4b-0. ★ 按签名的形态改造工程（只有真签名才走这一步）────────
+      #
+      # 为什么非改不可（这三条都是实测出来的，不是猜的）：
+      #
+      #   ① **包名必须换成描述文件里那个**。iOS 装包时逐字比对 App 的 CFBundleIdentifier
+      #      和 embedded.mobileprovision 里的 application-identifier；这张企业描述文件的
+      #      App ID 是写死的（不是通配 `*`），所以不换就装不上。
+      #      ⇒ 换了他手机上现在那个包还是同一个 —— 他自己用全能签签的时候已经换过一次了，
+      #        所以新包是覆盖安装，猫和账号都在。
+      #
+      #   ② **必须摘掉 App Group**。这张描述文件的 Entitlements 里**没有**
+      #      com.apple.security.application-groups（实测只有 aps-environment /
+      #      application-identifier / team-identifier / keychain-access-groups）。
+      #      工程里却声明了 group.com.still.app ⇒ Xcode 会直接报
+      #      “Provisioning profile doesn't include the com.apple.security.application-groups entitlement”。
+      #      摘掉以后代码不受影响：RoomScope 那几处都是 `guard let … else { return }`，拿不到就降级。
+      #
+      #   ③ **必须砍掉小组件扩展**。扩展是另一个可执行文件，也得有自己的描述文件；
+      #      主 App 这份写死的 App ID 覆盖不到 com.still.app.widget ⇒ 签了也装不上。
+      #      （填了 IOS_PROVISION_PROFILE_WIDGET 就不砍。）
+      - name: 按签名形态改造工程
+        if: ${{ env.IOS_SIGNING_CERT != '' }}
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import os, shutil
+          p = 'project.yml'
+          if not os.path.exists(p + '.orig'):
+              shutil.copy(p, p + '.orig')
+          s = open(p + '.orig', encoding='utf-8').read()
+          bid   = os.environ.get('IOS_APP_BUNDLE_ID', '').strip()
+          drop  = os.environ.get('IOS_PROVISION_PROFILE_WIDGET', '').strip() == ''
+
+          # ① 换主 App 包名
+          if bid:
+              old = 'productBundleIdentifier: com.still.app\n'
+              assert old in s, 'project.yml 里找不到主 App 的包名行，改造中止'
+              s = s.replace(old, 'productBundleIdentifier: %s\n' % bid, 1)
+              print('包名 com.still.app → %s' % bid)
+
+          # ② 摘掉 App Group（描述文件没有这项权限，留着签名必失败）
+          #    ★ 这里必须写成一行行拼的字符串：YAML 块标量里，缩进比第一行浅的行
+          #      会被当成「块结束」，用三引号原样写会把整个 workflow 写坏。
+          grp = ('    entitlements:\n'
+                 '      path: Still.entitlements\n'
+                 '      properties:\n'
+                 '        com.apple.security.application-groups:\n'
+                 '          - group.com.still.app\n')
+          if grp in s:
+              s = s.replace(grp, '    entitlements:\n      path: Still.entitlements\n')
+              print('已摘掉 App Group（group.com.still.app）')
+          else:
+              print('!! 没找到 App Group 那段，检查一下 project.yml 是不是改过')
+
+          # ③ 砍掉小组件扩展
+          if drop:
+              i = s.find('\n  StillWidgetExtension:')
+              j = s.find('\n# ── Scheme')
+              if i > 0 and j > i:
+                  s = s[:i] + '\n\n' + s[j:]
+              # 主 App 底下那段 dependencies 里只剩注释了 —— 留着会变成空值
+              # （YAML 解析成 None，XcodeGen 不一定吃得下），整块拿掉最干净。
+              lines = s.split('\n')
+              out, k = [], 0
+              while k < len(lines):
+                  if lines[k] == '    dependencies:':
+                      k += 1
+                      while (k < len(lines) and lines[k].startswith('      ')
+                             and not lines[k].startswith('       ')):
+                          k += 1
+                      continue
+                  out.append(lines[k]); k += 1
+              s = '\n'.join(out)
+              s = s.replace('        StillWidgetExtension: all\n', '')
+              print('已砍掉 StillWidgetExtension（没有扩展描述文件）')
+
+          open(p, 'w', encoding='utf-8').write(s)
+          print('改造后的 target 数：', s.count('productBundleIdentifier:'))
+          PY
+
+          # 用改造后的 yml 重新生成工程（模拟器那一步用的是原工程，互不干扰）
+          xcodegen generate
+          echo "════ 改造后工程里的包名 ════"
+          grep -n "productBundleIdentifier" project.yml
 
       - name: 归档并导出已签名 .ipa
         id: signarchive
         if: ${{ env.IOS_SIGNING_CERT != '' }}
         working-directory: ${{ steps.loc.outputs.dir }}
+        env:
+          APP_UUID: ${{ steps.signprep.outputs.APP_UUID }}
+          WIDGET_UUID: ${{ steps.signprep.outputs.WIDGET_UUID }}
         run: |
           set -o pipefail
-          cat > ExportOptions.plist <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>development</string>
-            <key>teamID</key><string>${{ env.IOS_DEVELOPMENT_TEAM }}</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>stripSwiftSymbols</key><true/>
-            <key>provisioningProfiles</key><dict>
-              <key>com.still.Still</key><string>${{ steps.signprep.outputs.APP_UUID }}</string>
-              <key>com.still.StillWidgetExtension</key><string>${{ steps.signprep.outputs.WIDGET_UUID }}</string>
-            </dict>
-          </dict></plist>
-          PLIST
+
+          # ExportOptions 里的 key 必须是**真实包名**（原来是 com.still.Still，
+          # 而工程里一直是 com.still.app —— 对不上，导出必失败）。这里按改造后的名字生成。
+          python3 - <<'PY'
+          import os
+          app_uuid = os.environ['APP_UUID']
+          wid_uuid = os.environ.get('WIDGET_UUID', '').strip()
+          bid      = os.environ['IOS_APP_BUNDLE_ID'].strip() or 'com.still.app'
+          method   = os.environ['IOS_EXPORT_METHOD'].strip() or 'enterprise'
+          team     = os.environ['IOS_DEVELOPMENT_TEAM'].strip()
+
+          rows = '        <key>%s</key><string>%s</string>\n' % (bid, app_uuid)
+          if wid_uuid:
+              rows += '        <key>com.still.app.widget</key><string>%s</string>\n' % wid_uuid
+
+          open('ExportOptions.plist', 'w').write(
+              '<?xml version="1.0" encoding="UTF-8"?>\n'
+              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+              '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+              '<plist version="1.0"><dict>\n'
+              '  <key>method</key><string>%s</string>\n'
+              '  <key>teamID</key><string>%s</string>\n'
+              '  <key>signingStyle</key><string>manual</string>\n'
+              '  <key>stripSwiftSymbols</key><true/>\n'
+              '  <key>provisioningProfiles</key><dict>\n'
+              '%s'
+              '  </dict>\n'
+              '</dict></plist>\n' % (method, team, rows))
+          print('导出方式：%s（包名 %s，Team %s）' % (method, bid, team))
+          PY
+          cat ExportOptions.plist
 
           # ★ TARGETED_DEVICE_FAMILY=1（只要 iPhone）必须在这里显式传。
           #
@@ -404,13 +536,22 @@ jobs:
             CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM='${{ env.IOS_DEVELOPMENT_TEAM }}' \
-            CODE_SIGN_IDENTITY='Apple Development' 2>&1 | tee archive.log
+            CODE_SIGN_IDENTITY='${{ env.IOS_SIGNING_IDENTITY }}' \
+            PROVISIONING_PROFILE_SPECIFIER="$APP_UUID" 2>&1 | tee archive.log
 
           xcodebuild -exportArchive -archivePath Still.xcarchive \
             -exportPath out -exportOptionsPlist ExportOptions.plist 2>&1 | tee export.log
 
           echo "════ 产物 ════"
           ls -la out
+
+          # 当场验一次：包里到底签上名没有（没签就别往下发）
+          IPA=out/Still.ipa
+          echo "════ 签名自检 ════"
+          unzip -p "$IPA" 'Payload/*.app/embedded.mobileprovision' | \
+            security cms -D -i /dev/stdin 2>/dev/null | \
+            /usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /dev/stdin \
+            || echo "!! 没读到 embedded.mobileprovision —— 这个包没签上"
 
       - name: 上传已签名 .ipa（可直接侧载到手机）
         if: ${{ env.IOS_SIGNING_CERT != '' }}
@@ -419,6 +560,28 @@ jobs:
           name: Still-device-ipa
           path: ${{ steps.loc.outputs.dir }}/out/Still.ipa
           retention-days: 30
+
+      # 同一份签好的包再发一份到 Release，拿到「免登录直链」：
+      # iPhone 自带 Safari 打开就能存到「文件」→ 直接装，不用电脑、不用全能签再签一次。
+      - name: 发布免登录直链（已签名包）
+        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
+        working-directory: ${{ steps.loc.outputs.dir }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          IPA=$(ls out/*.ipa 2>/dev/null | head -1)
+          [ -n "$IPA" ] || { echo "::error::out 里没有 ipa"; exit 1; }
+          echo "要发的是 $IPA（$(du -h "$IPA" | cut -f1)）"
+          TAG=device
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Still 已签名包（点开就能装）" \
+              --notes "企业证书签名，下载后直接用 iPhone 自带 Safari 打开即可安装（装完要在
+          设置 → 通用 → VPN与设备管理 里信任一次这个企业级 App）。
+          提交 ${{ github.sha }} · $(date -u '+%Y-%m-%d %H:%M UTC')"
+          gh release upload "$TAG" "$IPA" --clobber
+          echo "════ 免登录直链 ════"
+          echo "${{ github.server_url }}/${{ github.repository }}/releases/download/$TAG/$(basename "$IPA")"
 
       - name: 真机编译日志（失败时看这个）
         if: steps.device.outcome == 'failure'

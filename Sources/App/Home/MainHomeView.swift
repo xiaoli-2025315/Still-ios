@@ -569,22 +569,63 @@ struct HerPane: View {
     @State private var catDY: Double = 0
     /// 拎起来了没有。没拎起来的时候拖动**不接管手指**（否则主页翻不了页）
     @State private var grabbing = false
+    /// 长按已经触发过（正在挣扎）—— 松手时不能再当成"点了一下"
+    @State private var holding = false
+    /// 长按计时器（手指按住 0.5 秒没动就挣扎）
+    @State private var holdTimer: Timer?
     /// 松手之后「过一会儿自己走回去」的那一趟
     @State private var backWork: DispatchWorkItem?
     /// 往回走时的逐帧推进
     @State private var walkTimer: Timer?
 
-    /// 拖动：只在「已经拎起来」的时候生效（见框上面那段长注释）
+    /// 框里那一串手势 —— 一按上就归它，主页不许跟着动。
+    ///
+    /// ★★★ 2026-10-24 他明确要求「安卓 iOS 一样」：**在展示框里划，不该带着整页往下滚**。
+    ///   以前这里只在"已经拎起来"时才接管手指（`including: grabbing ? .all : .subviews`），
+    ///   没拎起来的时候一划就被外面的 ScrollView 收走 —— 于是同一个手指既要滚页面、
+    ///   又要挪角色，两件事打架，手感又涩又飘（他的原话）。
+    ///   现在改成**按下这一毫秒就接管**（`minimumDistance: 0`），整个框里只有一件事：
+    ///   跟猫玩。要翻页就去框外面划。
+    ///
+    ///   三种手势各归各的：
+    ///     · 按住不动 0.5 秒 → 拎起来（挣扎）
+    ///     · 一动 → 也算拎起来，之后跟着手指走
+    ///     · 按一下就走 → 放下（点一下是"拎起来"，再点一下是"放下"）
     private var catDrag: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { v in
+                let d = hypot(Double(v.translation.width), Double(v.translation.height))
+                if d < 1 {
+                    // 刚按下：起一个长按计时（跟安卓那边同一个 0.5 秒）
+                    if !grabbing && holdTimer == nil {
+                        holdTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                            holdTimer = nil
+                            if !grabbing { holding = true; grabCat() }
+                        }
+                    }
+                } else if d > 6 {
+                    holdTimer?.invalidate()
+                    holdTimer = nil
+                    if !grabbing { grabCat() }   // 一动就拎起来，不用先点一下
+                }
                 guard grabbing else { return }
                 let s = stageScale
                 pushPose(dx: catDX + Double(v.translation.width) * s,
                          dy: catDY + Double(v.translation.height) * s)
             }
             .onEnded { v in
-                guard grabbing else { return }
+                holdTimer?.invalidate()
+                holdTimer = nil
+                if holding {            // 长按过：松手就当"放下"，别再算成点了一下
+                    holding = false
+                    if grabbing { dropCat() }
+                    return
+                }
+                let d = hypot(Double(v.translation.width), Double(v.translation.height))
+                if !grabbing {
+                    if d <= 6 { grabCat() }   // 原地一下 = 拎起来
+                    return
+                }
                 let s = stageScale
                 catDX = clampX(catDX + Double(v.translation.width) * s)
                 catDY = clampY(catDY + Double(v.translation.height) * s)
@@ -726,7 +767,7 @@ struct HerPane: View {
                         if w > 0 { stageW = w }
                     }
                     .onTapGesture { tapCat() }
-                    .highPriorityGesture(catDrag, including: grabbing ? .all : .subviews)
+                    .highPriorityGesture(catDrag)
                     // 这一页重新出现时，猫回正中 ——
                     // 界面上的偏移和帧泵里的偏移必须是同一个数，不能一个清零一个还记着
                     .onAppear {

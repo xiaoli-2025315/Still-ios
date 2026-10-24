@@ -165,9 +165,17 @@ struct TalkField: UIViewRepresentable {
         }
     }
 
-    final class Coord: NSObject, UITextFieldDelegate {
+    final class Coord: NSObject, UITextFieldDelegate, UIGestureRecognizerDelegate {
         var parent: TalkField
         var pulse = 0
+
+        /// ★ 2026-10-24（他报的「输入框一旦拉起来，就没有一个地方能让它降下来」）：
+        ///   打字期间在整个窗口上挂一个「点一下」的手势 —— **点主页任意一处都收键盘**，
+        ///   只有点在输入框自己身上不收（那是在挪光标）。
+        ///   `cancelsTouchesInView = false` ⇒ 主页上的按钮、tab 照常点得动，
+        ///   手势只是"顺手收个键盘"，不抢任何点击。
+        private weak var tap: UITapGestureRecognizer?
+        private weak var field: UITextField?
 
         init(_ p: TalkField) { parent = p }
 
@@ -182,10 +190,48 @@ struct TalkField: UIViewRepresentable {
 
         func textFieldDidBeginEditing(_ f: UITextField) {
             parent.onBeginEdit()
+            installTap(f)
         }
 
         func textFieldDidEndEditing(_ f: UITextField) {
             parent.onEndEdit()
+            removeTap()
+        }
+
+        private func installTap(_ f: UITextField) {
+            guard tap == nil else { return }
+            guard let w = f.window else {
+                // 极少数情况下这一刻还没上屏，下一轮再挂
+                DispatchQueue.main.async { [weak self, weak f] in
+                    guard let self, let f else { return }
+                    self.installTap(f)
+                }
+                return
+            }
+            let g = UITapGestureRecognizer(target: self, action: #selector(anywhereTapped(_:)))
+            g.cancelsTouchesInView = false
+            g.delegate = self
+            w.addGestureRecognizer(g)
+            tap = g
+            field = f
+        }
+
+        private func removeTap() {
+            if let g = tap { g.view?.removeGestureRecognizer(g) }
+            tap = nil
+            field = nil
+        }
+
+        @objc private func anywhereTapped(_ g: UITapGestureRecognizer) {
+            guard let f = field else { return }
+            // 点在输入框自己身上 = 挪光标，别收
+            if f.bounds.contains(g.location(in: f)) { return }
+            f.resignFirstResponder()
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true    // 别跟页面里的滚动 / 按钮抢
         }
     }
 }

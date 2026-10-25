@@ -84,7 +84,7 @@ final class SettleBell: ObservableObject {
         let 忙着: Bool = await MainActor.run { 忙 }
         if 手上有 != nil || 忙着 { return }              // 手上还弹着就别抢
 
-        guard let list = try? await ActAPI.genSettle() else { return }
+        guard let list = try? await ActLab.genSettle() else { return }
         for s in list {
             let 弹过没有: Bool = await MainActor.run { 弹过.contains(s.id) }
             if 弹过没有 { continue }
@@ -99,9 +99,9 @@ final class SettleBell: ObservableObject {
     /// 他选好了。再来=true ⇒ 把没做成的那几条重新安排上（机器只做缺的，不会重画做好的）。
     func 办(_ s: SettleNote, 再来: Bool) async {
         await MainActor.run { 当前 = nil }
-        try? await ActAPI.genSettleAck(char: s.char, 再来: 再来)
+        try? await ActLab.genSettleAck(char: s.char, 再来: 再来)
         if 再来 {
-            _ = try? await ActAPI.genStart(charId: s.char)      // 空 action = 只做还缺的
+            _ = try? await ActLab.genStart(charId: s.char)      // 空 action = 只做还缺的
         }
         await MainActor.run {
             NotificationCenter.default.post(name: .stillSettleDone, object: s.char)

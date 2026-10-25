@@ -661,19 +661,36 @@ jobs:
       #   **v52 的老包**（包名还是错的 com.still.Still）—— 又老又对不上，
       #   iOS 装不上还不说原因，用户看到的就是「点了完全没反应」。
       #   ⇒ 以后每次构建都自动顶掉它，别再让老包留在上面。
-      - name: 同步到安装页（顶掉台子上的旧包）
-        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
+      # ★★★ 2026-10-25：这一步以前是「11MB 一口气 POST 上去」—— 网关会在中途掐掉，
+      #   实测挂 12 分钟后失败，而且**失败会连累后面「发布免登录直链」那一步被跳过**
+      #   （v89 那一趟就是这样，包根本没发到 Release 上）。
+      #   ⇒ 改成分片传（2M 一片，实测 10.9MB 只要 8 秒），传完再调 adopt 正式挂上。
+      #   ★ 上传钥匙走 Secret —— 仓库是公开的，写死在文件里等于把上传口子送给所有人。
+      #     没配这个 Secret 就**跳过**（不是失败），后面该发的东西照发。
+      - name: 同步到安装页（分片传，顶掉台子上的旧包）
+        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' && secrets.IOS_PUSH_KEY != '' }}
         working-directory: ${{ steps.loc.outputs.dir }}
+        env:
+          PUSH_KEY: ${{ secrets.IOS_PUSH_KEY }}
         run: |
           set -eo pipefail
-          curl -sS --max-time 240 --retry 2 -X POST --data-binary @out/Still.ipa \
-            -o push.json "https://still-ui-design.app.workbuddy.host/api/ios/push?token=still-push"
-          echo "════ 台子回的话 ════"
-          cat push.json
-          echo
-          echo "════ 安装页现在挂的是哪一份 ════"
-          curl -sS --max-time 60 "https://still-ui-design.app.workbuddy.host/api/ios/manifest.plist" \
-            | grep -o "<string>[^<]*</string>" | head -4
+          IPA=out/Still.ipa
+          NAME=Still.ipa
+          SIZE=$(stat -c%s "$IPA")
+          BASE="https://still-ui-design.app.workbuddy.host"
+          rm -rf .chunks && mkdir -p .chunks
+          split -b 2097152 "$IPA" .chunks/p
+          OFF=0
+          for f in .chunks/p*; do
+            N=$(stat -c%s "$f")
+            curl -sS --max-time 120 --retry 3 -X POST --data-binary @"$f" \
+              -H "Content-Type: application/octet-stream" \
+              "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$OFF&size=$SIZE"
+            echo
+            OFF=$((OFF + N))
+          done
+          echo "════ 正式挂上 ════"
+          curl -sS --max-time 120 -X POST "$BASE/api/ios/adopt?k=$PUSH_KEY&name=$NAME"
 
       # 同一份签好的包再发一份到 Release，拿到「免登录直链」：
       # iPhone 自带 Safari 打开就能存到「文件」→ 直接装，不用电脑、不用全能签再签一次。

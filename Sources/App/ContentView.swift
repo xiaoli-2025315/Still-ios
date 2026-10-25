@@ -12,7 +12,7 @@ enum AppVersion {
     ///   它曾经停在 "v30" 停了三个版本（v31/v32/v33 都忘了改）——
     ///   直接后果：他装完不知道手机上到底是不是新版，
     ///   排查「改了没效果」时连「装的是哪一版」都确定不了。
-    static let tag = "v93"
+    static let tag = "v94"
 }
 
 // MARK: - 入口
@@ -50,6 +50,10 @@ struct ContentView: View {
             await auth.restore()
             checked = true
         }
+        // ★★★ v94（他原话：「不管我当前在这个APP的任意界面，都弹出来」）：
+        //   一批做完的汇报弹窗盖在**整个 App 的最外层**，所以他在哪一页都收得到，
+        //   不用跑回制作页去找。
+        .overlay { SettleBellView() }
     }
 }
 

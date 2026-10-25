@@ -677,6 +677,11 @@ struct RoleStudioView: View {
         }
         // ★★★ v88（方案①）：离开这一页就记一笔 —— 下次进来不再自作主张开工。
         .onDisappear { m.stop(); m.markLeft() }
+        // ★ v94：他在结算弹窗里做了选择 ⇒ 这一页要立刻跟着变，不能还停在弹窗之前的样子。
+        .onReceive(NotificationCenter.default.publisher(for: .stillSettleDone)) { n in
+            guard let cid = n.object as? String, cid == m.charId else { return }
+            Task { await m.tick() }
+        }
         .sheet(isPresented: $showHome) {
             RoleHomeView(char: char, showcase: true)
                 .presentationDetents([.large])
@@ -936,27 +941,16 @@ struct RoleStudioView: View {
                 .font(.system(size: 11.5))
                 .foregroundStyle(Tw.gray500)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 10) {
-                Button { Task { await m.decide("明天自动") } } label: {
-                    smallLabel("明天有额度了\n自动接着做", filled: true)
-                }
-                .buttonStyle(PressStyle())
-                .disabled(m.deciding)
-                Button { Task { await m.decide("放弃") } } label: {
-                    smallLabel("这几条不要了", filled: false)
-                }
-                .buttonStyle(PressStyle())
-                .disabled(m.deciding)
+            // ★★★ v94（他原话：「这几条怎么办，和一个摆设有什么区别」）：
+            //   以前这里摆三颗键，可点开只有一句「额度用完了」和「做好了 N 个不受影响」——
+            //   **没有一条他能真的走的路**。现在不给摆设：键就是「把剩下的接着做」，
+            //   按下去**直接开工**（机器只做缺的那几条，不会重画做好的）。
+            //   "这批做得怎么样、要不要再来一遍"由**做完了弹窗汇报**负责（任意界面都会弹）。
+            Button { Task { await m.order("") } } label: {
+                smallLabel("把剩下的 \(m.pendingCount) 条接着做", filled: true)
             }
-            // ★★★ v93：第三条实在的路 —— 那几条里**豆包其实已经画好了、只是没拿回来**的，
-            //   现在就去拿，**不花额度**。★ 没得拿就绝不给这颗键（不给空承诺）。
-            if m.pendingCanFetch {
-                Button { Task { await m.fetchBack() } } label: {
-                    smallLabel("不花钱，把已经画好的那几条先拿回来", filled: false)
-                }
-                .buttonStyle(PressStyle())
-                .disabled(m.deciding)
-            }
+            .buttonStyle(PressStyle())
+            .disabled(m.deciding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

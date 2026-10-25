@@ -209,6 +209,9 @@ struct MainHomeView: View {
                     .zIndex(4)
             }
         }
+        // ★ v95：第一回进首页，把「它在这儿 / 叫它来 / 我」三处挖亮讲一遍。
+        //   只讲一遍。讲过就记在本地，再也不弹。
+        .overlayPreferenceValue(CoachAnchorKey.self) { CoachOverlay(册: "首页v1", 锚: $0) }
         // ★ 对话页用 fullScreenCover 展示：它是**独立的一层呈现**，
         //   有自己完整的视图树和生命周期 —— 键盘在这里不会像飘在主页上那样被吞掉。
         .fullScreenCover(isPresented: $talkOpen) {
@@ -330,6 +333,8 @@ struct MainHomeView: View {
                     .background(Circle().fill(Tw.gray100))
             }
             .buttonStyle(PressStyle(scale: 0.9))
+            // ★ v95：给引导留个记号
+            .coachAnchor("我")
         }
         .padding(.leading, 20)
         .padding(.trailing, 12)
@@ -785,6 +790,8 @@ struct HerPane: View {
                         stopWalk()
                         cancelBack()
                     }
+                    // ★ v95：给引导留个记号 —— 镂空蒙层才知道该把哪儿挖亮
+                    .coachAnchor("房间")
                     .padding(.bottom, 8)
 
                 // ★ 这一行是**真的状态**，不是文案：
@@ -866,6 +873,8 @@ struct HerPane: View {
                         SoundKit.shared.meow()
                         Notifier.summonNow()
                     }
+                    // ★ v95：给引导留个记号
+                    .coachAnchor("叫它来")
                 }
                 .padding(.bottom, 10)
 

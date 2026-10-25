@@ -52,8 +52,11 @@ final class GenModel: ObservableObject {
     var headline: String {
         if !note.isEmpty { return note }
         if let s = state { return s.line }
-        if job.isEmpty { return "还没做。点下面的「做整套」或「重做一遍」开始。" }
-        return "正在问服务器…"
+        // ★ v93：以前这里写「点下面的『做整套』或『重做一遍』」—— 这一页根本没有「做整套」
+        //   这颗键（只有 重新收一遍 / 接着做下一批 / 重做一遍 / 停这一次）⇒ 点了没处点。
+        //   改成一句**真的有出路**的话。
+        if job.isEmpty { return "还没做。点下面的键就能开始。" }
+        return "正在问服务器…（问不通会一直自己再问）"
     }
 
     func poll() async {
@@ -195,8 +198,9 @@ struct GenProgressPage: View {
             }
             Button("先不做", role: .cancel) {}
         } message: {
+            // ★ v93：以前这里提「修一下」—— 整个 App 都没有这颗键，指了等于没指。
             Text("服务器会按那套动作清单把动作重新画一遍，然后重新把背景去掉。"
-                 + "这一步花的是你豆包账号的额度 —— 只是想补几条的话，用「修一下」或者「接着做下一批」更省。")
+                 + "这一步花的是你豆包账号的额度 —— 只是想补几条的话，点「接着做下一批」更省。")
         }
     }
 
@@ -422,7 +426,9 @@ struct GenProgressPage: View {
                     .foregroundStyle(Tw.gray500)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("已经做好的那些在墙上随时能用。差的这几段你说了算：")
+            // ★ v93：以前写「在墙上随时能用」—— 这一页没有通往墙的键，是句空话。
+            //   改成说清楚**做好的还在、差的在这儿就能定**。
+            Text("已经做好的那几个都还在，不受影响。差的这几段你说了算：")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Tw.gray500)
                 .fixedSize(horizontal: false, vertical: true)

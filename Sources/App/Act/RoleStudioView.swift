@@ -222,6 +222,11 @@ final class StudioModel: ObservableObject {
     ///   以前这一页只写「进动作库那边会问你怎么处置」—— 那是假话：动作库根本没问，
     ///   他就一直卡在那儿。现在**就地摆两颗键让他定**，并把原因原样说给他听。
     @Published var pendingWhy = ""
+    /// ★ v93：那几条里有没有「豆包其实已经画好了、只是没拿回来」的 ——
+    ///   有的话多给一条**不花钱**的路；没有就**不许**摆那颗键（不给空承诺）。
+    @Published var pendingCanFetch = false
+    /// ★ v93：已经真做好了的动作有几个（告诉他"没白等"，不是只报丧）。
+    @Published var madeCount = 0
     /// 正在跟机器确认他的选择（防连点）
     @Published var deciding = false
     /// 每条动作各到哪了（只有第二阶段才画格子）
@@ -314,7 +319,21 @@ final class StudioModel: ObservableObject {
     func tick() async {
         guard alive else { return }
         do {
-            // ★★★ v87（跟安卓 v2.84 同一条）：手机自己记着单号 —— **先拿这个号定向问一次**。
+            // ★★★ v93（他原话：「不是只要显示就可以了呀那后续呢？」）：
+            //   **第一句就按「这只猫」问**，不再按某一趟单问。
+            //   他会连点几次「接着做」⇒ 机器上同时存在好几趟单；只盯一趟（还总盯最新那趟）⇒
+            //   真正等着他拿主意的那几条挂在旧单上、永远读不到 ⇒
+            //   界面一直写「正在做」，既没进展也没出路。按猫问一次，所有趟的账一起算。
+            if let v = try? await ActLab.genChar(charId), v.char == charId {
+                // 机器上属于这只猫一趟都没有 ⇒ 如实交给下面安排新的一批。
+                if let jid = v.job, !jid.isEmpty, v.stage != "还没开始" {
+                    jobId = jid
+                    UserDefaults.standard.set(jid, forKey: "still.genjob." + charId)
+                    apply(v)
+                    return
+                }
+            }
+            // ★★★ v87（跟安卓 v2.84 同一条）：手机自己记着单号 —— **拿这个号定向问一次**。
             //   以前只在「我名下最近的活」那个列表里瞎找，找到哪个算哪个；
             //   机器一重启（或者这趟被挤出最近 30 条），列表里就没有它了 ⇒
             //   页面立刻以为「没这回事」，退回没开始的样子、又下一单。
@@ -495,14 +514,30 @@ final class StudioModel: ObservableObject {
     ///     · `明天自动` ＝ 明天额度刷新了机器自己补（做好的绝不重画）
     ///     · `放弃`    ＝ 这几条以后不再提，做好的照常用
     func decide(_ 选: String) async {
-        guard !jobId.isEmpty, !deciding else { return }
+        // ★ v93：按这只猫递（跟安卓 v2.89 同一条）—— 按单号递会递错门。
+        guard !charId.isEmpty, !deciding else { return }
         deciding = true
         err = ""
         do {
-            note = try await ActLab.genDecide(job: jobId, 选: 选)
+            note = try await ActLab.genDecide(charId: charId, 选: 选)
             await tick()
         } catch {
             err = "没办成：" + error.localizedDescription
+        }
+        deciding = false
+    }
+
+    /// ★★★ v93：那几条里**豆包其实已经画好了、只是没拿回来**的 —— 现在就去拿。
+    ///   这条不花额度（片子本来就在豆包那边），是除了"等明天"和"不要了"之外最实在的一条路。
+    func fetchBack() async {
+        guard !deciding else { return }
+        deciding = true
+        err = ""
+        do {
+            note = try await ActLab.genRefetch(charId: charId)
+            await tick()
+        } catch {
+            err = "没拿成：" + error.localizedDescription
         }
         deciding = false
     }
@@ -577,6 +612,8 @@ final class StudioModel: ObservableObject {
         }
         pendingCount = (j.pending ?? []).count
         pendingWhy = (j.pending ?? []).compactMap { $0.why }.first ?? ""
+        pendingCanFetch = (j.pending ?? []).contains { $0.fetchable == true }
+        madeCount = j.madeOk.count
     }
 
     /// 动作墙上已经做好了哪些（重进页面时，格子不至于全是空转圈）
@@ -887,12 +924,15 @@ struct RoleStudioView: View {
     ///   现在把机器上给的原因原样说给他听，并**当场给两条路**。
     private var decideCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("有 \(m.pendingCount) 条做不出来")
+            // ★★★ v93（他原话：「你老板叫你办一件事情你就告诉他办不成？然后呢」）：
+            //   报完"没做成"要**同时**说清两件事：已经到手几个（没白等）、现在该怎么办。
+            Text(m.madeCount > 0
+                 ? "已经做好了 \(m.madeCount) 个，还有 \(m.pendingCount) 条没做出来"
+                 : "有 \(m.pendingCount) 条做不出来")
                 .font(.system(size: 13.5, weight: .bold))
                 .foregroundStyle(Tw.gray900)
-            Text(m.pendingWhy.isEmpty
-                 ? "机器这一回没把它们做出来。做好的那些不受影响，随时能用。"
-                 : m.pendingWhy + "\n\n做好的那些不受影响，随时能用。")
+            Text((m.pendingWhy.isEmpty ? "机器这一回没把它们做出来。" : m.pendingWhy)
+                 + "\n\n已经做好的不受影响，现在就能用。")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Tw.gray500)
                 .fixedSize(horizontal: false, vertical: true)
@@ -904,6 +944,15 @@ struct RoleStudioView: View {
                 .disabled(m.deciding)
                 Button { Task { await m.decide("放弃") } } label: {
                     smallLabel("这几条不要了", filled: false)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(m.deciding)
+            }
+            // ★★★ v93：第三条实在的路 —— 那几条里**豆包其实已经画好了、只是没拿回来**的，
+            //   现在就去拿，**不花额度**。★ 没得拿就绝不给这颗键（不给空承诺）。
+            if m.pendingCanFetch {
+                Button { Task { await m.fetchBack() } } label: {
+                    smallLabel("不花钱，把已经画好的那几条先拿回来", filled: false)
                 }
                 .buttonStyle(PressStyle())
                 .disabled(m.deciding)

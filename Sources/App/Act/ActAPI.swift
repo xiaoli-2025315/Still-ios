@@ -188,6 +188,16 @@ extension ActLab {
         try JSONDecoder().decode(Mine.self, from: try await rawGet("/api/gen", timeout: 25))
     }
 
+    /// ★★★ v93（他原话：「不是只要显示就可以了呀那后续呢？」）：
+    ///   **按这一只猫问，不再按某一趟单问**。
+    ///   他会连点几次「接着做」⇒ 机器上同时存在好几趟单。只问一趟的话，
+    ///   真正等着他拿主意的那几条挂在旧单上、永远读不到 ⇒ 界面一直写「正在做」，
+    ///   既没进展也没出路。这个接口把名下所有趟合起来答（跨趟合并去重）。
+    static func genChar(_ charId: String) async throws -> ActLab.GenJob {
+        try JSONDecoder().decode(ActLab.GenJob.self,
+            from: try await rawGet("/api/gen", query: ["char": charId], timeout: 25))
+    }
+
     static func genStop(job: String) async throws -> String {
         let d = try await rawPost("/api/gen/stop", query: ["job": job])
         let m = try? JSONDecoder().decode(Msg.self, from: d)
@@ -208,6 +218,19 @@ extension ActLab {
     /// - `act` 留空 = 这一趟所有悬着的条一起按这个办。
     static func genDecide(job: String, act: String = "", 选: String) async throws -> String {
         var q: [String: String] = ["job": job, "选": 选]
+        if !act.isEmpty { q["act"] = act }
+        let d = try await rawPost("/api/gen/decide", query: q, timeout: 60)
+        let m = try? JSONDecoder().decode(Msg.self, from: d)
+        if let m, !m.isOK { throw LabError(m.text.isEmpty ? "没办成" : m.text) }
+        return 选 == "放弃" ? "知道了 —— 这几条以后不再提" : "约好了 —— 明天额度刷新了机器自己补上"
+    }
+
+    /// ★★★ v93：**按这只猫递，不再按某一趟单递**。
+    ///   以前只带单号，而手机记的往往是最新的那一趟 ⇒ 机器回一句
+    ///   「这趟没有等你定夺的条」⇒ 他点了键、什么也没发生，又被打回原地。
+    ///   按猫递的话，名下所有趟里同名的条一起办掉，不会再递错门。
+    static func genDecide(charId: String, act: String = "", 选: String) async throws -> String {
+        var q: [String: String] = ["char": charId, "选": 选]
         if !act.isEmpty { q["act"] = act }
         let d = try await rawPost("/api/gen/decide", query: q, timeout: 60)
         let m = try? JSONDecoder().decode(Msg.self, from: d)

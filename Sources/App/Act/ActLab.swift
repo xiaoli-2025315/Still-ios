@@ -159,10 +159,27 @@ enum ActLab {
         struct Pending: Decodable, Identifiable {
             let act: String?
             let why: String?
+            /// ★ v93：这条**豆包其实已经画好了、只是没拿回来** —— 有就能给一条不花钱的路。
+            ///   没有就**不许**显示那颗键（不给空承诺）。
+            let fetchable: Bool?
             var id: String { act ?? UUID().uuidString }
-            enum CodingKeys: String, CodingKey { case act; case why = "为什么" }
+            enum CodingKeys: String, CodingKey {
+                case act; case why = "为什么"; case fetchable = "可重收"
+            }
         }
         let pending: [Pending]?
+
+        // ★ v93：★ 不新增解码字段 —— 别的接口（不带 char 的那一支）不返回它们，
+        //   一加就会整包解码失败、页面直接白。这几个都从已有字段现算。
+
+        /// 跨所有趟合并后**已经真做好了的**动作名 —— 用来告诉他「没白等」。
+        var madeOk: [String] {
+            (each ?? []).compactMap { s in
+                (s.matteDone == true) ? s.act : nil
+            }.compactMap { $0 }
+        }
+        /// 还差几个没做（机器按台子上真有的算出来的）。
+        var restN: Int { (leftover ?? []).count }
 
         struct GenSeg: Decodable, Identifiable {
             let act: String?

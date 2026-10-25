@@ -235,6 +235,9 @@ final class StudioModel: ObservableObject {
         let s = stage ?? ""
         // ★ 先判「正在往台子送」：那时 stage 里也带「抠像」两个字，但它其实还没开始抠。
         if s.contains("送进") { return "saved" }
+        // ★★★ v88：「没抠完」里也带个"抠"字 —— 不先挡住就会被下面那句判成
+        //   「正在抠背景」，于是明明没抠完，格子里照样转圈。那是假话。
+        if s.contains("没抠完") { return "warn" }
         if s.contains("抠") || s.contains("抽帧") || s.contains("打包") || pct > 0 { return "matte" }
         if s.contains("画好了") { return "done" }
         // ★★★ v2.78（他 2026-10-23）：「片子拿到的过程直到送去抠图，这中间要有
@@ -260,9 +263,39 @@ final class StudioModel: ObservableObject {
         charName = char.title
         self.skipToStage2 = skipToStage2
         jobId = UserDefaults.standard.string(forKey: "still.genjob." + char.id) ?? ""
+        // ★★★ v87（跟安卓 v2.84 同一条）：「已经进到第二批」这件事**必须记住**。
+        //   以前它只活在内存里 —— 一退出页面就丢，再进来又退回「等坐立」那一屏，
+        //   那 10 个格子全不见了，看着就像「回到没开始前、又要重新来一遍」。
+        stage2 = skipToStage2 || UserDefaults.standard.bool(forKey: "still.stage2." + char.id)
+        // ★★★ v88（他 2026-10-25 挑的方案①）：「他**退出过**」这件事也要记住。
+        //   以前一个字都没记 ⇒ 每次进来都当成"第一次来"，自己又去安排一单、
+        //   又把自己摆回"正在做"的样子 —— 他看到的「又退回了接着往下做」就是这个。
+        leftOnce = UserDefaults.standard.bool(forKey: "still.left." + char.id)
     }
 
     func stop() { alive = false }
+
+    /// ★★★ v88（方案①）：退出过 ⇒ **机器绝不自动开工**，只把「它停着、做到哪了」说清楚；
+    ///   要接着做，由他点那颗键（点了就重新开闸）。
+    private(set) var leftOnce = false
+
+    /// 离开这一页 ⇒ 记一笔。
+    func markLeft() {
+        leftOnce = true
+        UserDefaults.standard.set(true, forKey: "still.left." + charId)
+    }
+
+    /// 他亲自点了键要开工 ⇒ 把「退出过」这笔账清掉，机器重新可以自己安排。
+    private func clearLeft() {
+        leftOnce = false
+        UserDefaults.standard.set(false, forKey: "still.left." + charId)
+    }
+
+    /// ★★ v88：退出过 ⇒ 不再自动开工，只把「它停着」说清楚（**不许再说"正在生成"**）。
+    private func showStopped() {
+        if !sitReady && sitStage != "warn" { sitStage = "warn" }
+        note = "这一趟停着 —— 点下面的键接着做，做好的不会丢。"
+    }
 
     /// 2.2 秒看一眼机器。★ 安卓也是这个节奏，两边看到的东西才对得上。
     func loop() async {
@@ -275,6 +308,16 @@ final class StudioModel: ObservableObject {
     func tick() async {
         guard alive else { return }
         do {
+            // ★★★ v87（跟安卓 v2.84 同一条）：手机自己记着单号 —— **先拿这个号定向问一次**。
+            //   以前只在「我名下最近的活」那个列表里瞎找，找到哪个算哪个；
+            //   机器一重启（或者这趟被挤出最近 30 条），列表里就没有它了 ⇒
+            //   页面立刻以为「没这回事」，退回没开始的样子、又下一单。
+            if !jobId.isEmpty,
+               let one = try? await ActLab.genState(job: jobId),
+               one.char == charId {
+                apply(one)
+                return
+            }
             let mine = try await ActLab.genMine()
             if let j = mine.of(charId) {
                 apply(j)
@@ -302,6 +345,9 @@ final class StudioModel: ObservableObject {
 
     /// 机器上没有这一趟 ⇒ 看动作墙上已经做到哪儿了，决定「下一批坐立」还是「直接进第二阶段」。
     private func autoStart() async {        if Date() < quietUntil { return }
+        // ★★★ v88（方案①）：**他退出过 ⇒ 绝不自动开工**，只把"它停着"说清楚。
+        //   （进度照样看得见 —— 下单回执那条规矩不能破。）
+        if leftOnce { showStopped(); return }
         lookedAtWall = true
         quietUntil = Date().addingTimeInterval(5)
 
@@ -317,6 +363,14 @@ final class StudioModel: ObservableObject {
                 return
             }
             await order("")
+            return
+        }
+
+        // ★★★ v87（跟安卓 v2.84 同一道闸门）：这只猫在后台已经有一趟了 ⇒ 绝不再下单。
+        //   以前这道闸门只挂在「从『接着做剩下的』进来」那条路上，
+        //   正常进来这条路完全没人拦 —— 列表里一找不到，立刻又下一单。
+        if await hasRunningBatch() {
+            note = "这一批已经在做了，不用再点"
             return
         }
 
@@ -359,6 +413,7 @@ final class StudioModel: ObservableObject {
     /// 下一单。`action` 留空 = 词库全做（机器自己会跳过已经有的）。
     func order(_ action: String) async {
         if Date() < quietUntil { return }
+        clearLeft()          // ★ v88：他亲自点了键要开工 ⇒ 重新开闸
         quietUntil = Date().addingTimeInterval(8)
         note = action.isEmpty ? "正在安排其它动作…" : "正在安排「坐立」…"
         do {
@@ -378,6 +433,8 @@ final class StudioModel: ObservableObject {
     /// 他点了「确认，继续做其它动作」。
     func confirmRest() async {
         stage2 = true
+        // ★★★ v87：记到手机上 —— 退出再进还是第二阶段，不会再退回「等坐立」那一屏。
+        UserDefaults.standard.set(true, forKey: "still.stage2." + charId)
         await order("")
     }
 
@@ -508,7 +565,8 @@ struct RoleStudioView: View {
             await m.syncWall()
             await m.loop()
         }
-        .onDisappear { m.stop() }
+        // ★★★ v88（方案①）：离开这一页就记一笔 —— 下次进来不再自作主张开工。
+        .onDisappear { m.stop(); m.markLeft() }
         .sheet(isPresented: $showHome) {
             RoleHomeView(char: char, showcase: true)
                 .presentationDetents([.large])
@@ -585,11 +643,17 @@ struct RoleStudioView: View {
                     } else if m.sitStage == "saved" {
                         DotsLabel(base: "准备开始去掉背景", size: 15)
                     } else {
-                        Text(m.sitStage == "queued" ? "排队中" : "正在生成中")
+                        // ★★★ v88（他问「APP 却显示正在生成，请问是在哪里生成」）：
+                        //   兜底那句「正在生成中」是假话的源头 —— 认不出的状态全掉进它，
+                        //   于是明明停着，界面上照样写着"正在生成"。"已经停了"单独一句实话。
+                        Text(m.sitStage == "queued" ? "排队中"
+                             : (m.sitStage == "warn" ? "已经停下来了" : "正在生成中"))
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(m.sitStage == "queued" ? Tw.gray400 : Tw.red600)
+                            .foregroundStyle(m.sitStage == "queued" ? Tw.gray400
+                                             : (m.sitStage == "warn" ? Color(hex: 0xB45309) : Tw.red600))
                         if m.sitStage != "queued" {
-                            Text("豆包那边一条大概要 3–5 分钟")
+                            Text(m.sitStage == "warn" ? "点下面的键接着做，做好的不会丢"
+                                 : "豆包那边一条大概要 3–5 分钟")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Tw.gray400)
                         }
@@ -607,7 +671,10 @@ struct RoleStudioView: View {
             }
         }
         .overlay {
-            if !m.sitReady && m.sitStage != "matte" && m.sitStage != "queued" && m.sitStage != "saved" {
+            // ★★★ v88：「已经停了」**不许再带呼吸动画** —— 那个一鼓一鼓的动效就是在说
+            //   "它还在动着呢"，是假话。
+            if !m.sitReady && m.sitStage != "matte" && m.sitStage != "queued"
+                && m.sitStage != "saved" && m.sitStage != "warn" {
                 GenGlow().clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .allowsHitTesting(false)
             }

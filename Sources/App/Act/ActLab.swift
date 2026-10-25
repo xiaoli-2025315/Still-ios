@@ -206,7 +206,11 @@ enum ActLab {
             case phase    = "阶段"
             case progress = "进度"
             case allDone  = "全完成"
-            case matteAllDone = "背景去掉了"
+            // ★★★ v92（2026-10-25）：这一条以前写的是「背景去掉了」—— 可机器那边
+            //   真正写出来的字段名是 **`抠像完成`**（安卓一直按这个读的）。
+            //   名字对不上 ⇒ 这个值**永远是空的**：台子明明说"背景已经去掉了"，
+            //   苹果这边却认不出来（它只看 `全完成`），判定就跟安卓对不齐。
+            case matteAllDone = "抠像完成"
             case each     = "每条"
             case redo     = "可重收"
             case leftover = "剩"
@@ -332,6 +336,14 @@ enum ActLab {
             let parts = line.split(separator: "|", omittingEmptySubsequences: false)
             guard let head = parts.first else { continue }
             let nm = String(head)
+            // ★★★ v92（存量）：**只有明确写着 0 帧的才不算数**。
+            //   台子上有一批"说好了、其实一帧都没有"的旧动作（以前那道超时兜底把它们标成了 100%），
+            //   安卓一直按"帧数 > 0"认，苹果这边以前只认名字 ⇒ 那几格在苹果上看着是做好的，
+            //   点进去其实是空的。现在跟安卓同一个口径。
+            //   ★ 数不出帧数（格式对不上）的**照旧算数** —— 宁可多认，也不能把做好的弄丢。
+            if parts.count > 2, let f = Int(parts[2].trimmingCharacters(in: .whitespaces)), f <= 0 {
+                continue
+            }
             if nm.hasPrefix("x_") { m.pending += 1 } else if !nm.isEmpty { m.names.insert(nm) }
         }
         return m

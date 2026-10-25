@@ -326,6 +326,15 @@ final class StudioModel: ObservableObject {
             }
             let mine = try await ActLab.genMine()
             if let j = mine.of(charId) {
+                // ★★★ v92（存量，跟安卓 v2.88 同一条）：**找到这一趟就把单号记下来**。
+                //   以前只有"自己下的单"才记 ⇒ 机器上早就存在、手机却没存过的老任务
+                //   （换过手机、重装过、或者改动之前那一批）单号一直是空的。
+                //   而底下"这几条怎么办"那颗键要递单号才递得出去 ——
+                //   号是空的 ⇒ 键看着在、点了什么也没发生，他就一直卡在那儿。
+                if let jid = j.job, !jid.isEmpty, jobId.isEmpty {
+                    jobId = jid
+                    UserDefaults.standard.set(jid, forKey: "still.genjob." + charId)
+                }
                 apply(j)
             } else if !lookedAtWall || Date() > quietUntil {
                 await autoStart()
@@ -372,6 +381,10 @@ final class StudioModel: ObservableObject {
             return
         }
 
+        // ★★★ v92（跟安卓同一条）：已经进过第二阶段 ⇒ 别再回头去安排坐立。
+        //   （放在 skipToStage2 那一段**之后** —— 那条路本来就是要进第二阶段并接着下单的。）
+        if stage2 { return }
+
         // ★★★ v87（跟安卓 v2.84 同一道闸门）：这只猫在后台已经有一趟了 ⇒ 绝不再下单。
         //   以前这道闸门只挂在「从『接着做剩下的』进来」那条路上，
         //   正常进来这条路完全没人拦 —— 列表里一找不到，立刻又下一单。
@@ -382,10 +395,19 @@ final class StudioModel: ObservableObject {
 
         var hasSit = false
         var have = 0
+        var others = 0
         if let m = try? await ActLab.manifest(charId: charId) {
             have = m.names.count
             hasSit = m.names.contains("sit")
+            others = m.names.filter { $0 != "sit" }.count
         }
+        // ★★★ v92（他问「改动之前出的问题怎么办？就留着烂摊子吗」）：
+        //   改动之前就做到一半的老角色，手机上根本没有 `still.stage2.<猫>` 这个记号
+        //   （那是 v87 才开始记的）⇒ 一律被当成"刚开始"，退回到「等坐立」那一屏，
+        //   其它动作那几格一个都不画，看着就像前面全白做了。
+        //   ⇒ 以**台子上真实存在的动作**为准反推：除了坐立还有别的动作，
+        //     说明他早就点过「确认」了，只是手机没记住 —— 把这笔账补上（只补一次）。
+        if others > 0 && !stage2 { await markStage2() }
         if hasSit {
             // ★★★ 2026-10-23（他点名的）：**第一页就干一件事 —— 等坐立真的走完**。
             //   台子上有 ≠ 手机能播：还得取回来、解得开才算。
@@ -436,11 +458,28 @@ final class StudioModel: ObservableObject {
         }
     }
 
+    /// ★★★ v92（2026-10-25，救存量老角色）：把「已经进过第二阶段」这笔账补回手机上。
+    ///
+    ///   只按**台子上真实存在的动作**来判定（有别的动作 ⇒ 他早就点过「确认」），
+    ///   不信手机那几个记号。补完之后跟正常进第二阶段一模一样 —— 格子照着台子填，
+    ///   绝不新下一单、绝不重画。
+    private func markStage2() async {
+        stage2 = true
+        UserDefaults.standard.set(true, forKey: "still.stage2." + charId)
+        await syncWall()
+    }
+
     /// 他点了「确认，继续做其它动作」。
     func confirmRest() async {
         stage2 = true
         // ★★★ v87：记到手机上 —— 退出再进还是第二阶段，不会再退回「等坐立」那一屏。
         UserDefaults.standard.set(true, forKey: "still.stage2." + charId)
+        // ★★★ v92（跟安卓 v2.76 同一道闸门）：这只猫在后台**已经有一趟在跑** ⇒ 只挂进度，
+        //   绝不再下一单 —— 以前这儿没拦，机器上那一趟还在做，他点一下又多下一单。
+        if await hasRunningBatch() {
+            note = "这一批已经在做了，不用再点"
+            return
+        }
         await order("")
     }
 
@@ -525,8 +564,16 @@ final class StudioModel: ObservableObject {
 
         let fin = (j.allDone == true) || (j.matteAllDone == true)
         if stage2 {
-            leftover = (j.leftover ?? []).count
-            allDone = fin && leftover == 0
+            // ★★★ v92（存量，跟安卓 v2.88 同一条）：**机器上没这个字段时，不许当成"一条都不剩"**。
+            //   以前 `?? []` 一兜了之 ⇒ 直接判成「整套都做好了」，
+            //   其实还有好几段压根没做，他就被这句话骗过去了。
+            if let lo = j.leftover {
+                leftover = lo.count
+                allDone = fin && leftover == 0
+            } else {
+                allDone = false
+                note = "这一批好了，还在问机器还有几段没做"
+            }
         }
         pendingCount = (j.pending ?? []).count
         pendingWhy = (j.pending ?? []).compactMap { $0.why }.first ?? ""

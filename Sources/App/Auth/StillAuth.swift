@@ -31,6 +31,19 @@ enum Ticket {
     static func clear() {
         Keychain.del(key)
     }
+
+    /// ★★★ 2026-10-25：给**地址**挂上票。
+    ///   网页（WebView）里的请求塞不进自定义头，只能把票挂在地址上 —— 台子认 `?t=`。
+    ///   不挂的话：工作台打开着，里面每个 `/api/` 请求都回 401，页面上只写「失败」。
+    static func 挂票(_ url: String) -> String {
+        let t = current
+        guard !t.isEmpty,
+              let c = URLComponents(string: url),
+              let h = c.host, h.contains("workbuddy.host"),
+              let enc = t.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+        else { return url }
+        return url + (url.contains("?") ? "&" : "?") + "t=" + enc
+    }
 }
 
 /// 给请求贴票 —— 一行，所有走台子的请求都要过它。
@@ -40,6 +53,18 @@ extension URLRequest {
         guard !t.isEmpty else { return }
         // ★ 只给台子贴，别把票发给别人 —— 第三方地址一律不贴。
         guard let h = url?.host, h.contains("workbuddy.host") else { return }
+        //
+        // ★★★ 2026-10-25（iOS 全页「没连上服务器」的真凶）：
+        //   这里原来**只**发 `Authorization: Bearer`。安卓 10-22 就栽在它上面 ——
+        //   平台的网关自己会往请求里塞一个 `Authorization` 头，**同名头会被顶掉**，
+        //   于是一上线所有接口都回「登录过期」。安卓当时改成 `X-Still-Ticket`
+        //   （自己的头，谁也抢不走），**iOS 没跟着改** ——
+        //   10-24 台子把「没带票也算主人」这个口子收掉之后，iOS 这边全线 401：
+        //   角色页、动作库、进度……凡是要点名认人的口，一个都进不去。
+        //
+        //   现在两个头都发：X-Still-Ticket 为主（抢不走），Bearer 留着兜底
+        //   （老版本台子只认 Bearer 时也还能用）。
+        setValue(t, forHTTPHeaderField: "X-Still-Ticket")
         setValue("Bearer \(t)", forHTTPHeaderField: "Authorization")
     }
 }

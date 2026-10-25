@@ -34,7 +34,14 @@ final class ActLibModel: ObservableObject {
             dropped = all.filter { $0.isDropped }
             loadedOnce = true
         } catch {
-            err = "没连上服务器：\(error.localizedDescription)"
+            // ★★★ 2026-10-25：「没连上服务器」这句骗了他很久。
+            //   台子好好在那儿，是**不认这张票**（401）—— 那是去重新登录，不是等网络。
+            //   两种事的补救办法完全不同，说错了就把人往错路上引。
+            if let le = error as? ActLab.LabError, le.needLogin {
+                err = le.message
+            } else {
+                err = "没连上服务器：\(error.localizedDescription)"
+            }
         }
         loading = false
     }

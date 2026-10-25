@@ -372,7 +372,7 @@ enum ActLab {
         let (data, resp) = try await URLSession.shared.upload(for: req, fromFile: video)
         guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
+            throw 台子回错了(http.statusCode, data)
         }
         let r = try? JSONDecoder().decode(SubmitResp.self, from: data)
         // ★ 传过同一段视频时台子回 ok=false + dup=true。这不是故障，是它省了一次重复抠像。
@@ -429,7 +429,7 @@ enum ActLab {
         let (data, resp) = try await URLSession.shared.upload(for: req, from: photo)
         guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
+            throw 台子回错了(http.statusCode, data)
         }
         let r = try? JSONDecoder().decode(NewResp.self, from: data)
         if let r, r.ok == false {
@@ -445,8 +445,23 @@ enum ActLab {
 
     struct LabError: LocalizedError {
         let message: String
-        init(_ m: String) { message = m }
+        /// ★ 这张票没带上 / 过期了。页面要按它给「去登录」，不能说成「没连上服务器」。
+        let needLogin: Bool
+        init(_ m: String, needLogin: Bool = false) {
+            message = m
+            self.needLogin = needLogin
+        }
         var errorDescription: String? { message }
+    }
+
+    /// ★★★ 2026-10-25：401 / 403 **必须**说成「要重新登录」，不能说成「没连上服务器」。
+    ///   他拿到的反馈一直是「没连上服务器」—— 可服务器好好在那儿，是**不认他这张票**。
+    ///   这两件事的补救办法完全不同（一个是等，一个是去登录），说错了就把人往错路上引。
+    static func 台子回错了(_ code: Int, _ data: Data) -> LabError {
+        if code == 401 || code == 403 {
+            return LabError("登录过期了 —— 重新登录一下就好", needLogin: true)
+        }
+        return LabError("服务器回的是 HTTP \(code)：\(snip(data))")
     }
 
     private static func get<T: Decodable>(_ path: String) async throws -> T {
@@ -482,7 +497,7 @@ enum ActLab {
         if let r, r.ok == true { return r.say ?? "" }
         if let w = r?.why, !w.isEmpty { throw LabError(w) }
         guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
-        throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
+        throw 台子回错了(http.statusCode, data)
     }
 
     private static func get<T: Decodable>(absURL: URL) async throws -> T {
@@ -493,7 +508,7 @@ enum ActLab {
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snip(data))")
+            throw 台子回错了(http.statusCode, data)
         }
         return try JSONDecoder().decode(T.self, from: data)
     }

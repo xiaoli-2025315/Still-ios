@@ -891,7 +891,9 @@ struct HerPane: View {
         .fullScreenCover(isPresented: $showCamera) { CameraCatPage() }
         .fullScreenCover(isPresented: $showScan) { ScanPage() }
         .fullScreenCover(isPresented: $showWork) {
-            CanvasPage(url: ActLab.base + "/canvas", title: "工作台")
+            // ★ 2026-10-25：工作台是网页，它里面每个 /api/ 请求都要认人 ——
+            //   票只能挂在地址上（网页塞不进自定义头），不挂就是一整页 401。
+            CanvasPage(url: Ticket.挂票(ActLab.base + "/canvas"), title: "工作台")
         }
         .sheet(isPresented: $showBag) {
             BagPage().presentationDetents([.large])

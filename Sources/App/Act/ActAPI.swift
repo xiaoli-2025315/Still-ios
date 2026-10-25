@@ -44,7 +44,7 @@ extension ActLab {
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snipText(data))")
+            throw 台子回错了(http.statusCode, data)
         }
         return data
     }
@@ -69,7 +69,7 @@ extension ActLab {
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
         guard (200..<300).contains(http.statusCode) else {
-            throw LabError("服务器回的是 HTTP \(http.statusCode)：\(snipText(data))")
+            throw 台子回错了(http.statusCode, data)
         }
         return data
     }

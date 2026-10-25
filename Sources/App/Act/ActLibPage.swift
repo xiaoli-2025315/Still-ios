@@ -517,6 +517,14 @@ struct ActWallSheet: View {
     @State private var askRetire = false
     /// 一键修复：要不要连已经好了的也重抠
     @State private var askRepair = false
+    /// ★ v95（功能匹配）：重摆 / 退回 —— 台子上有、手机上以前没入口
+    @State private var askRealign = false
+    @State private var askUndo = false
+    @State private var alignBusy = false
+    /// ★ v95（功能匹配）：认一认 —— 非 nil 就挂上那个看不见的小网页
+    @State private var recogURL: URL? = nil
+    /// 上次跑识别的时刻（防连环跑）
+    @State private var lastRecogAt = Date.distantPast
     /// 页面上那句反馈（贴在墙上，不弹窗）
     @State private var hint = ""
 
@@ -598,6 +606,24 @@ struct ActWallSheet: View {
         } message: {
             Text("退下来只是不显示这一格，文件一个都不删，以后还能恢复。")
         }
+        .confirmationDialog("把「\(char.title)」重新摆一遍大小？",
+                            isPresented: $askRealign, titleVisibility: .visible) {
+            Button("摆（不花额度）") { Task { await realignNow() } }
+            Button("先不摆", role: .cancel) {}
+        } message: {
+            Text("这只猫已经做好的动作，按「坐立」那把尺子再摆一遍：\n"
+                 + "· 身高统一、脚都踩在同一条线上 —— 换猫时不会一大一小\n"
+                 + "· 不重新抠、不花额度、原来的视频一个都不动\n"
+                 + "· 摆之前会先留一份备份，摆得不如从前能退回去")
+        }
+        .confirmationDialog("把「\(char.title)」退回摆之前？",
+                            isPresented: $askUndo, titleVisibility: .visible) {
+            Button("退回去", role: .destructive) { Task { await undoNow() } }
+            Button("先不退", role: .cancel) {}
+        } message: {
+            Text("这一只所有动作都退回上一次重摆之前的样子。只还原画面大小，不删任何动作；"
+                 + "没重摆过的动作，退不退都一样。")
+        }
         .confirmationDialog("修一下", isPresented: $askRepair, titleVisibility: .visible) {
             Button("只修卡住的（不花额度）") { Task { await repair(force: false) } }
             Button("连已经好了的也重抠一遍") { Task { await repair(force: true) } }
@@ -616,6 +642,23 @@ struct ActWallSheet: View {
         .photosPicker(isPresented: $showSlotPicker, selection: $slotItem, matching: .videos)
         .fullScreenCover(item: $previewing) { p in
             ActPreviewPage(pack: p.pack, act: p.act)
+        }
+        // ★ v95（功能匹配）：那个看不见的小网页（认一认）。
+        //   1×1、透明、摆在屏幕外 —— 只有它有，苹果上传的视频才能进到格子里。
+        .overlay(alignment: .topLeading) {
+            if let u = recogURL {
+                RecogRunner(url: u, onDone: {
+                    recogURL = nil
+                    hint = "认完了 —— 已经归到格子里了"
+                    Task { await refreshAll() }
+                }, onGiveUp: {
+                    recogURL = nil
+                    if hint.contains("认一认") { hint = "" }
+                })
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+            }
         }
     }
 
@@ -979,6 +1022,31 @@ struct ActWallSheet: View {
                 .buttonStyle(PressStyle())
             }
 
+            // ★★★ v95（功能匹配）：重摆 / 退回。
+            //   台子上这两个口子早就有了（不重抠、不花额度，按「坐立」统一身高和脚线；
+            //   摆之前留备份，随时能退）—— 可手机上一颗键都没有。
+            //   ★ 跟「修一下」同一条规矩：常驻，不按任何条件藏。
+            HStack(spacing: 8) {
+                Button {
+                    askRealign = true
+                } label: {
+                    pill(icon: "arrow.up.and.down.square",
+                         text: alignBusy ? "正在摆…" : "重新摆一遍大小",
+                         on: false, busy: alignBusy)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(alignBusy)
+
+                Button {
+                    askUndo = true
+                } label: {
+                    pill(icon: "arrow.uturn.backward.square",
+                         text: "退回摆之前", on: false, busy: false)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(alignBusy)
+            }
+
             if !liveText.isEmpty {
                 HStack(spacing: 6) {
                     if upBusy || genBusy || !actJobs.filter({ !$0.isDone && !$0.isBad }).isEmpty {
@@ -1076,6 +1144,10 @@ struct ActWallSheet: View {
         if loginState == nil {
             loginState = try? await ActLab.loginState()
         }
+        // ★ v95（功能匹配）：有待认领的（抠完了还没定名字）→ 自动认一认。
+        //   安卓 v2.26 就有，苹果一直缺 ⇒ 上传的视频停在 x_ 临时名，永远进不了格子。
+        await maybeRecog()
+
         if !genJob.isEmpty {
             if let g = try? await ActLab.genState(job: genJob) {
                 let wasDone = genState?.isDone ?? false
@@ -1098,7 +1170,72 @@ struct ActWallSheet: View {
         await onChanged()
     }
 
-    // MARK: 一键修复 / 改格 / 删格 / 换视频
+    // MARK: 一键修复 / 改格 / 删格 / 换视频 / 重摆 / 退回
+
+    /// ★ v95（功能匹配）：有待认领的就起那个看不见的小网页认一认。
+    ///   5 分钟内不重复跑（认完到服务器改名中间要一会儿，跑第二遍是白跑）。
+    private func maybeRecog() async {
+        guard recogURL == nil else { return }
+        guard Date().timeIntervalSince(lastRecogAt) > 300 else { return }
+        guard let n = try? await ActLab.pendingRecog(), n > 0 else { return }
+        guard let u = ActLab.recogURL else { return }
+        lastRecogAt = Date()
+        hint = "刚抠完的新动作 —— 正在认一认该进哪个格子…"
+        recogURL = u
+    }
+
+    /// ★ v95（功能匹配）：让台子把这只猫已经做好的动作重新摆一遍大小。
+    ///   摆是在服务器后台跑的 —— 这儿下单，然后每 3 秒问一句「摆到哪儿了」。
+    private func realignNow() async {
+        alignBusy = true
+        hint = "正在叫服务器摆…"
+        do {
+            try await ActLab.realign(charId: char.id, dry: false)
+            hint = "正在摆…"
+            // 最多盯 4 分钟（3 秒一次）
+            for _ in 0..<80 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let st = try? await ActLab.realignState() else { continue }
+                if st.running == true {
+                    hint = "正在摆 · \(st.progress ?? "")"
+                    continue
+                }
+                if st.done == true {
+                    let seen = st.seen ?? 0
+                    let moved = st.moved ?? 0
+                    var s = "摆完了：看过 \(seen) 条，动了 \(moved) 条"
+                    if let es = st.errors, !es.isEmpty {
+                        s += "；\(es.count) 条没能摆"
+                    }
+                    if moved > 0 { s += "（看着不如从前就按「退回摆之前」）" }
+                    hint = s
+                    await refreshAll()
+                    alignBusy = false
+                    return
+                }
+            }
+            hint = "摆了太久还没回话 —— 过一会儿回来看看"
+        } catch {
+            hint = "没能开始摆：\(error.localizedDescription)"
+        }
+        alignBusy = false
+    }
+
+    private func undoNow() async {
+        alignBusy = true
+        hint = "正在退回去…"
+        do {
+            let r = try await ActLab.alignUndo(charId: char.id)
+            let n = r.back?.count ?? 0
+            hint = n > 0 ? "退回去 \(n) 条 —— 现在跟摆之前一样了"
+                         : "没有能退的（这只猫没重摆过，或者备份已经被清掉了）"
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            await refreshPack()
+        } catch {
+            hint = "没退成：\(error.localizedDescription)"
+        }
+        alignBusy = false
+    }
 
     private func repair(force: Bool) async {
         hint = force ? "正在叫服务器把每一条都重做一遍…" : "正在叫服务器修卡住的那些…"

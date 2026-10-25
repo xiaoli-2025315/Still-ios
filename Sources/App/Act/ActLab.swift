@@ -374,6 +374,129 @@ enum ActLab {
         return all.filter { ($0.char ?? "") == charId }
     }
 
+    /// ★ v95（功能匹配）：**还有几条抠完了、名字还没定**（在等「认一认」）。
+    ///   安卓 v2.26 就自动跑了；苹果以前没接 ⇒ 上传的视频永远停在 `x_临时名`。
+    struct RecogResp: Decodable {
+        let pending: [RecogItem]?
+        enum CodingKeys: String, CodingKey { case pending }
+    }
+
+    struct RecogItem: Decodable {
+        let id: String?
+        let char: String?
+    }
+
+    static func pendingRecog() async throws -> Int {
+        let r: RecogResp = try await get("/api/act/recog")
+        return r.pending?.count ?? 0
+    }
+
+    /// 认一认那一页的地址（票挂在地址上 —— 网页里塞不进自定义头）。
+    static var recogURL: URL? {
+        let s = Ticket.挂票(base + "/recog.html")
+        return URL(string: s)
+    }
+
+    // MARK: - 重摆 / 退回（v95 功能匹配：台子有、手机上以前没入口）
+
+    /// 把这只猫已经做好的动作**重新摆一遍大小**。
+    ///
+    /// 台子上早就有这本事（按「坐立」那把尺子统一身高和脚线，不重抠、不花额度、
+    /// 摆之前原包留备份），可两端手机上一颗键都没有 —— 他只能开电脑上网页按。
+    /// 这正是他要修的那类「台子有、App 没有」的缺口。
+    @discardableResult
+    static func realign(charId: String, dry: Bool) async throws -> String {
+        var q = [URLQueryItem(name: "char", value: charId)]
+        if dry { q.append(URLQueryItem(name: "dry", value: "1")) }
+        return try await postSay("/api/act/realign", query: q)
+    }
+
+    /// 重摆是**服务器后台跑**的 —— 这一句问「摆到哪儿了」。
+    struct RealignState: Decodable {
+        let running: Bool?
+        let done: Bool?
+        let progress: String?
+        let seen: Int?
+        let moved: Int?
+        let errors: [String]?
+        enum CodingKeys: String, CodingKey {
+            case running = "跑着"
+            case done = "干完了"
+            case progress = "进度"
+            case seen = "看过"
+            case moved = "动了"
+            case errors = "错"
+        }
+    }
+
+    static func realignState() async throws -> RealignState {
+        try await get("/api/act/realign")
+    }
+
+    /// 重摆的**退路**：把摆之前那份备份原样拷回去。
+    /// 某一版摆得不如从前、或者摆坏了，随时能退。
+    struct UndoResp: Decodable {
+        let ok: Bool?
+        let back: [String]?
+        let missing: [String]?
+        let why: String?
+        enum CodingKeys: String, CodingKey {
+            case ok
+            case back = "退回的"
+            case missing = "没备份可退"
+            case why = "错误"
+        }
+    }
+
+    static func alignUndo(charId: String) async throws -> UndoResp {
+        var comp = URLComponents(string: base + "/api/act/align/undo")!
+        comp.queryItems = [URLQueryItem(name: "char", value: charId)]
+        var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
+        req.httpMethod = "POST"
+        req.timeoutInterval = 25
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw 台子回错了((resp as? HTTPURLResponse)?.statusCode ?? -1, data)
+        }
+        return (try? JSONDecoder().decode(UndoResp.self, from: data)) ?? UndoResp(ok: true, back: nil, missing: nil, why: nil)
+    }
+
+    // MARK: - 检查更新（v95 功能匹配）
+
+    /// 服务器上最新那一版（跟安装页现取的是同一份）。
+    struct Latest: Decodable {
+        let ok: Bool?
+        let version: String?
+        let build: Int?
+        let file: String?
+        let title: String?
+        let items: [NoteItem]?
+        enum CodingKeys: String, CodingKey {
+            case ok
+            case version = "版本"
+            case build = "号"
+            case file = "文件"
+            case title = "标题"
+            case items = "条目"
+        }
+    }
+
+    struct NoteItem: Decodable {
+        let tag: String?
+        let text: String?
+        enum CodingKeys: String, CodingKey {
+            case tag = "标签"
+            case text = "内容"
+        }
+    }
+
+    /// 苹果这一端有没有新版。台子上有这口子，手机上以前一颗键都没有。
+    static func iosLatest() async throws -> Latest {
+        try await get("/api/ios/latest")
+    }
+
     // MARK: - 写：传一条动作视频（免费通道）
 
     /// 把一段视频交给台子，让它抽帧抠像。

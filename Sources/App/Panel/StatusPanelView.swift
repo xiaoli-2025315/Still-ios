@@ -29,6 +29,14 @@ struct StatusPanelView: View {
     /// v71：小窗那个键开/关的「听」
     @ObservedObject private var listen = Listening.shared
 
+    // ★ v95（功能匹配）：检查更新 —— 台子上有这口子，手机上以前一颗键都没有。
+    @State private var upBusy = false
+    @State private var upText = ""
+    @State private var upLink: URL? = nil
+    @State private var upBody = ""
+    @State private var upNew = false
+    @State private var showUp = false
+
     private let speeds: [(Double, String)] = [
         (1, "1×"), (60, "60×"), (300, "300×"), (600, "600×")
     ]
@@ -98,6 +106,53 @@ struct StatusPanelView: View {
                         : "这把钥匙没通 —— 看看是不是贴全了、或者额度用完了。"
                 }
             }
+        }
+    }
+
+    /// ★★★ v95（功能匹配）：**检查更新**。
+    ///
+    /// 台子上一直接着「最新版是哪一版、这版改了什么」这个口子，安装页也是从那儿现取的；
+    /// 可手机上从头到尾没有「检查更新」这回事 —— 他只能自己开浏览器去翻。
+    ///
+    /// ★ 比大小用**版本号那个整数**（1.95 → 95），不比字符串 ——
+    ///   字符串比的话 "1.9" 会大于 "1.95"，越更越显示「有新版」。
+    private func checkUpdate() async {
+        guard !upBusy else { return }
+        upBusy = true
+        upText = "正在问服务器…"
+        defer { upBusy = false }
+
+        do {
+            let r = try await ActLab.iosLatest()
+            let v = (r.version ?? "").trimmingCharacters(in: .whitespaces)
+            // 号 没有的话，从版本号里折一个出来（"1.95" → 95）
+            let build: Int = {
+                if let b = r.build, b > 0 { return b }
+                let parts = v.split(separator: ".").compactMap { Int($0) }
+                if parts.count >= 2 { return parts[0] * 100 + parts[1] }
+                return 0
+            }()
+            let mine = AppVersion.build
+            let newer = build > 0 && mine > 0 && build > mine
+
+            var body = "你现在装的：\(AppVersion.tag)\n服务器上最新：\(v.isEmpty ? "没问到" : v)"
+            if let t = r.title, !t.isEmpty { body += "\n\n\(t)" }
+            if let items = r.items {
+                for it in items {
+                    let tag = it.tag ?? ""
+                    let txt = it.text ?? ""
+                    if tag.isEmpty && txt.isEmpty { continue }
+                    body += "\n\n· \(tag)"
+                    if !txt.isEmpty { body += "\n\(txt)" }
+                }
+            }
+            upText = newer ? "有新的一版：\(v)" : "已经是最新版 \(v)"
+            upLink = newer ? URL(string: ActLab.base + "/apple/install.html") : nil
+            upBody = body
+            upNew = newer
+            showUp = true
+        } catch {
+            upText = "没问到，等会儿再试"
         }
     }
 
@@ -400,6 +455,26 @@ struct StatusPanelView: View {
             .padding(.horizontal, 8)
             .background(Capsule().fill(Cfg.Palette.accent.opacity(0.08)))
 
+            // ★★★ v95（功能匹配）：看看有没有新版。
+            //   台子上一直接着「最新版是哪一版、这版改了什么」（/api/ios/latest），
+            //   安装页也是从那儿现取的；可手机上没有「检查更新」这回事 ——
+            //   他只能自己开浏览器去翻。点这一行就把新版和说明摊出来。
+            Button {
+                Task { await checkUpdate() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: upBusy ? "arrow.triangle.2.circlepath"
+                                             : "arrow.down.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Cfg.Palette.accent)
+                    Text(upText.isEmpty ? "看看有没有新版" : upText)
+                        .font(.system(size: 11))
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(upBusy)
+
             Divider().opacity(0.5)
 
             // ★★★ 2026-10-23（他的原话）：「时间机器也是，还有组件诊断、行程统计都删掉」。
@@ -462,6 +537,14 @@ struct StatusPanelView: View {
             brainKey = CatBrain.key(for: brainCharId)
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .alert(upNew ? "有新的一版了" : "已经是最新版", isPresented: $showUp) {
+            if upNew, let u = upLink {
+                Button("去装新版") { UIApplication.shared.open(u) }
+            }
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(upBody)
+        }
     }
 
     private var headline: String {

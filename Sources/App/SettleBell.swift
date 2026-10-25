@@ -54,7 +54,6 @@ extension Notification.Name {
     static let stillSettleDone = Notification.Name("still.settle.done")
 }
 
-@MainActor
 final class SettleBell: ObservableObject {
     static let shared = SettleBell()
 
@@ -64,38 +63,49 @@ final class SettleBell: ObservableObject {
     private var 弹过 = Set<String>()
     private var 起了 = false
 
-    private init() { }
+    init() { }
 
     func 起() {
-        guard !起了 else { return }
+        let go: Bool = 起了 ? false : true
+        guard go else { return }
         起了 = true
-        Task { [weak self] in
+        // ★ 轮询放在后台跑；凡是要动界面上的东西（当前/弹过）一律回到主线程再改。
+        Task.detached { [weak self] in
             while true {
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
-                await self?.查()
+                guard let self else { return }
+                await self.查()
             }
         }
     }
 
     private func 查() async {
-        guard 当前 == nil, !忙 else { return }         // 手上还弹着就别抢
+        let 手上有: SettleNote? = await MainActor.run { 当前 }
+        let 忙着: Bool = await MainActor.run { 忙 }
+        if 手上有 != nil || 忙着 { return }              // 手上还弹着就别抢
+
         guard let list = try? await ActAPI.genSettle() else { return }
         for s in list {
-            if 弹过.contains(s.id) { continue }
-            弹过.insert(s.id)
-            当前 = s
+            let 弹过没有: Bool = await MainActor.run { 弹过.contains(s.id) }
+            if 弹过没有 { continue }
+            await MainActor.run {
+                弹过.insert(s.id)
+                当前 = s
+            }
             return
         }
     }
 
     /// 他选好了。再来=true ⇒ 把没做成的那几条重新安排上（机器只做缺的，不会重画做好的）。
     func 办(_ s: SettleNote, 再来: Bool) async {
-        当前 = nil
+        await MainActor.run { 当前 = nil }
         try? await ActAPI.genSettleAck(char: s.char, 再来: 再来)
         if 再来 {
             _ = try? await ActAPI.genStart(charId: s.char)      // 空 action = 只做还缺的
         }
-        NotificationCenter.default.post(name: .stillSettleDone, object: s.char)
+        await MainActor.run {
+            NotificationCenter.default.post(name: .stillSettleDone, object: s.char)
+        }
     }
 }
 

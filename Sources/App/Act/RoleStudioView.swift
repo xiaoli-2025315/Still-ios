@@ -218,6 +218,12 @@ final class StudioModel: ObservableObject {
     @Published var allDone = false
     @Published var leftover = 0
     @Published var pendingCount = 0
+    /// ★★★ v91（他 2026-10-25 报的）：**那几条为什么做不出来**（机器上给的原话）。
+    ///   以前这一页只写「进动作库那边会问你怎么处置」—— 那是假话：动作库根本没问，
+    ///   他就一直卡在那儿。现在**就地摆两颗键让他定**，并把原因原样说给他听。
+    @Published var pendingWhy = ""
+    /// 正在跟机器确认他的选择（防连点）
+    @Published var deciding = false
     /// 每条动作各到哪了（只有第二阶段才画格子）
     @Published var pct: [String: Int] = [:]
     /// ★★★ 2026-10-23（他点名）：**每一格现在到底在哪一段**。
@@ -443,6 +449,25 @@ final class StudioModel: ObservableObject {
         await order("")
     }
 
+    /// ★★★ v91（他 2026-10-25 报的）：**做不出来的那几条，就地让他定**。
+    ///
+    ///   以前这一页写「进动作库那边会问你怎么处置」—— 那是假话：动作库根本没问，
+    ///   他就一直卡在那儿。现在就在这张卡上摆两颗键：
+    ///     · `明天自动` ＝ 明天额度刷新了机器自己补（做好的绝不重画）
+    ///     · `放弃`    ＝ 这几条以后不再提，做好的照常用
+    func decide(_ 选: String) async {
+        guard !jobId.isEmpty, !deciding else { return }
+        deciding = true
+        err = ""
+        do {
+            note = try await ActLab.genDecide(job: jobId, 选: 选)
+            await tick()
+        } catch {
+            err = "没办成：" + error.localizedDescription
+        }
+        deciding = false
+    }
+
     // MARK: 把机器的进度画上去
 
     /// 还没开工的时候，告诉用户「在等什么」—— 他原话：
@@ -504,6 +529,7 @@ final class StudioModel: ObservableObject {
             allDone = fin && leftover == 0
         }
         pendingCount = (j.pending ?? []).count
+        pendingWhy = (j.pending ?? []).compactMap { $0.why }.first ?? ""
     }
 
     /// 动作墙上已经做好了哪些（重进页面时，格子不至于全是空转圈）
@@ -772,9 +798,7 @@ struct RoleStudioView: View {
 
     private var tailCard: AnyView? {
         if m.pendingCount > 0 {
-            return AnyView(card(
-                title: "有 \(m.pendingCount) 条做不出来",
-                desc: "已经做好的那些随时能用。差的这几条，进动作库那边会问你怎么处置。"))
+            return AnyView(decideCard)
         }
         if m.allDone {
             return AnyView(card(
@@ -807,6 +831,51 @@ struct RoleStudioView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Tw.white))
+    }
+
+    /// ★★★ v91（他 2026-10-25 报的）：**做不出来的那几条，就地问他怎么办**。
+    ///
+    ///   以前这一页只写一句「进动作库那边会问你怎么处置」—— 那是假话：
+    ///   真会问的是另一个页面，动作库什么都不问，他就一直卡在那儿。
+    ///   现在把机器上给的原因原样说给他听，并**当场给两条路**。
+    private var decideCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("有 \(m.pendingCount) 条做不出来")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(Tw.gray900)
+            Text(m.pendingWhy.isEmpty
+                 ? "机器这一回没把它们做出来。做好的那些不受影响，随时能用。"
+                 : m.pendingWhy + "\n\n做好的那些不受影响，随时能用。")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Tw.gray500)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button { Task { await m.decide("明天自动") } } label: {
+                    smallLabel("明天有额度了\n自动接着做", filled: true)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(m.deciding)
+                Button { Task { await m.decide("放弃") } } label: {
+                    smallLabel("这几条不要了", filled: false)
+                }
+                .buttonStyle(PressStyle())
+                .disabled(m.deciding)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Tw.white))
+    }
+
+    private func smallLabel(_ s: String, filled: Bool) -> some View {
+        Text(s)
+            .font(.system(size: 12.5, weight: .semibold))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(filled ? Tw.white : Tw.gray700)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(filled ? Tw.red600 : Tw.gray100))
     }
 
     // MARK: 最底下那颗主键

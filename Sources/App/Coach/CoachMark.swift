@@ -89,6 +89,8 @@ struct CoachOverlay: View {
     @State private var 在演 = false
     @State private var 洞 = CGRect.zero
     @State private var 这一处方 = true
+    /// 这一步刚摆出来的头 0.5 秒内，点暗处不算数（防手指还在屏幕上就把三步跳完）
+    @State private var 可点 = false
 
     var body: some View {
         GeometryReader { g in
@@ -113,9 +115,10 @@ struct CoachOverlay: View {
                     }
 
                     // ② 透明命中层：点暗处任意地方 ＝「知道了」
+                    // ★ 头 0.5 秒不算数：手指还停在屏幕上时，一下能把三步全跳完
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture { 前进() }
+                        .onTapGesture { if 可点 { 前进() } }
 
                     // ③ 说明卡
                     卡片
@@ -195,6 +198,8 @@ struct CoachOverlay: View {
         guard r.width > 0, r.height > 0 else { return }
         洞 = r.insetBy(dx: -8, dy: -8)                // 放大一圈，别贴着边
         这一处方 = s.方
+        可点 = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { 可点 = true }
     }
 
     private func 前进() {

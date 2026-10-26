@@ -95,10 +95,11 @@ struct CoachOverlay: View {
             if 在演 {
                 ZStack(alignment: .topLeading) {
                     // ① 暗底（挖了洞的）—— 不许接收点击
+                    // ★ mask 不吃 style 参数；eoFill 要写在 fill 上
                     Rectangle()
                         .fill(Color.black.opacity(0.72))
-                        .mask(CoachHole(hole: 洞, radius: 14, circle: !这一处方),
-                              style: FillStyle(eoFill: true))
+                        .mask(CoachHole(hole: 洞, radius: 14, circle: !这一处方)
+                                .fill(Color.white, style: FillStyle(eoFill: true)))
                         .allowsHitTesting(false)
 
                     // 洞口的白边：让"说的就是这儿"一眼看出来

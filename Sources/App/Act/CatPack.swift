@@ -120,6 +120,24 @@ final class CatPack {
     ///   同名 → sit → 任一条 persist（能一直演的）→ 第一条。
     /// ★ 台子上每只猫不一定十二条全齐（用户原话「他 3 个动作也要播放啊」），
     ///   所以**缺了必须能顶上**，不能让小窗空白。
+    /// ★ 2026-10-30：**片段时长缓存**（动作名 → 秒）。
+    ///
+    /// 为什么单独放一张表：`CatPackStore` 是 @MainActor 的，而 `PetEngine` 的动作循环
+    /// 不在主线程上跑；直接在循环里读 store 会报「跨 actor」。
+    /// 装包/换包时由 `CatPackStore` 往这里写一份，循环只读这张表。
+    nonisolated(unsafe) static var clipSeconds: [String: Double] = [:]
+
+    /// 把一整只包的时长倒进缓存（装包/换包时调一次）
+    func fillClipSecondsCache() {
+        var m: [String: Double] = [:]
+        for act in acts {
+            let fps = act.fps > 0 ? act.fps : 15
+            let sec = Double(act.frames) / fps
+            if sec > 0.4 { m[act.name] = sec }
+        }
+        CatPack.clipSeconds = m
+    }
+
     /// 坐立那条的名字 —— 所有动作的横向基准都对着它。
     static let sitName = "sit"
 
@@ -341,10 +359,12 @@ final class CatPackStore: ObservableObject {
 
     private init() {
         builtin = Self.installBuiltinIfNeeded()
+        builtin?.fillClipSecondsCache()
         if let id = UserDefaults.standard.string(forKey: Self.keyCurrent), !id.isEmpty {
             let dir = root.appendingPathComponent(id, isDirectory: true)
             if let p = CatPack(dir: dir) {
                 current = p
+        p.fillClipSecondsCache()
             } else {
                 // ★ 包在、但读不出来（下到一半、被系统清过）——
                 //   别让 App 一直用一只读不出来的猫，直接回退到自带的。
@@ -455,6 +475,7 @@ final class CatPackStore: ObservableObject {
     /// 换到这只。nil = 换回 App 自带那只。
     func use(_ pack: CatPack?) {
         current = pack
+        pack.fillClipSecondsCache()
         if let p = pack {
             UserDefaults.standard.set(p.id, forKey: Self.keyCurrent)
         } else {

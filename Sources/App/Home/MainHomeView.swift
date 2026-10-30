@@ -469,7 +469,7 @@ struct MainHomeView: View {
                         howToBackTap
                         // ★ 只有这一张卡观察 30Hz 的引擎 —— 主界面不观察，
                         //   否则整棵树一秒重建 30 次，按钮和键盘都会被冲掉。
-                        StatusPanelView(engine: core.engine)
+                        SettingsPage()   // ★ 2026-10-30：对齐安卓，散装面板收成设置页
                         roomControls
                     }
                     .padding(.horizontal, 16)

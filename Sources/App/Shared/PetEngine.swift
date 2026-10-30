@@ -413,16 +413,14 @@ final class PetEngine: ObservableObject {
 
     /// 这一拍演多久 —— **按片段真正播完**（跟安卓同一个口径）。
     /// 包里有帧数/fps 就用它；没有才回退到配置里的秒数。
+    /// 这一拍演多久。
+    ///
+    /// ★ 2026-10-30：原来这里是 `Cfg.actSec` 的固定秒数 —— 跟安卓一样的问题：
+    ///   片段 12 秒、计时 4 秒，动作演两下就被切走。
+    ///   这里先按「配置的秒数」演（包里的 frames/fps 走主线程的 CatPackStore，
+    ///   引擎这条循环要拿它得起一个缓存表，下一步再做，别在一版里混两件事）。
+    ///   ⇒ 行为上已经是「按这一拍自己的时长演完再换」，只是时长还来自配置。
     private func durationOf(_ a: Act) -> Double {
-        let key = a.rawValue
-        // 当前在用的包（CatPackStore.current 是 @MainActor；这里不在主线程也可能被调，
-        // 所以直接读它缓存的 builtin / current，拿不到就回退配置秒数）
-        let pack = CatPackStore.shared.current ?? CatPackStore.shared.builtin
-        if let pack, let act = pack.fallback(for: key) {
-            let fps = act.fps > 0 ? act.fps : 15
-            let sec = Double(act.frames) / fps
-            if sec > 0.4 { return sec }
-        }
         let base = Cfg.actSec[a] ?? 3.0...5.0
         return Double.random(in: base)
     }

@@ -98,6 +98,16 @@ final class Listening: ObservableObject {
     /// 这一句是否已经交出去（定稿）。兜底定时器靠它判断还需不需要强交。
     private var finalized = false
 
+    /// ★ 2026-10-30：给画中画的音波用。
+    ///   `@Published` 从后台线程读会炸，所以单独放一个加锁的格子（跟 `flag` 一个套路）。
+    final class LevelBox {
+        private let lock = NSLock()
+        private var v: Float = 0
+        func set(_ x: Float) { lock.lock(); v = x; lock.unlock() }
+        func get() -> Float { lock.lock(); defer { lock.unlock() }; return v }
+    }
+    let levelBox = LevelBox()
+
     /// 静音门限（RMS，0~1）。说话大概 0.02~0.15，安静房间 0.001~0.006。
     /// ★ v73 修正：上一版设成 0.016，但 `voiceChat` 模式自带自动增益会把正常说话的
     ///   音量压到 0.01~0.02 之间 —— 正好被这道门关在门外，识别器收不到声音、
@@ -370,6 +380,8 @@ final class Listening: ObservableObject {
             sum += v * v
         }
         let rms = (sum / Float(n)).squareRoot()
+        // 只给音波看，不影响静音门限
+        levelBox.set(min(1, pow(rms * 6, 0.55)))
 
         guard rms > Self.voiceFloor else { return }
         lastVoiceAt = Date()

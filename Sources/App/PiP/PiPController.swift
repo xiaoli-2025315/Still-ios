@@ -753,6 +753,9 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
     func pictureInPictureController(
         _ controller: AVPictureInPictureController, setPlaying playing: Bool
     ) {
+        // ★ 2026-10-30：**先出声音再判断** —— 后台没有触觉（震动要 App 在前台），
+        //   声音是小窗里唯一能立刻到手指的反馈。他现在按下去"没感觉"就是这个缺的。
+        SoundKit.shared.tap()
         // 起窗那一下系统会调一次 false 来对表，这不是他按的。
         guard !playing else { return }
         guard Date().timeIntervalSince(pipStartedAt) > 1.5 else { return }

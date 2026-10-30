@@ -19,6 +19,14 @@ enum ListenMark {
     /// 画在 720 画布上的基准尺寸（帧宽不是 720 时按比例缩）
     private static let base: CGFloat = 720
 
+    /// 最近 12 次的电平（画竖条用）—— 每帧 push 一个
+    private static var history = [CGFloat](repeating: 0.05, count: 12)
+
+    static func push(level: CGFloat) {
+        history.removeLast()
+        history.insert(min(1, max(0.05, level)), at: 0)
+    }
+
     static func paint(on pb: CVPixelBuffer) {
         guard Listening.shared.flag.value else { return }
 
@@ -40,32 +48,34 @@ enum ListenMark {
                                   bitmapInfo: info) else { return }
 
         let k = CGFloat(w) / base
-        // CGContext 原点在左下、y 向上 ⇒ 「右上角」就是 x 大、y 大。
-        let cx = CGFloat(w) - 92 * k
-        let cy = CGFloat(h) - 92 * k
 
-        // 深色圆底：亮背景（白墙、雪地）上没有它，红点会糊掉
-        ctx.setFillColor(UIColor(white: 0, alpha: 0.34).cgColor)
-        ctx.fillEllipse(in: CGRect(x: cx - 56 * k, y: cy - 56 * k,
-                                   width: 112 * k, height: 112 * k))
+        // ★★★ 2026-10-30：小圆点 → **12 根真音波**（跟 App 里那条同一个来源：真实 RMS）。
+        //   位置放**底部**（避开正中间的猫和气泡）；小窗被捏小时系统会缩放，这里按帧宽算。
+        let bars = 12
+        var hist = [CGFloat](repeating: 0.05, count: bars)
+        // 用最近 12 帧的电平（每帧 push 一个，等系统一帧一帧来）
+        Self.push(level: CGFloat(Listening.shared.levelBox.get()))
+        hist = Self.history
 
-        // 红点
-        ctx.setFillColor(UIColor(red: 0.86, green: 0.16, blue: 0.16, alpha: 1).cgColor)
-        ctx.fillEllipse(in: CGRect(x: cx - 22 * k, y: cy - 22 * k,
-                                   width: 44 * k, height: 44 * k))
+        let barW = CGFloat(w) * 0.016
+        let gap = CGFloat(w) * 0.010
+        let totalW = CGFloat(bars) * barW + CGFloat(bars - 1) * gap
+        let x0 = (CGFloat(w) - totalW) / 2
+        let baseY = CGFloat(h) * 0.10            // 从底部往上留 10%
+        let maxH = CGFloat(h) * 0.16
 
-        // 朝右的两道声波弧
-        ctx.setStrokeColor(UIColor(white: 1, alpha: 0.92).cgColor)
-        ctx.setLineWidth(7 * k)
-        ctx.setLineCap(.round)
-        for r in [CGFloat(36), CGFloat(52)] {
-            let p = CGMutablePath()
-            p.addArc(center: CGPoint(x: cx, y: cy),
-                     radius: r * k,
-                     startAngle: -0.78, endAngle: 0.78,
-                     clockwise: false)
-            ctx.addPath(p)
+        // 深色底条：亮背景上没有它会看不清
+        ctx.setFillColor(UIColor(white: 0, alpha: 0.28).cgColor)
+        ctx.fill(CGRect(x: x0 - gap * 2, y: baseY - gap * 2,
+                        width: totalW + gap * 4, height: maxH + gap * 4))
+
+        ctx.setFillColor(UIColor.white.withAlphaComponent(0.95).cgColor)
+        for i in 0..<bars {
+            let v = max(0.05, hist[i])                  // 静音留 5% 底，不然像卡住
+            let bh = maxH * v
+            let x = x0 + CGFloat(i) * (barW + gap)
+            let r = CGRect(x: x, y: baseY, width: barW, height: bh)
+            ctx.fillEllipse(in: r)                      // 圆头竖条
         }
-        ctx.strokePath()
     }
 }

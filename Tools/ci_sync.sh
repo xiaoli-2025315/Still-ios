@@ -48,7 +48,7 @@ echo "$pull" | head -c 300; echo
 OK=0
 if printf '%s' "$pull" | grep -q '"ok": true'; then
   n=0
-  while [ "$n" -lt 15 ]; do
+  while [ "$n" -lt 5 ]; do
     n=$((n + 1))
     sleep 6
     got=$(curl -sS --max-time 20 "$BASE/api/ios/pkg" 2>/dev/null \

@@ -26,6 +26,8 @@ struct TalkPage: View {
     @State private var busy = false
     /// 外面推这个数 = 再抢一次焦点
     @State private var pulse = 0
+    /// ★ 2026-10-30：语音模式（左边那颗切换）—— 对齐安卓聊天页
+    @State private var voiceMode = false
 
     struct Line: Identifiable {
         let id = UUID()
@@ -136,6 +138,40 @@ struct TalkPage: View {
     private var inputBar: some View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
+                // 左：键盘 / 语音 切换（安卓那颗「语音」）
+                Button {
+                    voiceMode.toggle()
+                    if voiceMode { focus.resign() }
+                } label: {
+                    Text(voiceMode ? "键盘" : "语音")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Tw.gray500)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(PressStyle(scale: 0.94))
+
+                if voiceMode {
+                    // 语音模式：整条就是录音键（按住说、上滑取消、太短提示都在 PawTalkButton 里）
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Tw.gray50)
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Tw.gray200, lineWidth: 1))
+                        HStack(spacing: 8) {
+                            PawTalkButton(onSaid: { t in
+                                text = t
+                                send()
+                            })
+                            Text("按住 说话")
+                                .font(.system(size: 13.5))
+                                .foregroundStyle(Tw.gray500)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.leading, 10)
+                    }
+                    .frame(height: 46)
+                } else {
                 // ★ 2026-10-30：**固定一行高**。以前它没有高度约束，
                 //   在没历史消息时会把整页撑成一大块白框（他截图里那个"巨大的空框"）。
                 TalkField(text: $text, focusPulse: pulse, autoFocus: true,
@@ -168,6 +204,7 @@ struct TalkPage: View {
                 }
                 .buttonStyle(PressStyle(scale: 0.94))
                 .disabled(busy)
+                }
             }
 
         }

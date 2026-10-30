@@ -157,13 +157,18 @@ struct TalkSheet: View {
 //   哪怕动作执行了，看起来也像没反应。
 //   现在按下去会缩一点、暗一点：按到了就是按到了。
 
+/// ★ 2026-10-30：对齐安卓的按压手感 —— 按下缩到 0.94 + 一次轻震，回弹 120ms。
+/// 安卓那边还有 220ms 防抖（连点不叠动画），SwiftUI 的 ButtonStyle 拿不到"上一次点击时间"，
+/// 这一条留在各按钮自己按需处理。
 struct PressStyle: ButtonStyle {
-    var scale: CGFloat = 0.97
+    var scale: CGFloat = 0.94
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? scale : 1)
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(.easeOut(duration: configuration.isPressed ? 0.06 : 0.12),
+                       value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed)
     }
 }

@@ -37,6 +37,8 @@ final class CatPack {
         let fps: Double
         /// 原始帧里的脚底 y（像素）。0 表示说明书没给。
         let foot: Double
+        /// ★ 2026-10-30：身体中心在帧图里的 x（台子抠像时量的）。0 = 没给。
+        let cx: Double
 
         var isPersist: Bool { category == "persist" }
         var isEvent: Bool { category == "event" }
@@ -87,7 +89,8 @@ final class CatPack {
                 oneshot: ((a["oneshot"] as? NSNumber)?.intValue ?? 0) != 0,
                 category: (a["category"] as? String) ?? "",
                 fps: (a["fps"] as? NSNumber)?.doubleValue ?? 50,
-                foot: (a["foot"] as? NSNumber)?.doubleValue ?? 0))
+                foot: (a["foot"] as? NSNumber)?.doubleValue ?? 0,
+                cx: (a["cx"] as? NSNumber)?.doubleValue ?? 0))
         }
         guard !list.isEmpty else { return nil }
         self.acts = list
@@ -117,6 +120,36 @@ final class CatPack {
     ///   同名 → sit → 任一条 persist（能一直演的）→ 第一条。
     /// ★ 台子上每只猫不一定十二条全齐（用户原话「他 3 个动作也要播放啊」），
     ///   所以**缺了必须能顶上**，不能让小窗空白。
+    /// 坐立那条的名字 —— 所有动作的横向基准都对着它。
+    static let sitName = "sit"
+
+    /// ★★★ 2026-10-30：每段动作里猫的**身体中心**在帧图上的 x。
+    ///
+    /// 为什么需要：每段动作是各自生成的，猫在帧里的水平位置不一样（实测差最多 36px），
+    /// 一换动作整只猫就横着跳一下。摆放时按「坐立 − 本动作」平移即可对齐。
+    ///
+    /// 数值口径：每段均匀取 7 帧，alpha 包围盒中心 x 的中位数（帧宽 384）。
+    /// 台子 `act_queue.py` 会把这个数写进 `act.json` 的 `cx`；包里没有才用这张表。
+    static func centerX(for name: String) -> Double {
+        switch name {
+        case "sit":      return 210.5
+        case "groom":    return 206.0
+        case "hunt1":    return 203.5
+        case "hunt2":    return 186.0
+        case "sleep":    return 191.0
+        case "walk_r":   return 173.0
+        case "liedown":  return 205.5
+        case "wake":     return 210.0     // 按末帧（起身站定后）
+        case "struggle": return 215.0
+        case "inhale":   return 209.0
+        case "exhale":   return 221.0
+        case "turn":     return 191.5
+        case "held":     return 211.0
+        case "fall":     return 210.0
+        default:         return 210.5
+        }
+    }
+
     func fallback(for name: String) -> Act? {
         if let a = act(name) { return a }
         if let a = act("sit") { return a }

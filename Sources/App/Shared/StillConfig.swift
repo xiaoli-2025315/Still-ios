@@ -12,6 +12,8 @@ enum Cfg {
     // ⚠️ 上 Xcode 后必须把这个前缀换成你自己的 Team ID，
     //    并在 Signing & Capabilities 里给 App 和 Widget 两个 target 都加上 App Groups。
     static let appGroup = "group.com.still.app"
+    /// 台子地址（跟 ActLab.base 同一个；这里留一份给不依赖 ActLab 的地方用）
+    static let baseURL = "https://still-ui-design.app.workbuddy.host"
 
     // MARK: 纵深（v1.23：z 是引擎的第三坐标，不是渲染层的滤镜）
     static let zNear: Float = 0.04     // 它自己能走到最近的地方

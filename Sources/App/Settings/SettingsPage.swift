@@ -17,6 +17,10 @@ struct SettingsPage: View {
     @State private var showBrain = false
     @State private var showDispatch = false
     @State private var showTapSheet = false
+    // ★ 关于 连点 5 下 = 截一张当前画面传回台子（排查用，见 ShotUploader）
+    @State private var aboutTaps = 0
+    @State private var aboutTapAt = Date.distantPast
+    @State private var shotNote = ""
 
     private var brainCharId: String { CatBrain.currentCharId }
 
@@ -33,7 +37,22 @@ struct SettingsPage: View {
                     row("按键声", SoundKit.tapNames[SoundKit.shared.tapKind],
                         tappable: true) { showTapSheet = true }
                     divider()
-                    row("关于", AppVersion.tag)
+                    Button {
+                        // 连点 5 下（每次间隔 1.2 秒内）→ 截图回传
+                        let now = Date()
+                        if now.timeIntervalSince(aboutTapAt) > 1.2 { aboutTaps = 0 }
+                        aboutTapAt = now
+                        aboutTaps += 1
+                        if aboutTaps >= 5 {
+                            aboutTaps = 0
+                            ShotUploader.upload(tag: "settings") { ok, msg in
+                                shotNote = msg
+                            }
+                        }
+                    } label: {
+                        row("关于", AppVersion.tag + (shotNote.isEmpty ? "" : " · " + shotNote))
+                    }
+                    .buttonStyle(.plain)
                     Spacer(minLength: 30)
                 }
                 .padding(.horizontal, 20)

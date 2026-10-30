@@ -47,6 +47,11 @@ final class PetEngine: ObservableObject {
     private var switched = false
 
     private var actDeadline = Date()
+    // ★ 2026-10-30：对齐安卓的状态机字段
+    private var asleep = false          // 在不在睡眠链里
+    private var sleepLoops = 0          // 睡了几圈（到 5 强制醒）
+    private static let sleepMaxLoops = 5
+    private var lyingDown = false       // 这一拍是「趴下」（stretch）
     private var actGen = 0
     private var isFirstAct = true
 
@@ -334,7 +339,7 @@ final class PetEngine: ObservableObject {
         }
 
         let gen = actGen
-        let a: Act = isFirstAct ? .look : pickAct()
+        let a: Act = isFirstAct ? .look : decideNext()
         isFirstAct = false
         act = a
         state = (a == .sleep) ? .sleep : .idle
@@ -344,9 +349,82 @@ final class PetEngine: ObservableObject {
 
         if a == .hunt { playHunt(gen: gen) }
 
+        actDeadline = Date().addingTimeInterval(durationOf(a))
+    }
+
+    /// ★★★ 2026-10-30：对齐安卓的决策表。
+    ///
+    ///  Android（2026-10-30 版）：
+    ///    坐立空闲 60% 继续坐 / 24% 去睡（走链）/ 16% 做别的
+    ///    舔毛 50% 继续 / 40% 回坐立 / 10% 进睡链
+    ///    睡：49.5% 继续睡 / 50.5% 醒；最多 5 圈强制醒
+    ///
+    ///  iOS 这边没有 liedown / wake 两条姿势，所以：
+    ///    「趴下」= stretch（先卧下去）  「醒来」= look（先抬头再坐）
+    ///  这样换动作永远有过渡，不会「睡着睡着突然坐着」。
+    private func decideNext() -> Act {
+        // ---- 睡着的分支：只可能继续睡 / 醒 ----
+        if asleep {
+            if act == .sleep {
+                sleepLoops += 1
+                if sleepLoops >= Self.sleepMaxLoops || Double.random(in: 0...1) >= 0.495 {
+                    asleep = false
+                    lyingDown = false
+                    return .look            // 醒来：先抬头
+                }
+                return .sleep               // 49.5% 继续睡
+            }
+            if act == .look {               // 抬头演完 → 坐立，真正离开睡链
+                asleep = false
+                return .sit
+            }
+        }
+
+        // ---- 刚趴下：下一拍一定是睡 ----
+        if lyingDown {
+            lyingDown = false
+            asleep = true
+            sleepLoops = 0
+            return .sleep
+        }
+
+        // ---- 舔毛：50 / 40 / 10 ----
+        if act == .groom {
+            let r = Double.random(in: 0...1)
+            if r < 0.50 { return .groom }
+            if r < 0.90 { return .sit }
+            lyingDown = true
+            return .stretch
+        }
+
+        // ---- 扑完 → 坐立（跟安卓单次动作播完回坐立一致） ----
+        if act == .hunt { return .sit }
+
+        // ---- 坐立空闲：60 / 24 / 16 ----
+        let r = Double.random(in: 0...1)
+        if r < 0.60 { return .sit }
+        if r < 0.84 {                 // 去打盹：先趴下
+            lyingDown = true
+            return .stretch
+        }
+        // 做点别的（只挑安静的：舔毛 / 抬头）
+        return Double.random(in: 0...1) < 0.55 ? .groom : .look
+    }
+
+    /// 这一拍演多久 —— **按片段真正播完**（跟安卓同一个口径）。
+    /// 包里有帧数/fps 就用它；没有才回退到配置里的秒数。
+    private func durationOf(_ a: Act) -> Double {
+        let key = a.rawValue
+        // 当前在用的包（CatPackStore.current 是 @MainActor；这里不在主线程也可能被调，
+        // 所以直接读它缓存的 builtin / current，拿不到就回退配置秒数）
+        let pack = CatPackStore.shared.current ?? CatPackStore.shared.builtin
+        if let pack, let act = pack.fallback(for: key) {
+            let fps = act.fps > 0 ? act.fps : 15
+            let sec = Double(act.frames) / fps
+            if sec > 0.4 { return sec }
+        }
         let base = Cfg.actSec[a] ?? 3.0...5.0
-        let ms = Double.random(in: base) * (isFirstAct ? 0.6 : 1.0)
-        actDeadline = Date().addingTimeInterval(ms)
+        return Double.random(in: base)
     }
 
     /// 刚到一个新地方先抬头看看，再决定干嘛

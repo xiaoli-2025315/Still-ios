@@ -360,13 +360,16 @@ struct MainHomeView: View {
         }
     }
 
-    // MARK: - 底栏三格（安卓 tab_her / tab_comm / tab_rank）
+    // MARK: - 底栏（对齐安卓现状：只有两格）
+    //
+    // ★ 2026-10-30：安卓那边 MainActivity L124-135 已经改成
+    //   第二格文案「聊天」、点了直接去聊天页；第三格「排行」直接 setVisibility(GONE)。
+    //   所以这边也只要两格。
 
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabItem(0, "它", "pawprint.fill")
-            tabItem(1, "社区", "person.2.fill")
-            tabItem(2, "排行", "trophy.fill")
+            chatTabItem()
         }
         .padding(.top, 6)
         .background(
@@ -376,6 +379,31 @@ struct MainHomeView: View {
                 }
                 .ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    /// 第二格「聊天」：不切屏，直接开对话页（跟安卓 tab_comm → 去聊天页() 一致）。
+    private func chatTabItem() -> some View {
+        Button {
+            hit()
+            talkOpen = true
+        } label: {
+            VStack(spacing: 3) {
+                Capsule()
+                    .fill(Color.clear)
+                    .frame(width: 16, height: 2.5)
+                Image(systemName: "bubble.left.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Tw.gray400)
+                Text("聊天")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Tw.gray400)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 3)
+            .padding(.bottom, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func tabItem(_ i: Int, _ title: String, _ icon: String) -> some View {

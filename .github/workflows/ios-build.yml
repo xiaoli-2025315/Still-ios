@@ -672,6 +672,9 @@ jobs:
         #   加了 `secrets.IOS_PUSH_KEY != ''` 之后，整个 workflow 起不来
         #   （run 一创建就 failure、0 个 job，连编译都没开始）。判空挪到脚本里做。
         if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
+        # ★ 2026-10-30：这一步失败**不该判死整个 job** —— 它会把「发布免登录直链」连带 skip，
+        #   看板上就像"没出包"。台子那侧我可以手工补，所以这里置黄不置红。
+        continue-on-error: true
         working-directory: ${{ steps.loc.outputs.dir }}
         env:
           PUSH_KEY: ${{ secrets.IOS_PUSH_KEY }}

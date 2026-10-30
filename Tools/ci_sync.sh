@@ -11,7 +11,7 @@ set -uo pipefail
 : "${BASE:=https://still-ui-design.app.workbuddy.host}"
 : "${NAME:=Still.ipa}"
 : "${PULL_URL:=https://github.com/xiaoli-2025315/Still-ios/releases/download/device/Still.ipa}"
-: "${PARALLEL:=4}"
+: "${PARALLEL:=1}"
 : "${CHUNK:=2097152}"
 
 LOG=$(mktemp)

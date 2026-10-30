@@ -42,13 +42,32 @@ trap 'rc=$?; report; exit $rc' EXIT
 [ -f "$IPA" ] || { echo "找不到 $IPA"; exit 1; }
 
 echo "═══ ① 试台子自己拉 ═══"
+want_ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+           "$(dirname "$IPA")/Still.xcarchive/Products/Applications/Still.app/Info.plist" 2>/dev/null || echo "")
+echo "本地包版本：$want_ver"
+
 pull=$(curl -sS --max-time 300 -X POST "$BASE/api/ios/pull?k=$PUSH_KEY&url=$PULL_URL" 2>&1)
 echo "$pull" | head -c 400; echo
+
+ok=0
 if printf '%s' "$pull" | grep -q '"ok": true'; then
-  echo "═══ 台子自己拉成功 ═══"
+  for i in $(seq 1 20); do
+    sleep 6
+    got=$(curl -sS --max-time 20 "$BASE/api/ios/pkg" 2>/dev/null \
+          | grep -o '"版本": *"[^"]*"' | head -1 | sed 's/.*"\(.*\)"/\1/')
+    prog=$(curl -sS --max-time 20 "$BASE/api/ios/pull?k=$PUSH_KEY" 2>/dev/null | tr -d '\n ')
+    echo "  等拉取 $i：台子版本=$got 进度=$(printf '%s' "$prog" | head -c 100)"
+    if [ -n "$want_ver" ] && [ "$got" = "$want_ver" ]; then ok=1; break; fi
+  done
+else
+  echo "（拉不起来）"
+fi
+
+if [ "$ok" = "1" ]; then
+  echo "═══ 台子自己拉成功（版本已对上）═══"
   exit 0
 fi
-echo "（拉不动，走 ② 分片并行）"
+echo "（走 ② 分片并行上传）"
 
 SIZE=$(wc -c < "$IPA" | tr -d ' ')
 echo "包大小 $SIZE 字节（$((SIZE / 1048576)) MB），并行 $PARALLEL"

@@ -194,7 +194,8 @@ struct MainHomeView: View {
                 content
                 // ★ v44：输入框直接摆在主页上（他要的「跟豆包一样」）。
                 //   只在「它」这一屏出现 —— 社区 / 排行两屏不跟猫说话。
-                if tab == 0 { HomeComposer() }
+                // ★ 2026-10-30：常驻输入框删掉 —— 安卓首页没有输入框，聊天在第二格。
+            //   （HomeComposer 文件先留着，里面的 Siri 提示和键盘探针还在用。）
                 bottomBar
             }
 
@@ -825,25 +826,6 @@ struct HerPane: View {
                     .lineLimit(2)
                     .padding(.horizontal, 4)
 
-                // 自检：版本 · 点了几下 · 键盘 · 小窗
-                HStack(spacing: 6) {
-                    Text("自检")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Tw.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Tw.gray300))
-                    // ★ v45：把**屏幕点尺寸**摆在这儿。
-                    //   要是这一行还是 320x480，就说明 UILaunchScreen 没写进包里的 plist，
-                    //   一眼就能看出来，不用再等我猜一轮。
-                    Text("\(AppVersion.tag) · 屏\(MainHomeView.screenTag) · 键盘\(focus.keyboardUp ? "已起" : "未起") · 小窗\(pip.possible ? "可起" : "不可起")")
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .foregroundStyle(Tw.gray400)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                }
-                .padding(.horizontal, 4)
-                .padding(.bottom, 16)
 
                 // 小标题（安卓 .cap）
                 HStack(spacing: 8) {

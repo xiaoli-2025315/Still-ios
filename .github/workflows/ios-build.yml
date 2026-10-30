@@ -668,45 +668,16 @@ jobs:
       #   ★ 上传钥匙走 Secret —— 仓库是公开的，写死在文件里等于把上传口子送给所有人。
       #     没配这个 Secret 就**跳过**（不是失败），后面该发的东西照发。
       - name: 同步到安装页（分片传，顶掉台子上的旧包）
-        # ★★ 2026-10-25：**`if` 里不许引用 `secrets` 上下文** ——
-        #   加了 `secrets.IOS_PUSH_KEY != ''` 之后，整个 workflow 起不来
-        #   （run 一创建就 failure、0 个 job，连编译都没开始）。判空挪到脚本里做。
-        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
-        # ★ 2026-10-30：这一步失败**不该判死整个 job** —— 它会把「发布免登录直链」连带 skip，
-        #   看板上就像"没出包"。台子那侧我可以手工补，所以这里置黄不置红。
+        # ★ 2026-10-30：逻辑搬到 Tools/ci_sync.sh —— 4 路并行 + 每片校验 "ok": true。
+        #   失败时置黄（不影响已签名包产出），但会打印台子的返回体。
         continue-on-error: true
+        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
         working-directory: ${{ steps.loc.outputs.dir }}
         env:
           PUSH_KEY: ${{ secrets.IOS_PUSH_KEY }}
         run: |
-          set -eo pipefail
-          if [ -z "$PUSH_KEY" ]; then
-            echo "没配 IOS_PUSH_KEY 这个 Secret —— 跳过同步（不影响出包，回头手工挂）"
-            exit 0
-          fi
-          IPA=out/Still.ipa
-          NAME=Still.ipa
-          # macOS 没有 stat -c%s（GNU 写法）。它一直藏着：没配 IOS_PUSH_KEY 时被 exit 0 跳过，
-          # 配上之后每次 job 都红 —— v98 那次就是这么红的。
-          SIZE=$(stat -f%z "$IPA")
-          BASE="https://still-ui-design.app.workbuddy.host"
-          rm -rf .chunks && mkdir -p .chunks
-          split -b 2097152 "$IPA" .chunks/p
-          OFF=0
-          for f in .chunks/p*; do
-            N=$(stat -f%z "$f")
-            RESP=$(curl -sS --max-time 120 --retry 3 -w " HTTP:%{http_code}" \
-              -X POST --data-binary @"$f" \
-              -H "Content-Type: application/octet-stream" \
-              "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$OFF&size=$SIZE")
-            echo "  片 off=$OFF → $RESP"
-            OFF=$((OFF + N))
-          done
-          echo "════ 正式挂上 ════"
-          curl -sS --max-time 120 -X POST "$BASE/api/ios/adopt?k=$PUSH_KEY&name=$NAME"
+          bash Tools/ci_sync.sh
 
-      # 同一份签好的包再发一份到 Release，拿到「免登录直链」：
-      # iPhone 自带 Safari 打开就能存到「文件」→ 直接装，不用电脑、不用全能签再签一次。
       - name: 发布免登录直链（已签名包）
         if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
         working-directory: ${{ steps.loc.outputs.dir }}

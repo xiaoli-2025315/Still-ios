@@ -77,7 +77,8 @@ struct ActLibPage: View {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("一张卡一只它 · 点开能看每条动作，还能换到小窗里用它")
+                    // ★ 2026-10-30：照安卓那句（ActListV2Activity L58）
+                    Text("点一格进去看它；长按可以删掉。")
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray500)
                         .padding(.horizontal, 20)
@@ -99,11 +100,17 @@ struct ActLibPage: View {
                             .padding(.bottom, 10)
                     }
 
-                    ForEach(model.chars) { c in
-                        charCard(c)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 10)
+                    // ★ 2026-10-30：两列网格，最后一格「＋ 登记新角色」（对齐安卓 ActListV2Activity）
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                        GridItem(.flexible(), spacing: 12)],
+                              spacing: 12) {
+                        ForEach(model.chars) { c in
+                            charCard(c)
+                        }
+                        登记格()
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
 
                     if model.loadedOnce && model.chars.isEmpty && model.err == nil {
                         Text("服务器上还没有角色。点右上角「＋」登记一只。")
@@ -144,8 +151,9 @@ struct ActLibPage: View {
                 .presentationDetents([.large])
         }
         .sheet(item: $watching) { c in
-            // ★ 点一只 ⇒ 先看「这一只」的大框（坐立动图），点大框才进动作库
-            RoleHomeView(char: c, home: true, onStudio: {
+            // ★ 2026-10-30：点一格**直接进动作库**（home: false）——
+            //   对齐安卓：点一格进去看它，没有"先看大框"这一层。
+            RoleHomeView(char: c, home: false, onStudio: {
                 // 「接着做剩下的 N 个」⇒ 关掉大框页，直接进生产页的第二半
                 watching = nil
                 studioStage2 = true
@@ -272,103 +280,84 @@ struct ActLibPage: View {
 
     // MARK: - 一张卡
 
+    /// 一格角色（对齐安卓：图 + 名字 + 动作数 + 「用它/在用」；点进动作库、长按删）
     private func charCard(_ c: ActLab.Char) -> some View {
-        HStack(spacing: 13) {
+        VStack(alignment: .leading, spacing: 8) {
             avatar(c)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 6)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(c.title)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Tw.gray900)
-                    .lineLimit(1)
+            Text(c.title)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Tw.gray900)
+                .lineLimit(1)
 
-                HStack(spacing: 6) {
-                    if store.isCurrent(c.id) {
-                        Text("正在用")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Tw.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Tw.red600))
-                    }
-                    Text(chanLabel(c))
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(c.isPaid ? Tw.red600 : Tw.gray500)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(c.isPaid ? Tw.red600.opacity(0.10) : Tw.gray100)
-                        )
+            Text("\(c.doneCount)/\(ActLab.total) 条动作好了")
+                .font(.system(size: 11))
+                .foregroundStyle(c.doneCount >= ActLab.total ? Tw.green500 : Tw.gray500)
+                .lineLimit(1)
 
-                    Text("\(c.doneCount)/\(ActLab.total) 条动作好了")
-                        .font(.system(size: 11))
-                        .foregroundStyle(c.doneCount >= ActLab.total ? Tw.green500 : Tw.gray500)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            // ★★★ 2026-10-23（他要的）：每只猫右边一颗「用它」——
-            //   点了就把这只的动作包下下来、把手机里住着的那只换成它。
-            //   已经在用的那颗写「在用」，灰底、点不动（不是隐藏，让他看得见状态）。
+            // 「用它 / 在用」—— 描边胶囊，不是红块（安卓同款）
             Button {
                 Task { await useIt(c) }
             } label: {
                 HStack(spacing: 4) {
-                    if usingId == c.id { ProgressView().scaleEffect(0.55) }
+                    if usingId == c.id { ProgressView().scaleEffect(0.5) }
                     Text(store.isCurrent(c.id) ? "在用" : (usingId == c.id ? "在换…" : "用它"))
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 11.5, weight: .semibold))
                 }
-                .foregroundStyle(store.isCurrent(c.id) ? Tw.gray500 : Tw.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(store.isCurrent(c.id) ? Tw.gray200 : Tw.red600))
+                .foregroundStyle(store.isCurrent(c.id) ? Tw.gray400 : Tw.gray900)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .overlay(
+                    Capsule().stroke(store.isCurrent(c.id) ? Tw.gray200 : Tw.gray300, lineWidth: 1)
+                )
             }
             .buttonStyle(PressStyle(scale: 0.95))
             .disabled(store.isCurrent(c.id) || !usingId.isEmpty)
-
-            // ★★★ 2026-10-21（他的原话：「现在已经做了的角色删除不了，给角色加一个整个删除」）：
-            //   这里是那只「整个删掉」的键。**常驻、不按条件藏** —— 只有样板不给删
-            //   （台子也会拒）。字必须是「删掉」三个字：只画一个垃圾桶，他不会觉得那是能点的。
-            if c.dropAllowed {
-                Button {
-                    askingDrop = c
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 9.5, weight: .semibold))
-                        Text("删掉")
-                            .font(.system(size: 10.5, weight: .semibold))
-                    }
-                    .foregroundStyle(Tw.red600)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Tw.red600.opacity(0.08)))
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Tw.gray300)
+            .padding(.bottom, 8)
         }
-        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Tw.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Tw.gray200, lineWidth: 1)
-                )
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Tw.gray200, lineWidth: 1))
         )
-        // 点卡片进动作墙。★ 不用外层 Button 包着 —— 里面还要放「删掉」，
-        // 套在一起的话点删除会连带把动作墙也打开。
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // 点一格 = 进它的动作库（安卓同一条）
+        .contentShape(Rectangle())
         .onTapGesture { watching = c }
+        // 长按 = 删掉（只有允许删的才有反应）
+        .onLongPressGesture(minimumDuration: 0.6) {
+            if c.dropAllowed { askingDrop = c }
+        }
     }
 
-    /// 换成这一只：下包 → 换过去。失败就说人话，不装作换好了。
+    /// 最后一格「＋ 登记新角色」
+    private func 登记格() -> some View {
+        Button {
+            showNew = true
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .light))
+                    .foregroundStyle(Tw.gray400)
+                Text("登记新角色")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Tw.gray400)
+            }
+            .frame(maxWidth: .infinity, minHeight: 150)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Tw.gray50)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Tw.gray200, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+            )
+        }
+        .buttonStyle(PressStyle(scale: 0.97))
+    }
+
     private func useIt(_ c: ActLab.Char) async {
         if !usingId.isEmpty { return }
         usingId = c.id

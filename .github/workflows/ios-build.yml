@@ -683,17 +683,20 @@ jobs:
           fi
           IPA=out/Still.ipa
           NAME=Still.ipa
-          SIZE=$(stat -c%s "$IPA")
+          # macOS 没有 stat -c%s（GNU 写法）。它一直藏着：没配 IOS_PUSH_KEY 时被 exit 0 跳过，
+          # 配上之后每次 job 都红 —— v98 那次就是这么红的。
+          SIZE=$(stat -f%z "$IPA")
           BASE="https://still-ui-design.app.workbuddy.host"
           rm -rf .chunks && mkdir -p .chunks
           split -b 2097152 "$IPA" .chunks/p
           OFF=0
           for f in .chunks/p*; do
-            N=$(stat -c%s "$f")
-            curl -sS --max-time 120 --retry 3 -X POST --data-binary @"$f" \
+            N=$(stat -f%z "$f")
+            RESP=$(curl -sS --max-time 120 --retry 3 -w " HTTP:%{http_code}" \
+              -X POST --data-binary @"$f" \
               -H "Content-Type: application/octet-stream" \
-              "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$OFF&size=$SIZE"
-            echo
+              "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$OFF&size=$SIZE")
+            echo "  片 off=$OFF → $RESP"
             OFF=$((OFF + N))
           done
           echo "════ 正式挂上 ════"

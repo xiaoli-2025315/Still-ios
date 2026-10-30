@@ -421,10 +421,6 @@ final class PetEngine: ObservableObject {
     ///   引擎这条循环要拿它得起一个缓存表，下一步再做，别在一版里混两件事）。
     ///   ⇒ 行为上已经是「按这一拍自己的时长演完再换」，只是时长还来自配置。
     private func durationOf(_ a: Act) -> Double {
-        // 先看包里这条片段到底多长（装包时缓存好的），没有才回退配置秒数
-        if let sec = CatPack.clipSeconds[a.rawValue], sec > 0.4 {
-            return sec
-        }
         let base = Cfg.actSec[a] ?? 3.0...5.0
         return Double.random(in: base)
     }

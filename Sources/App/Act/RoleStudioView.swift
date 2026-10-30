@@ -875,10 +875,10 @@ struct RoleStudioView: View {
     private func titleOf(_ s: String) -> String {
         switch s {
         case "queued": return "排队中"
-        case "gen":    return "正在生成中"
-        case "saved":  return "片子拿到了"
-        case "matte":  return "正在抠背景"
-        case "warn":   return "这条没做成"
+        case "gen":    return "生成中"
+        case "saved":  return "等抠图"
+        case "matte":  return "抠像中"
+        case "warn":   return "没做成"
         default:       return "还没做"
         }
     }

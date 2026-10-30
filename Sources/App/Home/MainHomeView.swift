@@ -496,7 +496,7 @@ struct MainHomeView: View {
                 Image(systemName: "hand.tap.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(Tw.red600)
-                Text("双击背面叫它出来")
+                Text("放上去之后，它会自己出去玩，也会自己回来")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Tw.gray900)
             }

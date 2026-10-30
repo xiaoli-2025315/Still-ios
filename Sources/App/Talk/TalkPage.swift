@@ -83,10 +83,10 @@ struct TalkPage: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if lines.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("说点什么吧。")
+                            Text("还没聊过")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(Tw.gray900)
-                            Text("它听得懂人话，也记得你上次说的那句。")
+                            Text("下面说第一句，它就会记住")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Tw.gray400)
                         }

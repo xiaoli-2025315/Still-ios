@@ -1,0 +1,42 @@
+name: iOS 分支编译检查
+
+# ★ 2026-10-30：只做「能不能编过」的检查，**不产出、不上传任何包**。
+#   原因：正式 workflow（ios-build.yml）里上传 Release 的步骤只判断
+#   「有没有签名证书」，不判断分支 —— 在分支上跑它会把 device 直链的包覆盖掉。
+#   所以分支检查单独一个 workflow：模拟器编译，免签名、不碰 Release。
+
+on:
+  push:
+    branches:
+      - "android-parity-*"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装 XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: 生成工程
+        run: |
+          xcodegen generate
+          ls -d Still.xcodeproj
+
+      - name: 编译（模拟器，免签名）
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Still.xcodeproj \
+            -scheme Still \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build

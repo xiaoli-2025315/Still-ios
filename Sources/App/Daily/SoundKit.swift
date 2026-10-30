@@ -34,7 +34,43 @@ final class SoundKit {
 
     // MARK: - 给人调的那几个
 
-    func tap() { play("tap", volume: 0.25) }
+    // MARK: - 按键声（对齐安卓：5 档 + 不要声音）
+    //
+    // ★ 2026-10-30：安卓那边按键声可选（水泡/木叩/轻哒/电子滴/静音），默认水泡。
+    //   这边也一样合成出来，不依赖任何音频资源。
+
+    static let tapNames = ["原来那个", "木叩一下", "轻轻一哒", "水泡", "电子滴", "不要声音"]
+
+    private let tapKindKey = "still.tap.kind"
+
+    /// 0=原来那个 1=木叩 2=轻哒 3=水泡 4=电子滴 5=不要声音
+    var tapKind: Int {
+        get {
+            if UserDefaults.standard.object(forKey: tapKindKey) == nil { return 3 }  // 默认水泡
+            return UserDefaults.standard.integer(forKey: tapKindKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: tapKindKey) }
+    }
+
+    func setTapKind(_ k: Int) {
+        tapKind = k
+        previewTap(k)
+    }
+
+    /// 试听（不改设置）
+    func previewTap(_ k: Int) {
+        switch k {
+        case 0: play("tap", volume: 0.25)
+        case 1: play("tapWood", volume: 0.32)
+        case 2: play("tapSoft", volume: 0.26)
+        case 3: play("tapPop", volume: 0.30)
+        case 4: play("tapBeep", volume: 0.24)
+        default: break            // 5 = 不要声音
+        }
+    }
+
+    /// 点界面那一声（按当前设置）
+    func tap() { previewTap(tapKind) }
     func step() { play("step", volume: 0.32) }
     func land() { play("land", volume: 0.45) }
     func jump() { play("jump", volume: 0.4) }
@@ -76,6 +112,16 @@ final class SoundKit {
 
         case "meow":
             samples = meow(rate: rate)
+
+        // ★ 4 种按键声（参数对齐安卓那批 wav）
+        case "tapWood":                       // 木叩：低、短、闷
+            samples = tone(rate: rate, dur: 0.055, f0: 320, f1: 150, amp: 0.6, decay: 40)
+        case "tapSoft":                       // 轻哒：900Hz 一点
+            samples = tone(rate: rate, dur: 0.035, f0: 900, f1: 900, amp: 0.5, decay: 30)
+        case "tapPop":                        // 水泡：350→900 上滑
+            samples = tone(rate: rate, dur: 0.060, f0: 350, f1: 900, amp: 0.55, decay: 16)
+        case "tapBeep":                       // 电子滴：1400Hz 极短
+            samples = tone(rate: rate, dur: 0.025, f0: 1400, f1: 1400, amp: 0.45, decay: 30)
 
         default:
             return nil

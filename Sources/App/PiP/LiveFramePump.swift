@@ -348,7 +348,13 @@ final class LiveFramePump {
                 let ground = Double(S) * Self.groundRatio
                 // ★ 2026-10-23：加上「被拖到哪儿」的偏移（p.dx / p.dy）
                 let top = ground - footScaled + p.dy
-                let x = (Double(S) - w) / 2 + p.dx
+                // ★ 2026-10-30：横向对齐 —— 每段动作的身体中心不在同一个 x 上，
+                //   不补的话一换动作整只猫横着跳（实测最多差 36px）。
+                //   基准取坐立那条；包里有 cx 就用包里的，没有用内置表。
+                let baseCx = CatPack.centerX(for: CatPack.sitName)
+                let thisCx = act.cx > 0 ? act.cx : CatPack.centerX(for: act.name)
+                let shift = (baseCx - thisCx) * scale
+                let x = (Double(S) - w) / 2 + p.dx + shift
                 drawUpright(img, in: CGRect(x: x, y: top, width: w, height: h),
                             ctx, mirror: p.mirror)
             }

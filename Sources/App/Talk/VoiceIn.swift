@@ -17,6 +17,10 @@ final class VoiceIn: NSObject, ObservableObject {
     @Published var listening = false
     @Published var heard = ""
     @Published var err: String?
+    /// ★ 2026-10-30：当前音量（0…1，真实 RMS）—— 波形用。跟安卓同一个映射。
+    @Published var level: Float = 0
+    /// 这一句从什么时候开始（判「说话时间太短」）
+    private var startedAt = Date.distantPast
 
     private let audio = AVAudioEngine()
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
@@ -69,14 +73,26 @@ final class VoiceIn: NSObject, ObservableObject {
             req.taskHint = .dictation
             request = req
 
-            input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { buf, _ in
+            input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buf, _ in
                 req.append(buf)
+                // ★ 真实电平：一小块 PCM 的 RMS，映射到 0…1（跟安卓同一条曲线）
+                if let ch = buf.floatChannelData?[0] {
+                    let n = Int(buf.frameLength)
+                    if n > 0 {
+                        var sum: Float = 0
+                        for i in 0..<n { let v = ch[i]; sum += v * v }
+                        let rms = (sum / Float(n)).squareRoot()
+                        let lv = min(1, pow(rms * 6, 0.55))
+                        DispatchQueue.main.async { self?.level = lv }
+                    }
+                }
             }
             tapped = true
 
             audio.prepare()
             try audio.start()
             listening = true
+        startedAt = Date()
 
             task = recognizer?.recognitionTask(with: req) { [weak self] res, e in
                 guard let self else { return }
@@ -113,6 +129,7 @@ final class VoiceIn: NSObject, ObservableObject {
         task = nil
         request = nil
         listening = false
+        level = 0
         // 把会话还回去（画中画那边会重新 activate）
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
@@ -130,31 +147,80 @@ struct PawTalkButton: View {
     var onUp: () -> Void = {}
 
     @StateObject private var voice = VoiceIn()
+    // ★ 2026-10-30：上滑取消 / 太短提示（对齐安卓）
+    @State private var startedAt = Date.distantPast
+    @State private var willCancel = false
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(voice.listening ? Tw.red600 : Tw.gray100)
+                .fill(voice.listening ? (willCancel ? Tw.gray400 : Tw.red600) : Tw.gray100)
                 .frame(width: 42, height: 42)
-            Image(systemName: voice.listening ? "waveform" : "mic.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(voice.listening ? Tw.white : Tw.gray900)
+
+            if voice.listening {
+                // 12 根真波形（跟着声音高低走；静音时留 5% 底，不然像卡住）
+                WaveBars(level: voice.level, tint: Tw.white)
+                    .frame(width: 26, height: 18)
+            } else {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Tw.gray900)
+            }
         }
-        .contentShape(Circle())
+        // 触控区放大到 64（视觉还是 42）—— 手指不用瞄
+        .contentShape(Circle().inset(by: -11))
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+                .onChanged { g in
                     if !voice.listening {
                         onDown()
                         voice.start()
+                        startedAt = Date()
+                        willCancel = false
                     }
+                    // 上滑 64pt = 取消
+                    willCancel = g.translation.height < -64
                 }
-                .onEnded { _ in
+                .onEnded { g in
+                    let tooShort = Date().timeIntervalSince(startedAt) < 0.6
+                    let cancel = g.translation.height < -64
                     let text = voice.stop()
                     SoundKit.shared.tap()
                     onUp()
+                    willCancel = false
+                    if tooShort {
+                        voice.err = "说话时间太短"
+                        return
+                    }
+                    if cancel { return }          // 松手取消：丢弃
                     if !text.isEmpty { onSaid(text) }
                 }
         )
+    }
+}
+
+// MARK: - 12 根真波形
+
+/// 12 根竖条，高度来自真实音量（`VoiceIn.level`）。
+/// 静音时保留 5% 底 —— 全 0 看起来像卡住了。
+struct WaveBars: View {
+    var level: Float
+    var tint: Color
+    @State private var history: [Float] = Array(repeating: 0, count: 12)
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.06)) { _ in
+            HStack(alignment: .center, spacing: 1.4) {
+                ForEach(0..<12, id: \.self) { i in
+                    Capsule()
+                        .fill(tint.opacity(0.35 + 0.65 * Double(history[i])))
+                        .frame(width: 1.6, height: max(1.2, 18 * CGFloat(0.05 + history[i])))
+                }
+            }
+            .onChange(of: level) { _, v in
+                history.removeLast()
+                history.insert(max(0.05, v), at: 0)
+            }
+        }
     }
 }

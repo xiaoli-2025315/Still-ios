@@ -360,13 +360,16 @@ struct MainHomeView: View {
         }
     }
 
-    // MARK: - 底栏三格（安卓 tab_her / tab_comm / tab_rank）
+    // MARK: - 底栏（对齐安卓现状：只有两格）
+    //
+    // ★ 2026-10-30：安卓那边 MainActivity L124-135 已经改成
+    //   第二格文案「聊天」、点了直接去聊天页；第三格「排行」直接 setVisibility(GONE)。
+    //   所以这边也只要两格。
 
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabItem(0, "它", "pawprint.fill")
-            tabItem(1, "社区", "person.2.fill")
-            tabItem(2, "排行", "trophy.fill")
+            chatTabItem()
         }
         .padding(.top, 6)
         .background(
@@ -376,6 +379,31 @@ struct MainHomeView: View {
                 }
                 .ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    /// 第二格「聊天」：不切屏，直接开对话页（跟安卓 tab_comm → 去聊天页() 一致）。
+    private func chatTabItem() -> some View {
+        Button {
+            hit()
+            talkOpen = true
+        } label: {
+            VStack(spacing: 3) {
+                Capsule()
+                    .fill(Color.clear)
+                    .frame(width: 16, height: 2.5)
+                Image(systemName: "bubble.left.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Tw.gray400)
+                Text("聊天")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Tw.gray400)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 3)
+            .padding(.bottom, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func tabItem(_ i: Int, _ title: String, _ icon: String) -> some View {
@@ -441,7 +469,7 @@ struct MainHomeView: View {
                         howToBackTap
                         // ★ 只有这一张卡观察 30Hz 的引擎 —— 主界面不观察，
                         //   否则整棵树一秒重建 30 次，按钮和键盘都会被冲掉。
-                        StatusPanelView(engine: core.engine)
+                        SettingsPage()   // ★ 2026-10-30：对齐安卓，散装面板收成设置页
                         roomControls
                     }
                     .padding(.horizontal, 16)
@@ -468,7 +496,7 @@ struct MainHomeView: View {
                 Image(systemName: "hand.tap.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(Tw.red600)
-                Text("双击背面叫它出来")
+                Text("放上去之后，它会自己出去玩，也会自己回来")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Tw.gray900)
             }
@@ -563,11 +591,6 @@ struct HerPane: View {
     @ObservedObject private var focus = TalkFocus.shared
 
     // MARK: 这一版新加的几层（都从这一屏进，不藏在别处）
-    @State private var showCamera = false
-    @State private var showScan = false
-    @State private var showBag = false
-    @State private var showDispatch = false
-    @State private var showWork = false
 
     // MARK: 主页框里的「抓起来 / 拖动 / 走回中间」（2026-10-23）
     /// 框的边长 —— 手指位移要换算成 720 画布的像素，没它就只能按比例瞎猜
@@ -850,19 +873,14 @@ struct HerPane: View {
                 // （一张卡一只它 · 右上「＋」登记新角色 · 点开看这套动作好了几条）
                 HStack(spacing: 10) {
                     tile("角色", "做动作 · 看进度 · 换一只", "cat.fill") { onRole() }
-                    tile("带它进现实", "相机里它也站在那儿", "camera.fill") { showCamera = true }
                 }
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
-                    tile("扫一扫", "扫它派来的那张码", "qrcode.viewfinder") { showScan = true }
-                    tile("派它出门", "生成一张它能去的码", "paperplane.fill") { showDispatch = true }
                 }
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
-                    tile("背包", "别人给它的东西", "bag.fill") { showBag = true }
-                    tile("工作台", "服务器上的网页画布", "square.grid.2x2.fill") { showWork = true }
                 }
                 .padding(.bottom, 10)
 
@@ -897,19 +915,6 @@ struct HerPane: View {
             .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
-        .fullScreenCover(isPresented: $showCamera) { CameraCatPage() }
-        .fullScreenCover(isPresented: $showScan) { ScanPage() }
-        .fullScreenCover(isPresented: $showWork) {
-            // ★ 2026-10-25：工作台是网页，它里面每个 /api/ 请求都要认人 ——
-            //   票只能挂在地址上（网页塞不进自定义头），不挂就是一整页 401。
-            CanvasPage(url: Ticket.挂票(ActLab.base + "/canvas"), title: "工作台")
-        }
-        .sheet(isPresented: $showBag) {
-            BagPage().presentationDetents([.large])
-        }
-        .sheet(isPresented: $showDispatch) {
-            DispatchPage().presentationDetents([.large])
-        }
     }
 
     private func tile(_ title: String, _ sub: String, _ icon: String,

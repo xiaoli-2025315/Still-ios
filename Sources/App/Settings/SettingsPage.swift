@@ -8,7 +8,9 @@ import SwiftUI
 //   现在收成一张表。
 
 struct SettingsPage: View {
-    @EnvironmentObject private var auth: StillAuth
+    // ★ 2026-10-30（真机闪退的真因）：根视图**没有**注入 environmentObject，
+    //   用 @EnvironmentObject 一渲染就崩。跟原来那个 StatusPanelView 保持一致，直接拿单例。
+    @ObservedObject private var auth = StillAuth.shared
     @Environment(\.dismiss) private var dismiss
 
     // 大脑的钥匙：跟 StatusPanelView 一样，每只猫一把
@@ -37,22 +39,31 @@ struct SettingsPage: View {
                     row("按键声", SoundKit.tapNames[SoundKit.shared.tapKind],
                         tappable: true) { showTapSheet = true }
                     divider()
-                    Button {
-                        // 连点 5 下（每次间隔 1.2 秒内）→ 截图回传
+                    // ★ 「关于」不能是 Button：row() 本身就是 Button，套一层会双按钮嵌套。
+                    //   用普通行 + 点击计数：3 秒内连点 5 下 = 截当前画面传回台子。
+                    HStack {
+                        Text("关于")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Cfg.Palette.ink)
+                        Spacer()
+                        Text(AppVersion.tag + (shotNote.isEmpty ? "" : " · " + shotNote))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Cfg.Palette.faint)
+                    }
+                    .padding(.vertical, 16)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         let now = Date()
-                        if now.timeIntervalSince(aboutTapAt) > 1.2 { aboutTaps = 0 }
+                        if now.timeIntervalSince(aboutTapAt) > 1.5 { aboutTaps = 0 }
                         aboutTapAt = now
                         aboutTaps += 1
                         if aboutTaps >= 5 {
                             aboutTaps = 0
-                            ShotUploader.upload(tag: "settings") { ok, msg in
+                            ShotUploader.upload(tag: "settings") { _, msg in
                                 shotNote = msg
                             }
                         }
-                    } label: {
-                        row("关于", AppVersion.tag + (shotNote.isEmpty ? "" : " · " + shotNote))
                     }
-                    .buttonStyle(.plain)
                     Spacer(minLength: 30)
                 }
                 .padding(.horizontal, 20)

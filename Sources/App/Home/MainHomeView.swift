@@ -591,11 +591,6 @@ struct HerPane: View {
     @ObservedObject private var focus = TalkFocus.shared
 
     // MARK: 这一版新加的几层（都从这一屏进，不藏在别处）
-    @State private var showCamera = false
-    @State private var showScan = false
-    @State private var showBag = false
-    @State private var showDispatch = false
-    @State private var showWork = false
 
     // MARK: 主页框里的「抓起来 / 拖动 / 走回中间」（2026-10-23）
     /// 框的边长 —— 手指位移要换算成 720 画布的像素，没它就只能按比例瞎猜
@@ -878,19 +873,14 @@ struct HerPane: View {
                 // （一张卡一只它 · 右上「＋」登记新角色 · 点开看这套动作好了几条）
                 HStack(spacing: 10) {
                     tile("角色", "做动作 · 看进度 · 换一只", "cat.fill") { onRole() }
-                    tile("带它进现实", "相机里它也站在那儿", "camera.fill") { showCamera = true }
                 }
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
-                    tile("扫一扫", "扫它派来的那张码", "qrcode.viewfinder") { showScan = true }
-                    tile("派它出门", "生成一张它能去的码", "paperplane.fill") { showDispatch = true }
                 }
                 .padding(.bottom, 10)
 
                 HStack(spacing: 10) {
-                    tile("背包", "别人给它的东西", "bag.fill") { showBag = true }
-                    tile("工作台", "服务器上的网页画布", "square.grid.2x2.fill") { showWork = true }
                 }
                 .padding(.bottom, 10)
 
@@ -925,19 +915,6 @@ struct HerPane: View {
             .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
-        .fullScreenCover(isPresented: $showCamera) { CameraCatPage() }
-        .fullScreenCover(isPresented: $showScan) { ScanPage() }
-        .fullScreenCover(isPresented: $showWork) {
-            // ★ 2026-10-25：工作台是网页，它里面每个 /api/ 请求都要认人 ——
-            //   票只能挂在地址上（网页塞不进自定义头），不挂就是一整页 401。
-            CanvasPage(url: Ticket.挂票(ActLab.base + "/canvas"), title: "工作台")
-        }
-        .sheet(isPresented: $showBag) {
-            BagPage().presentationDetents([.large])
-        }
-        .sheet(isPresented: $showDispatch) {
-            DispatchPage().presentationDetents([.large])
-        }
     }
 
     private func tile(_ title: String, _ sub: String, _ icon: String,

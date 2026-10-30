@@ -851,52 +851,69 @@ struct HerPane: View {
                 //   这里再留一颗按钮就是同一条路走两遍。
                 //   它回的话也跟着挪到输入框正上方，发完立刻能看见，不用滚。
 
-                // 角色：安卓「它」这屏上的第一格入口 —— 点进去才是下一层
-                // （一张卡一只它 · 右上「＋」登记新角色 · 点开看这套动作好了几条）
-                HStack(spacing: 10) {
-                    tile("角色", "做动作 · 看进度 · 换一只", "cat.fill") { onRole() }
-                }
-                .padding(.bottom, 10)
-
-                HStack(spacing: 10) {
-                }
-                .padding(.bottom, 10)
-
-                HStack(spacing: 10) {
-                }
-                .padding(.bottom, 10)
-
-                HStack(spacing: 10) {
-                    tile("放进小窗", pip.active ? "收回" : "切出去它就跟着",
-                         "pip.fill") { pip.toggle() }
-                    tile("叫它来", "敲一下它就来", "hand.wave.fill") {
-                        SoundKit.shared.meow()
-                        Notifier.summonNow()
+                // ★ 2026-10-30：首页排布对齐安卓 —— 两张卡 + 一颗黑主键。
+                //   安卓那屏是：展示框 →「角色 / 陪伴」两卡 →「让它出现在屏幕上」→ 底栏。
+                HStack(spacing: 12) {
+                    homeCard("角色", "做动作 · 换一只", "cat.fill") { onRole() }
+                    homeCard("陪伴", pip.active ? "收回小窗" : "睡在你桌面上", "pip.fill") {
+                        pip.toggle()
                     }
-                    // ★ v95：给引导留个记号
-                    .coachAnchor("叫它来")
                 }
+                .padding(.bottom, 12)
+
+                // 一颗黑主键（安卓那颗「让它出现在屏幕上」）
+                Button {
+                    SoundKit.shared.tap()
+                    if !pip.active { pip.toggle() } else { Notifier.summonNow() }
+                } label: {
+                    Text(pip.active ? "让它回到小窗" : "让它出现在屏幕上")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Tw.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 17)
+                        .background(Capsule().fill(Tw.gray900))
+                }
+                .buttonStyle(PressStyle(scale: 0.97))
                 .padding(.bottom, 10)
-
-                HStack(spacing: 10) {
-                    // ★ 2026-10-23（他的原话）：「重排提醒这些去掉」。
-                    //   「重排提醒」是给排障用的（按行程把通知重算一遍），
-                    //   普通用户点了看不到任何变化，只会以为没生效。
-                    //   通知本身照旧由 Notifier 在后台按行程排，删这颗键不影响它。
-                    tile("更多", "叫它 · 起名 · 换号", "ellipsis.circle.fill") { openMe() }
-                }
-
-                // 长按那间房 —— 那一手跟安卓的「长按爪印」是同一件事
-                Text("长按上面那间房，也能叫出这些")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Tw.gray400)
-                    .padding(.top, 10)
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
             .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
+    }
+
+    /// 首页那两张卡（安卓「角色 / 陪伴」同款）：白底 + 1px 描边 + 标题 + 小字。
+    private func homeCard(_ title: String, _ sub: String, _ icon: String,
+                          tap: @escaping () -> Void) -> some View {
+        Button {
+            SoundKit.shared.tap()
+            tap()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 17))
+                    .foregroundStyle(Tw.gray900)
+                    .padding(.bottom, 2)
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Tw.gray900)
+                Text(sub)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.gray400)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Tw.white)
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Tw.gray200, lineWidth: 1))
+            )
+        }
+        .buttonStyle(PressStyle(scale: 0.97))
     }
 
     private func tile(_ title: String, _ sub: String, _ icon: String,

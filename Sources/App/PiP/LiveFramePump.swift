@@ -34,6 +34,12 @@ import UIKit
 
 final class LiveFramePump {
 
+    /// ★ 2026-10-31：小窗那颗「暂停」键要真的停住画面。
+    ///   原来 setPlaying 只切了「听」，画面照跑 → 他按下去觉得"无效"，
+    ///   之后再按回来也没有恢复动作，表现就是"卡住"。
+    ///   AVSampleBufferDisplayLayer 没有 play/pause，只能自己停推进。
+    var paused = false
+
     /// 素材固定 30fps（12 段逐段解析过 mp4 的 mdhd/stts）。
     static let fps: Int32 = 30
 
@@ -247,6 +253,10 @@ final class LiveFramePump {
             return
         }
 
+        if paused {
+            if let sb = lastSample { enqueue(sb, on: layer) }
+            return
+        }
         guard let item = player.currentItem else { return }
         if item !== bound { bind(to: item) }
         guard let output else { return }
@@ -272,6 +282,11 @@ final class LiveFramePump {
     // MARK: - 装了别只猫：每一拍现画一帧
 
     private func tickOwnCat(_ pack: CatPack, on layer: AVSampleBufferDisplayLayer) {
+        // 暂停：不再推进动画，只把最后一帧重发一次，免得系统以为流断了把窗收掉
+        if paused {
+            if let sb = lastSample { enqueue(sb, on: layer) }
+            return
+        }
         let clip = clipSource?() ?? ""
 
         // ★ 2026-10-23：空房分支已删 —— 小窗里**永远有猫**（他的原话：「别收窗户，把空房间的概念去掉」）。

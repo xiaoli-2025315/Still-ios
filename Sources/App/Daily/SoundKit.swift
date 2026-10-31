@@ -71,6 +71,15 @@ final class SoundKit {
 
     /// 点界面那一声（按当前设置）
     func tap() { previewTap(tapKind) }
+
+    /// ★ 2026-10-31：小窗里那一按。后台要出声，必须自己把 audio session 激活成
+    /// .playback（默认的 ambient 会被静音键掐掉，后台也拿不到）。
+    func tapInBackground() {
+        let s = AVAudioSession.sharedInstance()
+        try? s.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+        try? s.setActive(true, options: [])
+        previewTap(tapKind)
+    }
     func step() { play("step", volume: 0.32) }
     func land() { play("land", volume: 0.45) }
     func jump() { play("jump", volume: 0.4) }

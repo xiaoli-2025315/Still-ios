@@ -135,6 +135,11 @@ final class PiPController: NSObject, ObservableObject {
     ///   那是「对表」，不是「他按了」—— 不挡住的话，每次小窗一出来就白弹一条通知。
     private var pipStartedAt = Date.distantPast
 
+    /// 小窗那颗键的暂停状态（转发给帧泵）
+    private var pumpPaused = false {
+        didSet { pump.paused = pumpPaused }
+    }
+
     /// ★ 2026-10-23：`closesAt`（小窗什么时候自己收）已删 ——
     ///   小窗不再自己收，收不收由用户按那个关闭键决定。详见下面那段注释。
 
@@ -659,6 +664,10 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         active = true
         failCount = 0
         pipStartedAt = Date()
+        // ★ 2026-10-31（他要的）：切出去、小窗起来之后，猫主动说一句怎么跟它说话。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            _ = SayBubble.shared.say("按小框中间的按钮跟我讲话", seconds: 6)
+        }
         // 窗口真正出现时系统会把控件重建一遍，这里再压一次。
         applyBareControls(c)
         note = "它在小窗里"
@@ -753,9 +762,12 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
     func pictureInPictureController(
         _ controller: AVPictureInPictureController, setPlaying playing: Bool
     ) {
-        // ★ 2026-10-30：**先出声音再判断** —— 后台没有触觉（震动要 App 在前台），
-        //   声音是小窗里唯一能立刻到手指的反馈。他现在按下去"没感觉"就是这个缺的。
-        SoundKit.shared.tap()
+        // ★ 2026-10-31：**先真的暂停/恢复画面**。
+        //   AVSampleBufferDisplayLayer 没有 play/pause，靠帧泵的 paused 开关实现；
+        //   原来只切了「听」，所以按下去画面不动、再按也不恢复 → 他觉得「无效 / 卡住」。
+        pumpPaused = !playing
+        // 后台没有触觉（震动要 App 在前台），声音是唯一能立刻到手指的反馈。
+        SoundKit.shared.tapInBackground()
         // 起窗那一下系统会调一次 false 来对表，这不是他按的。
         guard !playing else { return }
         guard Date().timeIntervalSince(pipStartedAt) > 1.5 else { return }

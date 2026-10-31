@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AVFoundation
 
 // MARK: - 聊天页那条「按住 说话」

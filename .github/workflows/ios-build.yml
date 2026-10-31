@@ -120,6 +120,24 @@ jobs:
             build 2>&1 | tee build.log
 
       # 一个 Swift 错误经常带出几十条级联报错，所以只看 error: 行
+      - name: 把报错发到台子（我下不了 GitHub 日志）
+        if: failure()
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: |
+          python3 - <<'PY' || true
+          import json, urllib.request
+          try:
+              txt = open('build.log', encoding='utf-8', errors='replace').read()
+          except Exception:
+              txt = ''
+          errs = [l.strip() for l in txt.splitlines() if 'error:' in l][:12]
+          body = json.dumps({"来源": "ci_error", "报错": errs}, ensure_ascii=False).encode()
+          req = urllib.request.Request("https://still-ui-design.app.workbuddy.host/api/diag",
+                                       data=body, headers={"Content-Type": "application/json"})
+          urllib.request.urlopen(req, timeout=20).read()
+          print("已把 %d 条报错发到台子" % len(errs))
+          PY
+
       - name: 挑出报错
         if: failure()
         working-directory: ${{ steps.loc.outputs.dir }}

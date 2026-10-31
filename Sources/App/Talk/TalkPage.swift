@@ -152,29 +152,18 @@ struct TalkPage: View {
                 .buttonStyle(PressStyle(scale: 0.94))
 
                 if voiceMode {
-                    // 语音模式：整条就是录音键（按住说、上滑取消、太短提示都在 PawTalkButton 里）
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Tw.gray50)
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Tw.gray200, lineWidth: 1))
-                        HStack(spacing: 8) {
-                            PawTalkButton(onSaid: { t in
-                                text = t
-                                send()
-                            })
-                            Text("按住 说话")
-                                .font(.system(size: 13.5))
-                                .foregroundStyle(Tw.gray500)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.leading, 10)
-                    }
+                    // ★ 2026-10-31（他报的）：原来只有那颗小话筒能按，**整条按不了**。
+                    //   现在整条就是录音键：按住说、上滑取消、<0.6 秒提示太短；
+                    //   说话时整条上显示 24 根真音波（跟安卓一样）。
+                    TalkHoldBar(onSaid: { t in
+                        text = t
+                        send()
+                    })
                     .frame(height: 46)
                 } else {
                 // ★ 2026-10-30：**固定一行高**。以前它没有高度约束，
                 //   在没历史消息时会把整页撑成一大块白框（他截图里那个"巨大的空框"）。
-                TalkField(text: $text, focusPulse: pulse, autoFocus: true,
+                TalkField(text: $text, focusPulse: pulse, autoFocus: false,
                           onSubmit: send,
                           onBeginEdit: { PiPController.shared?.quiesceForTyping() },
                           onEndEdit: { PiPController.shared?.resumeAfterTyping() })
@@ -233,10 +222,7 @@ struct TalkPage: View {
                 [Line(mine: true, text: $0.you), Line(mine: false, text: $0.cat)]
             }
         }
-        // AutoField 一上屏会自己抢；这几下是补刀，间隔拉开、不跟系统抢。
-        for d in [0.25, 0.7, 1.2] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + d) { pulse += 1 }
-        }
+        // ★ 2026-10-31（他要求）：进聊天**不要**自动拉起键盘，点了输入框才起。
     }
 
     private func close() {

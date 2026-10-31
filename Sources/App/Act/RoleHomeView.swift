@@ -75,7 +75,6 @@ struct RoleHomeView: View {
                     if !isHome {
                         grid
                         if names.isEmpty { emptyState }
-                        if missingActs > 0 { continueCard }
                     }
                     Spacer(minLength: 20)
                 }
@@ -248,37 +247,6 @@ struct RoleHomeView: View {
         if queued { return "排着队，轮到它就开始" }
         return any ? "" : ""
     }
-
-    private var continueCard: some View {
-        // ★★★ 2026-10-23（「下单回执」）：这一只**已经在做**的时候，
-        //   这颗键不许再写「接着做剩下的 N 个」—— 那是在邀请他再下一单。
-        //   他自己的比喻：点了酒、人离桌、回来桌上什么都没有，只能再点一次。
-        let busy = !inFlight.isEmpty
-        let doing = inFlight.prefix(3).joined(separator: "、")
-            + (inFlight.count > 3 ? " 等 \(inFlight.count) 条" : "")
-        return Button { onStudio() } label: {
-            VStack(spacing: 4) {
-                Text(busy ? "看看做到哪了" : "接着做剩下的 \(missingActs) 个")
-                    .font(.system(size: busy ? 13.5 : 14.5, weight: .semibold))
-                    .foregroundStyle(busy ? Color(hex: 0xB45309) : Tw.white)
-                Text(busy ? "这一单已经下过了：\(doing)"
-                          + (flightWord.isEmpty ? "" : " · \(flightWord)")
-                          + " —— 不用再点"
-                          : "趴下、舔毛、睡觉这些基础动作还没做")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(busy ? Color(hex: 0x92400E) : Tw.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(busy ? Color(hex: 0xFFF3E6) : Tw.red600))
-        }
-        .buttonStyle(PressStyle())
-        .padding(.top, 4)
-    }
-
-    // MARK: 动作库顶上那个小动态框
 
     private var topBox: some View {
         ZStack {

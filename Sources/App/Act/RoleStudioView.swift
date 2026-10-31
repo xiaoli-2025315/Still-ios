@@ -385,6 +385,15 @@ final class StudioModel: ObservableObject {
         lookedAtWall = true
         quietUntil = Date().addingTimeInterval(5)
 
+        // ★★★ 2026-10-31（对齐安卓）：**点一次生成 = 所有动作一起排**。
+        //   台子那边本来就是"不给 action 就全做"，而且下单前自己会刨掉
+        //   还在跑的 / 已经有成品的（gen/serve.js L3294、L3307）。这里不再要求
+        //   "先做坐立、他确认了再排别的"——那一道手动闸安卓没有。
+        if !stage2 {
+            stage2 = true
+            UserDefaults.standard.set(true, forKey: "still.stage2." + charId)
+        }
+
         // ★ 从「接着做剩下的 N 个」进来 ⇒ 直接进第二半，坐立那一屏不再走一遍
         if skipToStage2 && !stage2 {
             stage2 = true
@@ -977,12 +986,9 @@ struct RoleStudioView: View {
                     .buttonStyle(PressStyle())
             } else if m.stage2 && m.leftover > 0 && !m.note.isEmpty {
                 bigLabel(m.note).opacity(0.6)
-            } else if m.sitReady && !m.stage2 {
-                Button { Task { await m.confirmRest() } } label: {
-                    bigLabel("确认，继续做其它动作")
-                }
-                .buttonStyle(PressStyle())
             } else {
+                // ★ 2026-10-31：删掉「确认，继续做其它动作」—— 安卓没有这道手动闸，
+                //   进来就一次把所有缺的排上（见 autoStart 顶部）。
                 EmptyView()
             }
         }

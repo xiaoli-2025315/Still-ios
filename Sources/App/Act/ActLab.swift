@@ -314,6 +314,24 @@ enum ActLab {
 
     // MARK: - 读
 
+    /// ★ 2026-11-01：每一格现在到哪一步（跟安卓读的同一个接口）
+    struct StateResp: Decodable {
+        struct Row: Decodable {
+            let act: String
+            let 状态: String
+            let 人话: String?
+        }
+        let ok: Bool?
+        let char: String?
+        let acts: [Row]
+    }
+
+    /// 读这一只的动作状态。失败返回 nil（页面保持原样，不瞎改）。
+    static func state(charId: String) async -> StateResp? {
+        let enc = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        return try? await get("/api/act/state?char=" + enc)
+    }
+
     static func chars() async throws -> [Char] {
         let r: CharsResp = try await get("/api/act/chars")
         return r.chars ?? []

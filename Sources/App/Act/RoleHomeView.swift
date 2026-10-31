@@ -304,7 +304,7 @@ struct RoleHomeView: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
                             GridItem(.flexible(), spacing: 10)],
                   spacing: 14) {
-            ForEach(ActLab.official, id: \.key) { a in
+            ForEach(ActLab.official.filter { $0.key != "sit" }, id: \.key) { a in
                 actCell(a.key, a.label)
             }
             addCell

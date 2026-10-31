@@ -65,6 +65,10 @@ struct ActLibPage: View {
     @State private var studio: ActLab.Char?
     /// 从动作库「接着做剩下的 N 个」进来 —— 生产页直接从「其余动作」那一半开始
     @State private var studioStage2 = false
+    // ★ 2026-11-01 新增流程：参考图确认 → 制作中
+    @State private var refChar: ActLab.Char?
+    @State private var refPhoto = Data()
+    @State private var sitingChar: ActLab.Char?
     /// 正在「用它」的那只（下包要一会儿，按钮上要转圈）
     @State private var usingId = ""
     /// 正在问「真要删吗」的那一只（非 nil 就弹确认框）
@@ -135,15 +139,45 @@ struct ActLibPage: View {
         .background(Tw.gray50.ignoresSafeArea())
         .task { await model.load() }
         .sheet(isPresented: $showNew) {
-            NewRoleSheet { c in
+            NewRoleSheet { c, photo in
                 await model.load()
                 guard let c else { return }
-                // ★ 2026-10-23：建完不落地到列表让他自己找 —— 直接进生产页做坐立。
-                //   等这半秒是为了让上面这张表先收干净，两张表同时开会互相吃掉。
+                // ★ 2026-11-01（他定的流程）：登记完先到「参考图确认」，不是直接进制作页。
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                studioStage2 = false
-                studio = c
+                refChar = c
+                refPhoto = photo ?? Data()
             }
+            .presentationDetents([.large])
+        }
+        // ① 参考图确认 → ② 制作中（只看坐立） → ③ 动作库
+        .sheet(item: $refChar) { c in
+            RefConfirmView(
+                name: c.title,
+                photo: refPhoto,
+                onPhotoChanged: { _ in },
+                onStart: {
+                    refChar = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
+                },
+                onBack: { refChar = nil }
+            )
+            .presentationDetents([.large])
+        }
+        .sheet(item: $sitingChar) { c in
+            SitingView(
+                char: c,
+                onBackToRef: {
+                    sitingChar = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { refChar = c }
+                },
+                onNext: {
+                    sitingChar = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        studioStage2 = true
+                        studio = c
+                    }
+                }
+            )
             .presentationDetents([.large])
         }
         .sheet(item: $studio) { c in
@@ -1521,7 +1555,7 @@ struct ActPreviewPage: View {
 struct NewRoleSheet: View {
 
     /// 登记成功后回调：把新角色带出去，外面刷新列表并把它的动作墙打开
-    var onDone: (ActLab.Char?) async -> Void
+    var onDone: (ActLab.Char?, Data?) async -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -1859,7 +1893,7 @@ struct NewRoleSheet: View {
             let c = try await ActLab.create(name: nm, channel: channel, photo: p)
             // 先收表，再把新角色交出去 —— 顺序反了会两张表打架
             dismiss()
-            await onDone(c)
+            await onDone(c, p)
         } catch {
             err = "登记失败：\(error.localizedDescription)"
         }

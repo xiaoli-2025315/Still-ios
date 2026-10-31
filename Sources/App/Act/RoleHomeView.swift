@@ -311,6 +311,31 @@ struct RoleHomeView: View {
         }
     }
 
+    /// 一条都没有的时候：告诉他在等什么（排队／机器忙／还没开始），
+    /// 并且给他一颗直接去看的键 —— 他原话：
+    /// 「因为他正在排队但用户不知道…这样用户才不会感觉我们的APP坏了或者很慢」。
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Text(queueLine.isEmpty ? "这一只还没开始做动作。" : queueLine)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Tw.gray500)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button { onStudio() } label: {
+                Text(queueLine.isEmpty ? "让它开始做" : "去看做到哪了")
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(Tw.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Tw.red600))
+            }
+            .buttonStyle(PressStyle())
+        }
+        .padding(.top, 6)
+    }
+
     /// 一格动作：名字在上，下面图 / 或「生成 ›」
     private func actCell(_ key: String, _ label: String) -> some View {
         let ok = names.contains(key)

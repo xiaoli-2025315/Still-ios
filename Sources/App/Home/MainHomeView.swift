@@ -642,8 +642,11 @@ struct HerPane: View {
                 }
                 guard grabbing else { return }
                 let s = stageScale
-                pushPose(dx: catDX + Double(v.translation.width) * s,
-                         dy: catDY + Double(v.translation.height) * s)
+                // ★ 量化到 0.5pt：手指每帧 0.02 的抖动会一路传到帧泵，
+                //   看起来就是"发飘"。取整之后同样的手感，画面稳很多。
+                func q(_ x: Double) -> Double { (x * 2).rounded() / 2 }
+                pushPose(dx: q(catDX + Double(v.translation.width) * s),
+                         dy: q(catDY + Double(v.translation.height) * s))
             }
             .onEnded { v in
                 holdTimer?.invalidate()
@@ -683,18 +686,27 @@ struct HerPane: View {
         if grabbing { dropCat() } else { grabCat() }
     }
 
+    /// ★ 2026-10-31：拎起来 / 放下都要有反馈（统一那套：轻震动 + 点按音）
+    private func feel() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        SoundKit.shared.tap()
+    }
+
+    /// 拎起来的反馈
     private func grabCat() {
         cancelBack()
         stopWalk()
         grabbing = true
         pip.grabCat()          // 立刻开始挣扎（被测到的时候要有反应）
         SoundKit.shared.meow()
+        feel()
     }
 
     /// 放下：先坐在原地，5 秒后自己走回正中。
     private func dropCat() {
         grabbing = false
         pip.dropCat()
+        feel()                 // ★ 放下也给一次：轻震动 + 点按音
         scheduleWalkBack()
     }
 

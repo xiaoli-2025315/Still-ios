@@ -12,12 +12,12 @@ enum AppVersion {
     ///   它曾经停在 "v30" 停了三个版本（v31/v32/v33 都忘了改）——
     ///   直接后果：他装完不知道手机上到底是不是新版，
     ///   排查「改了没效果」时连「装的是哪一版」都确定不了。
-    static let tag = "v114"
+    static let tag = "v115"
 
     /// ★ v95（功能匹配）：比大小用的那个整数。跟 `project.yml` 的
     ///   `CURRENT_PROJECT_VERSION` 同一个数 —— 检查更新要靠它判「是不是新版」。
     ///   ★ 别用字符串比："v9" 会大于 "v94"，越更越显示有新版。
-    static let build = 114
+    static let build = 115
 }
 
 // MARK: - 入口

@@ -28,6 +28,8 @@ struct RoleHomeView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var names: Set<String> = []
+    /// ★ 2026-10-31：每格现在在哪一段（排队中 / 生成中 / 等抠图 / 抠像中 / 没做成）
+    @State private var stage: [String: String] = [:]
     @State private var loading = true
     @State private var err = ""
     @State private var repairing = false
@@ -65,7 +67,6 @@ struct RoleHomeView: View {
                         if isShowcase { showcaseCard } else { topBox }
                     }
                     // ★ 自救口常驻 —— 大框那一屏也得有（他从来找不到藏在二级页里的东西）
-                    repairBar
                     if !err.isEmpty {
                         Text(err)
                             .font(.system(size: 11.5))
@@ -298,85 +299,96 @@ struct RoleHomeView: View {
     // MARK: 一格一格
 
     private var grid: some View {
+        // ★ 2026-10-31（照他发的安卓截图）：11 条全画出来，名字在格子上方，
+        //   没做的那几格是灰底 + 底部「生成 ›」，最后再一格「添加动作」。
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
                             GridItem(.flexible(), spacing: 10)],
-                  spacing: 10) {
+                  spacing: 14) {
+            ForEach(ActLab.official, id: \.key) { a in
+                actCell(a.key, a.label)
+            }
             addCell
-            ForEach(has, id: \.key) { a in
-                tileCell(a.key, a.label)
-            }
         }
     }
 
-    /// 一条都没有的时候：告诉他在等什么（排队／机器忙／还没开始），
-    /// 并且给他一颗直接去看的键 —— ★ 他原话：
-    /// 「因为他正在排队但用户不知道…这样用户才不会感觉我们的APP坏了或者很慢」。
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Text(queueLine.isEmpty ? "这一只还没开始做动作。" : queueLine)
-                .font(.system(size: 12.5))
-                .foregroundStyle(Tw.gray500)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+    /// 一格动作：名字在上，下面图 / 或「生成 ›」
+    private func actCell(_ key: String, _ label: String) -> some View {
+        let ok = names.contains(key)
+        let s = stage[key] ?? ""
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Tw.gray900)
+                .lineLimit(1)
 
-            Button { onStudio() } label: {
-                Text(queueLine.isEmpty ? "让它开始做" : "去看做到哪了")
-                    .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(Tw.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Tw.red600))
+            Button {
+                if ok { watching = key } else { onStudio() }
+            } label: {
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Tw.gray50)
+
+                    if ok {
+                        GifView(url: GifView.makeURL(char.id, key, width: 260))
+                            .padding(6)
+                    } else {
+                        VStack(spacing: 4) {
+                            if s.isEmpty {
+                                Color.clear.frame(height: 0)
+                            } else {
+                                Text(stageWord(s))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Tw.gray500)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                        // 底部那一行「生成 ›」（安卓同款）
+                        Text(s.isEmpty ? "生成 ›" : "看进度 ›")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Tw.gray500)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.7))
+                    }
+                }
+                .aspectRatio(1.32, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            .buttonStyle(PressStyle())
+            .buttonStyle(PressStyle(scale: 0.97))
         }
-        .padding(.top, 6)
     }
 
-    /// ★ 第一格永远是它 —— 他要的「加号在第一个位置」，不用翻到列表底下去找。
+    private func stageWord(_ s: String) -> String {
+        switch s {
+        case "queued": return "排队中"
+        case "gen":    return "生成中"
+        case "saved":  return "等抠图"
+        case "matte":  return "抠像中"
+        case "warn":   return "没做成"
+        default:       return ""
+        }
+    }
+
+    /// 最后一格：添加动作（安卓放在末尾）
     private var addCell: some View {
         Button { showAdd = true } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Tw.gray50)
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Tw.gray300,
-                                  style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
-                VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("添加动作")
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(Tw.gray500)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Tw.gray50)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Tw.gray300,
+                                      style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
                     Image(systemName: "plus")
                         .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(Tw.gray400)
-                    Text("添加动作")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Tw.gray500)
                 }
+                .aspectRatio(1.32, contentMode: .fit)
             }
-            .aspectRatio(1.35, contentMode: .fit)
-        }
-        .buttonStyle(PressStyle(scale: 0.97))
-    }
-
-    private func tileCell(_ key: String, _ label: String) -> some View {
-        Button { watching = key } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Tw.gray100)
-                GifView(url: GifView.makeURL(char.id, key, width: 260))
-                    .padding(6)
-                VStack {
-                    Spacer(minLength: 0)
-                    HStack {
-                        Text(label)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(Tw.gray900)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Tw.white.opacity(0.86)))
-                        Spacer(minLength: 0)
-                    }
-                    .padding(7)
-                }
-            }
-            .aspectRatio(1.35, contentMode: .fit)
         }
         .buttonStyle(PressStyle(scale: 0.97))
     }

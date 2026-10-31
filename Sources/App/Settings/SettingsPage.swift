@@ -64,6 +64,19 @@ struct SettingsPage: View {
                             }
                         }
                     }
+                    // ★ 2026-10-31：他说「没有关于」—— 这里再兜一行版本，
+                    //   保证滚到底一定能看到「关于」和版本号。
+                    HStack {
+                        Text("关于")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Cfg.Palette.faint)
+                        Spacer()
+                        Text(AppVersion.tag)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Cfg.Palette.faint)
+                    }
+                    .padding(.top, 18)
+
                     Spacer(minLength: 30)
                 }
                 .padding(.horizontal, 20)

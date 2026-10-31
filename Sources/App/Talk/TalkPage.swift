@@ -28,6 +28,10 @@ struct TalkPage: View {
     @State private var pulse = 0
     /// ★ 2026-10-30：语音模式（左边那颗切换）—— 对齐安卓聊天页
     @State private var voiceMode = false
+    /// ★ 2026-10-31：左边那颗「猫列表」（安卓聊天页有侧栏，iOS 只有一只）
+    @State private var showCats = false
+    @State private var cats: [ActLab.Char] = []
+    @State private var switching = 
 
     struct Line: Identifiable {
         let id = UUID()
@@ -45,12 +49,26 @@ struct TalkPage: View {
         //   不用自己算键盘高度，也不会被挡住。
         .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
         .onAppear(perform: boot)
+        .sheet(isPresented: $showCats) { catList }
     }
 
     // MARK: - 顶栏
 
     private var header: some View {
         HStack(spacing: 10) {
+            // ★ 2026-10-31：左边那颗「换一只」—— 安卓聊天页左边是猫列表
+            Button {
+                showCats = true
+                loadCats()
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Tw.gray500)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Tw.gray100))
+            }
+            .buttonStyle(PressStyle(scale: 0.9))
+
             Button {
                 close()
             } label: {
@@ -210,6 +228,66 @@ struct TalkPage: View {
     }
 
     // MARK: - 起
+
+    /// 左边那张「猫列表」—— 点一只就换成它来聊（对齐安卓聊天页的侧栏）
+    private var catList: some View {
+        NavigationStack {
+            List {
+                ForEach(cats) { c in
+                    Button {
+                        Task { await pick(c) }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Text(c.name)
+                                .font(.system(size: 15))
+                                .foregroundStyle(Tw.gray900)
+                            Spacer()
+                            if c.id == CatBrain.currentCharId {
+                                Text("在用")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Tw.gray400)
+                            } else if switching == c.id {
+                                Text("在换…").font(.system(size: 11)).foregroundStyle(Tw.gray400)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("跟谁聊")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关上") { showCats = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func loadCats() {
+        Task {
+            if let list = try? await ActLab.chars() {
+                cats = list.filter { $0.dropped != true }
+            }
+        }
+    }
+
+    @MainActor
+    private func pick(_ c: ActLab.Char) async {
+        guard c.id != CatBrain.currentCharId else { showCats = false; return }
+        switching = c.id
+        defer { switching = "" }
+        do {
+            let pack = try await CatPackStore.shared.install(charId: c.id)
+            CatPackStore.shared.use(pack)
+            CatBrain.currentCharId = c.id
+            showCats = false
+            lines = []
+            boot()
+        } catch {
+            // 换失败就留在原地，不改当前这只
+        }
+    }
 
     private func boot() {
         // ★ v48：整段记录都摆出来（以前只有最后一句）。

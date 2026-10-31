@@ -31,7 +31,7 @@ struct TalkPage: View {
     /// ★ 2026-10-31：左边那颗「猫列表」（安卓聊天页有侧栏，iOS 只有一只）
     @State private var showCats = false
     @State private var cats: [ActLab.Char] = []
-    @State private var switching = 
+    @State private var switching = ""
 
     struct Line: Identifiable {
         let id = UUID()

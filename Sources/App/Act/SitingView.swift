@@ -116,7 +116,7 @@ struct SitingView: View {
             Spacer(minLength: 24)
         }
         .background(Tw.gray50.ignoresSafeArea())
-        .task { await watch() }
+        .task { await orderSit(); await watch() }
         .onDisappear { alive = false }
     }
 
@@ -135,6 +135,12 @@ struct SitingView: View {
     private var stageWord: String {
         if stage == "抠像中" && pct > 0 { return "抠像中 \(pct)%" }
         return stage
+    }
+
+    /// ★ 2026-11-01：他点「开始生成」之后才真正下这一单（只下坐立）。
+    private func orderSit() async {
+        struct R: Decodable { let ok: Bool? }
+        _ = try? await ActLab.genStart(charId: char.id, action: "sit")
     }
 
     private func watch() async {

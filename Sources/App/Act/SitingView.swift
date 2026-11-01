@@ -142,12 +142,12 @@ struct SitingView: View {
             if let st = await ActLab.state(charId: char.id) {
                 if let a = st.acts.first(where: { $0.act == "sit" }) {
                     stage = a.状态
-                    note = a.人话
+                    note = a.人话 ?? ""
                     pct = 0
                     if a.状态 == "好了" { done = true; stage = "好了" }
                     if a.状态 == "失败" || a.状态 == "没做成" {
                         // 侵权 → 请换一张图；额度不够 → 额度不够
-                        let why = a.人话
+                        let why = a.人话 ?? ""
                         note = why.contains("额度") || why.contains("付费") ? "额度不够" : "请换一张图"
                     }
                 }

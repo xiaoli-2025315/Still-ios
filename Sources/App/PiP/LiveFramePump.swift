@@ -82,6 +82,105 @@ final class LiveFramePump {
     private var actName = ""
     private var framePos: Double = 0
 
+    // MARK: - 换段接缝（跟安卓 CatSprite 的 lockSeam 同一套算法）
+    //
+    // 以前换段就是 `actName = want; framePos = 0` 三行 —— 新段第 0 帧按写死的
+    // `act.foot` 直接贴到地面线上，**上一段最后那张长什么样一概不看**。
+    // 实测差：睡着→起身 26px、挣扎→坐立 36px、吸走→吐出 30px。
+    //
+    // 现在换段那一刻量两张图（上一段真正画出去的那张 + 新段第 0 张），
+    // 让新段从上一段尾帧的**大小和位置**接着演，再在段内把这笔账平滑还回去。
+    private struct Seam {
+        var k: Double = 1      // 大小比
+        var dx: Double = 0     // 水平差（帧像素）
+        var dy: Double = 0     // 脚底差（帧像素）
+        var c0: Double = 0     // 新段首帧的水平中心（帧像素，缩放支点）
+        var b0: Double = 0     // 新段首帧的脚底（帧像素）
+        var t: Double = 1      // 进度 0 → 1，1 = 已经还完
+        var dur: Double = 1    // 还完用多久
+    }
+    private var seam = Seam()
+    /// 上一拍真正贴到画布上的那张帧图 —— 换段时量它的盒子当锚点
+    private var lastDrawn: CGImage?
+
+    /// 一张帧图里猫实际占的框：高、脚底（从帧顶算）、水平中心，单位是帧像素。
+    /// 只在换段那一刻调一次，不逐帧算。
+    private func contentBox(_ img: CGImage) -> (h: Double, b: Double, c: Double)? {
+        let w = img.width, fh = img.height
+        guard w > 0, fh > 0 else { return nil }
+        var px = [UInt8](repeating: 0, count: w * fh * 4)
+        let ok = px.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(data: raw.baseAddress,
+                                      width: w, height: fh,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                                | CGBitmapInfo.byteOrder32Big.rawValue)
+            else { return false }
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: fh))
+            return true
+        }
+        guard ok else { return nil }
+
+        var minX = w, maxX = -1, minRow = fh, maxRow = -1
+        for row in 0..<fh {
+            for x in 0..<w where px[(row * w + x) * 4 + 3] > 8 {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if row < minRow { minRow = row }
+                if row > maxRow { maxRow = row }
+            }
+        }
+        guard maxX >= 0, maxRow >= 0 else { return nil }
+        // ★ 位图上下文原点在左下，所以内存第 0 行是画面**最底下**那一行。
+        //   这里换算回「从帧顶算」的坐标，跟 act.json 里 foot 的口径一致。
+        return (h: Double(maxRow - minRow + 1),
+                b: Double(fh - minRow),
+                c: (Double(minX) + Double(maxX)) / 2)
+    }
+
+    /// 换段前锁一个接缝。必须在 `actName` / `framePos` 被改掉之前调用。
+    ///
+    /// ★ 横向这一项要减掉 2026-10-30 加的 `cx` 对齐量：那段代码已经把整段按
+    ///   `(坐立中心 - 本段中心)` 平移过了，这里再按「两张图的中心差」补一遍，
+    ///   等于把同一个位移算两次。所以取的是**各自相对自己 cx 的残差**。
+    private func lockSeam(to next: String, pack: CatPack, from prev: String) {
+        seam = Seam()
+        guard let a = lastDrawn, let aa = contentBox(a) else { return }
+        guard let nAct = pack.fallback(for: next),
+              let nImg = pack.image(act: nAct, index: 0)?.cgImage,
+              let nn = contentBox(nImg) else { return }
+        guard aa.h > 0, nn.h > 0 else { return }
+
+        let k = aa.h / nn.h
+        guard k >= 0.45, k <= 2.20 else { return }   // 离谱的比值不接，免得拉变形
+
+        let pCx = (pack.fallback(for: prev).map { $0.cx > 0 ? $0.cx : CatPack.centerX(for: prev) })
+            ?? 0
+        let nCx = nAct.cx > 0 ? nAct.cx : CatPack.centerX(for: next)
+        let dx = (aa.c - pCx) - (nn.c - nCx)
+        let dy = aa.b - nn.b
+        guard abs(dx) > 2 || abs(dy) > 2 || abs(k - 1) > 0.03 else { return }
+
+        seam.k = k
+        seam.dx = dx
+        seam.dy = dy
+        seam.c0 = nn.c
+        seam.b0 = nn.b
+
+        let fps = nAct.fps > 0 ? nAct.fps : 15
+        let dur = nAct.frames > 0 ? Double(nAct.frames) / fps : 4
+        // ★ 必须还回去，不能一直保持：起身那条首帧比趴着矮 26px，
+        //   整段都按上一段大小播的话，起身结尾会比标准高 23%，下一段又继承它 ——
+        //   走一次「趴下→睡着→起身」，猫就永久大两成。
+        // ★ 但也不能太快：0.25 秒还完本身又是一次「猛缩」。2.5 秒封顶，
+        //   每秒变化不到一成，藏在动作里基本看不出来。
+        seam.dur = min(dur, 2.5)
+        if seam.dur < 0.3 { seam.dur = 0.3 }
+        seam.t = 0
+    }
+
     /// 播放器此刻在播哪一段（由 PiPController 接上 CatPlayer）。
     /// 装了新猫时，按它把「mp4 段名」翻成「动作名」—— 这样
     /// 「被叫一声抬头」「它走了只剩空房」这些行为原样成立。
@@ -293,6 +392,7 @@ final class LiveFramePump {
         let want: String = Self.clipMap[clip] ?? "sit"
 
         if want != actName {
+            lockSeam(to: want, pack: pack, from: actName)   // 先量上一段尾帧，再换
             actName = want
             framePos = 0
         }
@@ -369,8 +469,26 @@ final class LiveFramePump {
                 let baseCx = CatPack.centerX(for: CatPack.sitName)
                 let thisCx = act.cx > 0 ? act.cx : CatPack.centerX(for: act.name)
                 let shift = (baseCx - thisCx) * scale
-                let x = (Double(S) - w) / 2 + p.dx + shift
-                drawUpright(img, in: CGRect(x: x, y: top, width: w, height: h),
+                lastDrawn = img
+                var x = (Double(S) - w) / 2 + p.dx + shift
+                var top2 = top
+                var ww = w
+                var hh = h
+
+                // ★ 换段接缝：绕「新段首帧的底中心」缩放 + 平移，
+                //   让这一帧落在上一段尾帧的大小和位置上；权重 1 → 0 平滑还回。
+                if seam.t < 1 {
+                    let u = seam.t
+                    let sw = 1 - u * u * (3 - 2 * u)      // smoothstep：两头慢、中间快
+                    let k2 = 1 + (seam.k - 1) * sw
+                    let mdx = seam.dx * scale * sw * (p.mirror ? -1 : 1)
+                    let mdy = seam.dy * scale * sw
+                    x = x + seam.c0 * scale * (1 - k2) + mdx
+                    top2 = top2 + seam.b0 * scale * (1 - k2) + mdy
+                    ww = w * k2
+                    hh = h * k2
+                }
+                drawUpright(img, in: CGRect(x: x, y: top2, width: ww, height: hh),
                             ctx, mirror: p.mirror)
             }
 
@@ -380,6 +498,11 @@ final class LiveFramePump {
             if Double(act.frames) > 0, framePos >= Double(act.frames) {
                 framePos = framePos.truncatingRemainder(dividingBy: Double(act.frames))
             }
+        }
+
+        // 接缝的账在段内平滑还回去（画完之后再推进 ⇒ 换段第一拍拿到的是全额补偿）
+        if seam.t < 1 {
+            seam.t = min(1, seam.t + (1.0 / Double(Self.feedHz)) / seam.dur)
         }
         return pb
     }

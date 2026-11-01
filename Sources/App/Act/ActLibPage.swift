@@ -156,6 +156,7 @@ struct ActLibPage: View {
                 photo: refPhoto,
                 onPhotoChanged: { _ in },
                 onStart: {
+                    UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
                     refChar = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
                 },
@@ -171,6 +172,7 @@ struct ActLibPage: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { refChar = c }
                 },
                 onNext: {
+                    UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
                     sitingChar = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         studioStage2 = true
@@ -314,6 +316,37 @@ struct ActLibPage: View {
 
     // MARK: - 一张卡
 
+    /// ★ 2026-11-01（他说的）：入口只有角色页点进来这一个。
+    ///   进来落到哪一页，全看这只猫现在到哪一步 ——
+    ///     坐立已经好了   → 动作库
+    ///     点过「开始生成」 → 制作中（他上次退出的就是那页）
+    ///     还没点过       → 参考图确认
+    private func route(_ c: ActLab.Char) async {
+        if await sitDone(c.id) {
+            UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
+            watching = c
+            return
+        }
+        if UserDefaults.standard.bool(forKey: "still.refok." + c.id) {
+            sitingChar = c
+        } else {
+            refChar = c
+            refPhoto = Data()
+        }
+    }
+
+    /// 这只猫的坐立做好了没有（以台子为准）
+    private func sitDone(_ id: String) async -> Bool {
+        if let st = await ActLab.state(charId: id),
+           let a = st.acts.first(where: { $0.act == "sit" }) {
+            return a.状态 == "好了"
+        }
+        if let m = try? await ActLab.manifest(charId: id) {
+            return m.names.contains("sit")
+        }
+        return false
+    }
+
     /// 一格角色（对齐安卓：图 + 名字 + 动作数 + 「用它/在用」；点进动作库、长按删）
     private func charCard(_ c: ActLab.Char) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -361,7 +394,7 @@ struct ActLibPage: View {
         )
         // 点一格 = 进它的动作库（安卓同一条）
         .contentShape(Rectangle())
-        .onTapGesture { watching = c }
+        .onTapGesture { Task { await route(c) } }
         // 长按 = 删掉（只有允许删的才有反应）
         .onLongPressGesture(minimumDuration: 0.6) {
             if c.dropAllowed { askingDrop = c }

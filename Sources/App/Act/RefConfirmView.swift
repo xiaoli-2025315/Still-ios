@@ -25,6 +25,8 @@ struct RefConfirmView: View {
     @State private var swapBusy = false
     /// 三段落出现：图 → 问句 → 按钮
     @State private var step = 0
+    /// 2026-11-02 防误触：第一次点只是确认，第二次才真的开始
+    @State private var awaitConfirm = false
 
     init(name: String, photo: Data,
          onPhotoChanged: @escaping (Data) async -> Void,
@@ -87,10 +89,21 @@ struct RefConfirmView: View {
 
             Spacer(minLength: 18)
 
-            Button { onStart() } label: {
+            Button {
+                // 二次确认：第一次点变「再点一次就开始」，3 秒内再点才真开始
+                if !awaitConfirm {
+                    awaitConfirm = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        if awaitConfirm { awaitConfirm = false }
+                    }
+                    return
+                }
+                awaitConfirm = false
+                onStart()
+            } label: {
                 HStack(spacing: 8) {
                     if swapBusy { ProgressView().tint(.white) }
-                    Text("开始生成")
+                    Text(awaitConfirm ? "再点一次就开始" : "开始生成")
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .foregroundStyle(Tw.white)

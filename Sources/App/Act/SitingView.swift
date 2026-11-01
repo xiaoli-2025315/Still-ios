@@ -1,34 +1,36 @@
 import SwiftUI
 
-// MARK: - ② 制作中（只看「坐立」这一条）
+// MARK: - ② 制作中（只看「坐立」这一条）—— 2026-11-02 定稿八屏
 //
-// ★ 2026-11-01（他定的流程）：
-//   · 只有一个大框（屏宽-32 的正方形），**不写动作名**，只有「制作中」
-//   · 进度条跟其他动作**同一条**（排队中/生成中/等抠图/抠像中 47%…）
-//   · 这页退出再进来还是这页，直到坐立真做好
-//   · 做好后：大框里直接播坐立动图，底部才出现「确认下一步」
-//   · 没做成：侵权 →「请换一张图」；额度不够 →「额度不够」；都退回①参考图页
+// 规矩（全部来自他）：
+//  · 框＝动作库那一格放大（屏宽-40、比例 1.32），不是铺满整页的长方形
+//  · 只有进行中的阶段有进度条：排队中/准备中/正在生成/生成完毕/抠像中
+//  · 做好了：进度条消失、框里播坐立、底部「确认下一步」
+//  · 生成失败：原因写在框里、进度条消失；侵权→「换一张图」，额度→「换个号」
+//  · 这一页**不下单**（下单在参考图页那颗「开始生成」上）
 
 struct SitingView: View {
 
     let char: ActLab.Char
-    /// 退回参考图页（失败时走这条）
     var onBackToRef: () -> Void
-    /// 点「确认下一步」→ 进动作库
     var onNext: () -> Void
 
-    @State private var stage = ""
-    @State private var pct = 0
-    @State private var note = ""
-    @State private var done = false
+    private enum Phase {
+        case queue, prepare, generating, matted, matting(Int), done, failed(String)
+    }
+
+    @State private var phase: Phase = .prepare
     @State private var alive = true
+
+    private var cellW: CGFloat { UIScreen.main.bounds.width - 40 }
+    private var cellH: CGFloat { cellW / 1.32 }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Button { onBackToRef() } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Tw.gray500)
                         .frame(width: 34, height: 34)
                         .background(Circle().fill(Tw.gray100))
@@ -39,59 +41,40 @@ struct SitingView: View {
             .padding(.horizontal, 20)
             .padding(.top, 8)
 
-            Spacer(minLength: 10)
-
-            // 大框：做好了就播坐立动图
             ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Tw.gray100)
-                if done {
-                    GifView(url: GifView.makeURL(char.id, "sit", width: 720))
-                        .padding(10)
-                } else {
-                    VStack(spacing: 10) {
-                        ProgressView()
-                        Text(stageWord.isEmpty ? "制作中" : stageWord)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Tw.gray500)
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Tw.gray100)
+                content
+            }
+            .frame(width: cellW, height: cellH)
+            .padding(.top, 12)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(titleText)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(isFailed ? Tw.red600 : Tw.gray900)
+                if !subText.isEmpty {
+                    Text(subText).font(.system(size: 12)).foregroundStyle(Tw.gray400)
+                }
+                if let p = progress {
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Tw.gray200)
+                            Capsule().fill(Tw.gray900).frame(width: max(4, g.size.width * p))
+                        }
                     }
+                    .frame(height: 5)
+                    .padding(.top, 8)
                 }
             }
-            .aspectRatio(1, contentMode: .fit)
-            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.top, 20)
 
-            Spacer(minLength: 14)
+            Spacer(minLength: 12)
 
-            Text(done ? "做好了" : "制作中")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Tw.gray900)
-
-            // 进度条：跟其他动作同一条
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Tw.gray200)
-                    Capsule().fill(Tw.gray900)
-                        .frame(width: g.size.width * CGFloat(progress))
-                }
-            }
-            .frame(height: 5)
-            .padding(.horizontal, 40)
-            .padding(.top, 14)
-
-            if !note.isEmpty {
-                Text(note)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Tw.red600)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .padding(.top, 10)
-            }
-
-            Spacer(minLength: 16)
-
-            if done {
-                Button { onNext() } label: {
-                    Text("确认下一步")
+            if let key = bottomKey {
+                Button { key.1() } label: {
+                    Text(key.0)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Tw.white)
                         .frame(maxWidth: .infinity)
@@ -99,66 +82,123 @@ struct SitingView: View {
                         .background(Capsule().fill(Tw.gray900))
                 }
                 .buttonStyle(PressStyle(scale: 0.97))
-                .padding(.horizontal, 24)
-            } else if !note.isEmpty {
-                Button { onBackToRef() } label: {
-                    Text("请换一张图")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Tw.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Capsule().fill(Tw.gray900))
-                }
-                .buttonStyle(PressStyle(scale: 0.97))
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 24)
+            } else {
+                Color.clear.frame(height: 24)
             }
-
-            Spacer(minLength: 24)
         }
         .background(Tw.gray50.ignoresSafeArea())
-        .task { await orderSit(); await watch() }
+        .task { await watch() }
         .onDisappear { alive = false }
     }
 
-    /// 0~1：只有"抠像"那一段有真百分比，其余按阶段给一个粗略位置
-    private var progress: Double {
-        switch stage {
-        case "排队中": return 0.08
-        case "准备中": return 0.16
-        case "生成中": return 0.35
-        case "等抠图": return 0.62
-        case "抠像中": return 0.62 + 0.30 * (Double(pct) / 100.0)
-        default: return done ? 1.0 : 0.04
+    @ViewBuilder private var content: some View {
+        switch phase {
+        case .done:
+            GifView(url: GifView.makeURL(char.id, "sit", width: 720)).padding(10)
+        case .failed(let why):
+            VStack(spacing: 6) {
+                Text(why).font(.system(size: 16, weight: .semibold)).foregroundStyle(Tw.red600)
+                Text(why.contains("额度") ? "换个号，或者等额度恢复" : "换一张重新做")
+                    .font(.system(size: 12)).foregroundStyle(Tw.gray400)
+            }
+        case .matting(let pct):
+            VStack(spacing: 8) {
+                Text("\(pct)%").font(.system(size: 16, weight: .semibold)).foregroundStyle(Tw.gray900)
+                Text("正在抠背景").font(.system(size: 12)).foregroundStyle(Tw.gray400)
+            }
+        case .generating:
+            VStack(spacing: 6) {
+                ProgressView()
+                Text("正在生成").font(.system(size: 15, weight: .semibold))
+                Text("3–5 分钟").font(.system(size: 12)).foregroundStyle(Tw.gray400)
+            }
+        default:
+            VStack(spacing: 6) {
+                Text(mainText).font(.system(size: 15, weight: .semibold)).foregroundStyle(Tw.gray700)
+                if !subText.isEmpty {
+                    Text(subText).font(.system(size: 12)).foregroundStyle(Tw.gray400)
+                }
+            }
         }
     }
 
-    private var stageWord: String {
-        if stage == "抠像中" && pct > 0 { return "抠像中 \(pct)%" }
-        return stage
+    private var isFailed: Bool { if case .failed = phase { return true }; return false }
+
+    private var mainText: String {
+        switch phase {
+        case .queue: return "排队中"
+        case .prepare: return "准备中"
+        case .matted: return "生成完毕"
+        default: return ""
+        }
     }
 
-    /// ★ 2026-11-01：他点「开始生成」之后才真正下这一单（只下坐立）。
-    private func orderSit() async {
-        struct R: Decodable { let ok: Bool? }
-        _ = try? await ActLab.genStart(charId: char.id, action: "sit")
+    private var titleText: String {
+        switch phase {
+        case .queue, .prepare, .generating, .matted, .matting: return "制作中"
+        case .done: return "做好了"
+        case .failed: return "生成失败"
+        }
+    }
+
+    private var subText: String {
+        switch phase {
+        case .queue: return "前面还有活在做，轮到它就开始"
+        case .prepare: return "已经交出去了，马上开始"
+        case .generating: return "这一条：坐着张望"
+        case .matted: return "片子拿到了，下一步去背景"
+        case .matting: return "只有这一步有真百分比"
+        case .done: return "点下一步进动作库，接着做剩下的"
+        case .failed: return ""
+        }
+    }
+
+    private var progress: CGFloat? {
+        switch phase {
+        case .queue: return 0.08
+        case .prepare: return 0.12
+        case .generating: return 0.40
+        case .matted: return 0.62
+        case .matting(let p): return 0.62 + 0.30 * CGFloat(p) / 100
+        case .done, .failed: return nil
+        }
+    }
+
+    private var bottomKey: (String, () -> Void)? {
+        switch phase {
+        case .done: return ("确认下一步", onNext)
+        case .failed(let why):
+            return why.contains("额度") ? ("换个号", onBackToRef) : ("换一张图", onBackToRef)
+        default: return nil
+        }
     }
 
     private func watch() async {
         while alive {
-            if let st = await ActLab.state(charId: char.id) {
-                if let a = st.acts.first(where: { $0.act == "sit" }) {
-                    stage = a.状态
-                    note = a.人话 ?? ""
-                    pct = 0
-                    if a.状态 == "好了" { done = true; stage = "好了" }
-                    if a.状态 == "失败" || a.状态 == "没做成" {
-                        // 侵权 → 请换一张图；额度不够 → 额度不够
-                        let why = a.人话 ?? ""
-                        note = why.contains("额度") || why.contains("付费") ? "额度不够" : "请换一张图"
-                    }
+            if let st = await ActLab.state(charId: char.id),
+               let a = st.acts.first(where: { $0.act == "sit" }) {
+                let s = a.状态
+                let why = a.人话 ?? ""
+                switch s {
+                case "好了": phase = .done
+                case "排队", "排队中": phase = .queue
+                case "生成中": phase = .generating
+                case "等抠图": phase = .matted
+                case "抠像中": phase = .matting(parsePct(why))
+                case "失败", "没做成":
+                    phase = .failed(why.contains("额度") ? "豆包额度不够" : "这张图涉及侵权")
+                default: phase = .prepare
                 }
             }
             try? await Task.sleep(nanoseconds: 2_200_000_000)
         }
+    }
+
+    private func parsePct(_ why: String) -> Int {
+        guard let i = why.firstIndex(of: "%") else { return 0 }
+        let num = why[why.startIndex..<i].filter { $0.isNumber }
+        return Int(num) ?? 0
     }
 }

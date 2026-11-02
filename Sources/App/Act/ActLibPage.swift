@@ -210,26 +210,24 @@ struct ActLibPage: View {
                 onNext: {
                     UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
                     sitingChar = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        studioStage2 = true
-                        studio = c
-                    }
+                    // ★ 2026-11-03（他报的）：以前这里会弹旧的"生产页"（里面写着
+                    //   「坐立好了，你看一眼」）—— 那不是他要的东西，而且挡住所有动作。
+                    //   现在：确认下一步 = 直接进这一只的动作库。
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { watching = c }
                 }
             )
             .presentationDetents([.large])
         }
-        .sheet(item: $studio) { c in
-            RoleStudioView(char: c, stage2: studioStage2)
-                .presentationDetents([.large])
-        }
+        // ★ 2026-11-03：旧的「生产页」（RoleStudioView）**不再挂到角色页上** ——
+        //   它里面那套"坐立好了你看一眼"是上一版流程的残留，会挡住每个动作。
+        //   需要时文件还在，但不从这里进。
+
         .sheet(item: $watching) { c in
             // ★ 2026-10-30：点一格**直接进动作库**（home: false）——
             //   对齐安卓：点一格进去看它，没有"先看大框"这一层。
             RoleHomeView(char: c, home: false, onStudio: {
-                // 「接着做剩下的 N 个」⇒ 关掉大框页，直接进生产页的第二半
-                watching = nil
-                studioStage2 = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { studio = c }
+                // ★ 2026-11-03：不再进旧生产页 —— 就停在这一只的动作库里。
+                watching = c
             })
             .presentationDetents([.large])
         }

@@ -71,6 +71,8 @@ struct ActLibPage: View {
     @State private var sitingChar: ActLab.Char?
     /// 正在「用它」的那只（下包要一会儿，按钮上要转圈）
     @State private var usingId = ""
+    /// ★ 2026-11-03（他定的）：坐立没做出来之前，不许出现「用它」
+    @State private var sitReady: [String: Bool] = [:]
     /// 正在问「真要删吗」的那一只（非 nil 就弹确认框）
     @State private var askingDrop: ActLab.Char?
     /// 删 / 放回来 失败时的一句人话（显示在列表上方，不弹第二个 alert）
@@ -381,6 +383,18 @@ struct ActLibPage: View {
                 .lineLimit(1)
 
             // 「用它 / 在用」—— 描边胶囊，不是红块（安卓同款）
+            // ★ 坐立没做完之前不出现（他定的：最起码坐立做完进了动作库才能用它）
+            if sitReady[c.id] != true {
+                Text("还没做好")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray400)
+                    .padding(.bottom, 8)
+                    .task {
+                        if sitReady[c.id] == nil {
+                            sitReady[c.id] = await sitDone(c.id)
+                        }
+                    }
+            } else {
             Button {
                 Task { await useIt(c) }
             } label: {
@@ -399,6 +413,7 @@ struct ActLibPage: View {
             .buttonStyle(PressStyle(scale: 0.95))
             .disabled(store.isCurrent(c.id) || !usingId.isEmpty)
             .padding(.bottom, 8)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -468,6 +483,22 @@ struct ActLibPage: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Tw.gray100)
                 .frame(width: 56, height: 56)
+
+            // ★ 2026-11-03（他定的）：「用它」正在下包时，框里要有圆形进度
+            if store.downloading == c.id {
+                Circle()
+                    .stroke(Tw.gray200, lineWidth: 3)
+                    .frame(width: 40, height: 40)
+                Circle()
+                    .trim(from: 0, to: max(0.02, min(1.0, store.progress ?? 0)))
+                    .stroke(Tw.gray900, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: 40, height: 40)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.2), value: store.progress)
+                Text("\(Int((store.progress ?? 0) * 100))%")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Tw.gray700)
+            }
 
             if let u = c.imgURL {
                 AsyncImage(url: u) { phase in

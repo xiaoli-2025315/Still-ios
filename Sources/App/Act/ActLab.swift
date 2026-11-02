@@ -332,6 +332,31 @@ enum ActLab {
         return try? await get("/api/act/state?char=" + enc)
     }
 
+    /// ★ 2026-11-02：wan3.0 那一单现在到哪一步（跟安卓读同一个接口）。
+    ///   它给的是**真状态 + 已等秒数**，没有百分比 —— 界面只说"已等多久"。
+    struct WanResp: Decodable {
+        let ok: Bool?
+        let 状态: String?
+        let 已等: Int?
+        let 人话: String?
+        let 地址: String?
+    }
+
+    static func wanState(charId: String, act: String) async -> WanResp? {
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        return try? await get("/api/wan/state?char=" + c + "&act=" + act)
+    }
+
+    /// 走 wan3.0 下这一条（用户在下拉条里选的通道）。
+    static func wanStart(charId: String, act: String) async throws -> Bool {
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        let said = try await postSay("/api/wan/start", query: [
+            URLQueryItem(name: "char", value: c),
+            URLQueryItem(name: "act", value: act)
+        ])
+        return !said.contains("失败")
+    }
+
     static func chars() async throws -> [Char] {
         let r: CharsResp = try await get("/api/act/chars")
         return r.chars ?? []

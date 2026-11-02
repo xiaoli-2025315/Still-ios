@@ -1640,6 +1640,7 @@ struct NewRoleSheet: View {
 
     /// 下拉条上现在写着什么：模型 + 号。只有一个模型时就不重复写模型名了。
     private var comboLabel: String {
+        if modelId == "wan" { return "wan3.0 · 阿里云" }
         let m = models.first(where: { $0.id == modelId })
         let tag = (m?.接没接通 == false) ? "（还没接好）" : ""
         if models.count > 1, let m { return "\(m.名字) · \(acctLabel)\(tag)" }
@@ -1658,10 +1659,20 @@ struct NewRoleSheet: View {
                 out.append((t, m.id, a.slot))
             }
         }
+        // ★ 2026-11-02（他定的）：wan3.0 跟豆包**并列**，用户自己挑，不自动切换。
+        //   它不占豆包额度，所以不需要豆包号。
+        out.append(("wan3.0 · 阿里云", "wan", ""))
         return out
     }
 
     private func pickCombo(_ r: (String, String, String)) {
+        if r.1 == "wan" {
+            modelId = "wan"
+            modelName = "wan3.0 · 阿里云"
+            slot = ""
+            err = nil
+            return
+        }
         if let m = models.first(where: { $0.id == r.1 }), !m.接没接通 {
             // ★ 不做假按钮：还没接好的模型选了也不装作能用 —— 明说，手上还是拿豆包做。
             err = "「\(m.名字)」还没接好 —— 先用豆包给你做"

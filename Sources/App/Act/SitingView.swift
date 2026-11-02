@@ -20,6 +20,8 @@ struct SitingView: View {
     }
 
     @State private var phase: Phase = .prepare
+    /// ★ wan 那条通道的人话（"已经等了 N 秒"）
+    @State private var wanHint: String = ""
     @State private var alive = true
 
     private var cellW: CGFloat { UIScreen.main.bounds.width - 40 }
@@ -147,7 +149,7 @@ struct SitingView: View {
         switch phase {
         case .queue: return "前面还有活在做，轮到它就开始"
         case .prepare: return "已经交出去了，马上开始"
-        case .generating: return "这一条：坐着张望"
+        case .generating: return wanHint.isEmpty ? "这一条：坐着张望" : wanHint
         case .matted: return "片子拿到了，下一步去背景"
         case .matting: return "只有这一步有真百分比"
         case .done: return "点下一步进动作库，接着做剩下的"
@@ -177,6 +179,29 @@ struct SitingView: View {
 
     private func watch() async {
         while alive {
+            // ★ 2026-11-02：wan3.0 是**用户在下拉条里选的另一条通道**，
+            //   它有自己的状态口径（排队中/生成中 + 已等 N 秒）。先问它；
+            //   它说"没做"才回去问原来那套。
+            if let w = await ActLab.wanState(charId: char.id, act: "sit"),
+               let ws = w.状态, !ws.isEmpty, ws != "没做" {
+                if ws == "好了" {
+                    phase = .done
+                } else if ws == "失败" {
+                    let why = w.人话 ?? ""
+                    phase = .failed(why.isEmpty ? "再试一次，或者换一张图" : why)
+                } else if ws == "排队中" {
+                    phase = .queue
+                } else if ws == "生成中" {
+                    // 不编百分比：只把"已等多久"写进人话
+                    let waited = w.已等 ?? 0
+                    phase = .generating
+                    wanHint = "已经等了 \(waited) 秒（通常 2–4 分钟）"
+                } else {
+                    phase = .prepare
+                }
+                try? await Task.sleep(nanoseconds: 2_200_000_000)
+                continue
+            }
             if let st = await ActLab.state(charId: char.id),
                let a = st.acts.first(where: { $0.act == "sit" }) {
                 let s = a.状态

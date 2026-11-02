@@ -163,6 +163,19 @@ struct ActLibPage: View {
                 photo: refPhoto,
                 charId: c.id,
                 onPhotoChanged: { _ in },
+                onStart: {
+                    // ★ 2026-11-03：这里**必须真的下单**。
+                    //   以前只写了本地标记就跳制作页 → 台子上没有这一单 →
+                    //   制作页永远"准备中"（他报的"iOS 下的单根本没到台子"就是这个）。
+                    Task {
+                        _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
+                        await MainActor.run {
+                            UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
+                            refChar = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
+                        }
+                    }
+                },
                 onStartChannel: { 渠道 in
                     // ★ 按参考图页选的渠道下单（坐立两条线都能走）
                     Task {
@@ -174,19 +187,6 @@ struct ActLibPage: View {
                         } else {
                             _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
                         }
-                        await MainActor.run {
-                            UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
-                            refChar = nil
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
-                        }
-                    }
-                },
-                onStart: {
-                    // ★ 2026-11-03：这里**必须真的下单**。
-                    //   以前只写了本地标记就跳制作页 → 台子上没有这一单 →
-                    //   制作页永远"准备中"（他报的"iOS 下的单根本没到台子"就是这个）。
-                    Task {
-                        _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
                         await MainActor.run {
                             UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
                             refChar = nil

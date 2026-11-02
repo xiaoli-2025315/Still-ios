@@ -2230,3 +2230,4 @@ extension ActLab.GenJob {
                       allDone: nil, matteAllDone: nil, failed: failed ? true : nil, done: nil,
                       acts: nil, each: nil, redo: nil, leftover: nil, pending: nil)
     }
+}

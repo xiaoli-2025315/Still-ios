@@ -1612,6 +1612,9 @@ struct NewRoleSheet: View {
     @State private var slot = "1"
     @State private var accounts: [Acc] = []
     /// 下拉条下面那颗「＋ 添加」点了之后：选加什么
+    /// ★ 2026-11-02：台子支持 wan3.0 吗（探到了才在下拉条里出现）
+    @State private var wanOk = false
+
     @State private var showAddWhat = false
     /// 加豆包号＝登一个新号
     @State private var showLogin = false
@@ -1661,7 +1664,8 @@ struct NewRoleSheet: View {
         }
         // ★ 2026-11-02（他定的）：wan3.0 跟豆包**并列**，用户自己挑，不自动切换。
         //   它不占豆包额度，所以不需要豆包号。
-        out.append(("wan3.0 · 阿里云", "wan", ""))
+        //   ★ 但要台子真支持才出现（没部署的台子不显示，点了必失败）。
+        if wanOk { out.append(("wan3.0 · 阿里云", "wan", "")) }
         return out
     }
 
@@ -1785,6 +1789,10 @@ struct NewRoleSheet: View {
                         )
                     }
                     .padding(.top, 8)
+                    .task {
+                        // ★ 探一次台子支不支持 wan（不支持就不显示那个选项）
+                        if !wanOk { wanOk = await ActLab.wanAlive() }
+                    }
                     .confirmationDialog("添加什么", isPresented: $showAddWhat, titleVisibility: .visible) {
                         Button("添加豆包账号") { showLogin = true }
                         Button("添加新模型") { showAddModel = true }

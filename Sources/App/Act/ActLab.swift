@@ -347,6 +347,15 @@ enum ActLab {
         return try? await get("/api/wan/state?char=" + c + "&act=" + act)
     }
 
+    /// ★ 2026-11-02：台子上到底有没有 wan 这条通道。
+    ///   问一次 /api/wan/state：回得出状态就是有；401/404 就是还没部署。
+    static func wanAlive() async -> Bool {
+        if let r = await wanState(charId: "", act: "sit") {
+            return (r.状态?.isEmpty == false) || (r.ok == true)
+        }
+        return false
+    }
+
     /// 走 wan3.0 下这一条（用户在下拉条里选的通道）。
     static func wanStart(charId: String, act: String) async throws -> Bool {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId

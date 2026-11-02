@@ -356,6 +356,12 @@ enum ActLab {
         return false
     }
 
+    /// ★ 2026-11-03：「重新处理」—— 让台子把这只的参考图重做一次（后台跑）。
+    static func wanRebuild(charId: String) async {
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        _ = try? await postSay("/api/wan/rebuild", query: [URLQueryItem(name: "char", value: c)])
+    }
+
     /// 走 wan3.0 下这一条（用户在下拉条里选的通道）。
     static func wanStart(charId: String, act: String) async throws -> Bool {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId

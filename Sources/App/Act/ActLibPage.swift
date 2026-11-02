@@ -154,6 +154,7 @@ struct ActLibPage: View {
             RefConfirmView(
                 name: c.title,
                 photo: refPhoto,
+                charId: c.id,
                 onPhotoChanged: { _ in },
                 onStart: {
                     UserDefaults.standard.set(true, forKey: "still.refok." + c.id)

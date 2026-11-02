@@ -57,7 +57,11 @@ struct SitingView: View {
                 if !subText.isEmpty {
                     Text(subText).font(.system(size: 12)).foregroundStyle(Tw.gray400)
                 }
-                if let p = progress {
+                if case .generating = phase {
+                    // ★ 2026-11-03：生成阶段没有真百分比 → 光带（不确定态）
+                    LightBandView()
+                        .padding(.top, 8)
+                } else if let p = progress {
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Tw.gray200)

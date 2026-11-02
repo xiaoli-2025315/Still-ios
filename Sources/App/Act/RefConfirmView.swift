@@ -28,6 +28,14 @@ struct RefConfirmView: View {
     /// 2026-11-02 防误触：第一次点只是确认，第二次才真的开始
     @State private var awaitConfirm = false
 
+    // ★ 2026-11-03（他定的）：参考图是台子后台做出来的 ——
+    //   进来先盖一层「正在做参考图…」（带光带），好了换成处理过的那张；
+    //   不满意可以「重新处理」，满意就点「开始生成」（仍然是点两下）。
+    var charId: String = ""
+    @State private var refImage: UIImage? = nil
+    @State private var processing = false
+    @State private var refTimedOut = false
+
     init(name: String, photo: Data,
          onPhotoChanged: @escaping (Data) async -> Void,
          onStart: @escaping () -> Void,
@@ -40,6 +48,12 @@ struct RefConfirmView: View {
     }
 
     var body: some View {
+        bodyInner.task {
+            if !charId.isEmpty && refImage == nil { await watchRef() }
+        }
+    }
+
+    private var bodyInner: some View {
         VStack(spacing: 0) {
             HStack {
                 Button { onBack() } label: {
@@ -60,7 +74,7 @@ struct RefConfirmView: View {
             // 参考图（点它就换）
             Button { showPick = true } label: {
                 Group {
-                    if let ui = UIImage(data: photo) {
+                    if let ui = (refImage ?? UIImage(data: photo)) {
                         Image(uiImage: ui)
                             .resizable()
                             .scaledToFit()
@@ -73,6 +87,20 @@ struct RefConfirmView: View {
                 .frame(maxWidth: .infinity)
                 .frame(maxHeight: UIScreen.main.bounds.height * 0.52)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    if processing {
+                        ZStack {
+                            Color.white.opacity(0.88)
+                            VStack(spacing: 12) {
+                                LightBandView().padding(.horizontal, 40)
+                                Text("正在做参考图…")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Tw.gray500)
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
                 .padding(.horizontal, 24)
                 .opacity(step >= 1 ? 1 : 0)
                 .offset(y: step >= 1 ? 0 : 10)
@@ -116,6 +144,28 @@ struct RefConfirmView: View {
             .disabled(swapBusy)
             .opacity(step >= 3 ? 1 : 0)
 
+            if !processing && !charId.isEmpty {
+                Button { Task { await rebuild() } } label: {
+                    Text("重新处理")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Tw.gray600)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(Tw.gray300, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(PressStyle(scale: 0.98))
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
+            }
+            if refTimedOut {
+                Text("参考图还没做好，先用你上传的这张")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray400)
+                    .padding(.top, 6)
+            }
             Text("点一下那张图可以换一张")
                 .font(.system(size: 11))
                 .foregroundStyle(Tw.gray400)
@@ -148,4 +198,39 @@ struct RefConfirmView: View {
             }
         }
     }
+
+    // MARK: - 参考图（处理中 → 换图 → 重新处理）
+
+    private func watchRef() async {
+        processing = true
+        refTimedOut = false
+        for _ in 0..<60 {
+            if let ui = await fetchRef() {
+                refImage = ui
+                processing = false
+                return
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        processing = false
+        refTimedOut = true
+    }
+
+    private func fetchRef() async -> UIImage? {
+        guard !charId.isEmpty else { return nil }
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        guard let url = URL(string: ActLab.base + "/api/wan/ref?char=" + c) else { return nil }
+        do {
+            let (d, resp) = try await URLSession.shared.data(from: url)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return UIImage(data: d)
+        } catch { return nil }
+    }
+
+    private func rebuild() async {
+        processing = true
+        await ActLab.wanRebuild(charId: charId)
+        await watchRef()
+    }
+
 }

@@ -138,6 +138,11 @@ struct ActLibPage: View {
         }
         .background(Tw.gray50.ignoresSafeArea())
         .task { await model.load() }
+        // ★ 2026-11-03（他报的）：新角色不立刻出现 —— 从制作流程/充值页回来都要重拉。
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await model.load() }
+        }
         .sheet(isPresented: $showNew) {
             NewRoleSheet { c, photo in
                 await model.load()
@@ -157,9 +162,17 @@ struct ActLibPage: View {
                 charId: c.id,
                 onPhotoChanged: { _ in },
                 onStart: {
-                    UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
-                    refChar = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
+                    // ★ 2026-11-03：这里**必须真的下单**。
+                    //   以前只写了本地标记就跳制作页 → 台子上没有这一单 →
+                    //   制作页永远"准备中"（他报的"iOS 下的单根本没到台子"就是这个）。
+                    Task {
+                        _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
+                        await MainActor.run {
+                            UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
+                            refChar = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
+                        }
+                    }
                 },
                 onBack: { refChar = nil }
             )
@@ -169,8 +182,10 @@ struct ActLibPage: View {
             SitingView(
                 char: c,
                 onBackToRef: {
+                    // ★ 2026-11-03（他定的）：制作页退出**直接回角色页**。
+                    //   以前退回参考图页 → 又能点一次生成 → 重复下单。
                     sitingChar = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { refChar = c }
+                    refChar = nil
                 },
                 onNext: {
                     UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)

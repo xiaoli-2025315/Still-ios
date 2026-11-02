@@ -35,6 +35,9 @@ struct RefConfirmView: View {
     @State private var refImage: UIImage? = nil
     @State private var processing = false
     @State private var refTimedOut = false
+    /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
+    @State private var alreadyOrdered = false
+    @State private var alreadyDone = false
 
     init(name: String, photo: Data, charId: String = "",
          onPhotoChanged: @escaping (Data) async -> Void,
@@ -50,6 +53,7 @@ struct RefConfirmView: View {
 
     var body: some View {
         bodyInner.task {
+            if !charId.isEmpty { await checkOrdered() }
             if !charId.isEmpty && refImage == nil { await watchRef() }
         }
     }
@@ -120,6 +124,7 @@ struct RefConfirmView: View {
 
             Button {
                 // 二次确认：第一次点变「再点一次就开始」，3 秒内再点才真开始
+                if alreadyOrdered || alreadyDone { return }   // 已经下过单，不能再点
                 if !awaitConfirm {
                     awaitConfirm = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
@@ -132,7 +137,9 @@ struct RefConfirmView: View {
             } label: {
                 HStack(spacing: 8) {
                     if swapBusy { ProgressView().tint(.white) }
-                    Text(awaitConfirm ? "再点一次就开始" : "开始生成")
+                    Text(alreadyDone ? "已经做好了，去看动作库"
+                         : (alreadyOrdered ? "已经在做了…"
+                            : (awaitConfirm ? "再点一次就开始" : "开始生成")))
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .foregroundStyle(Tw.white)
@@ -142,7 +149,7 @@ struct RefConfirmView: View {
             }
             .buttonStyle(PressStyle(scale: 0.97))
             .padding(.horizontal, 24)
-            .disabled(swapBusy)
+            .disabled(swapBusy || alreadyOrdered || alreadyDone)
             .opacity(step >= 3 ? 1 : 0)
 
             if !processing && !charId.isEmpty {
@@ -232,6 +239,15 @@ struct RefConfirmView: View {
         processing = true
         await ActLab.wanRebuild(charId: charId)
         await watchRef()
+    }
+
+
+    /// 查这一格现在什么状态（没做 / 在做 / 做好）—— 决定按钮能不能点。
+    private func checkOrdered() async {
+        guard let d = await ActLab.wanState(charId: charId, act: "sit") else { return }
+        let st = d.状态 ?? ""
+        alreadyOrdered = (st == "生成中" || st == "排队中")
+        alreadyDone = (st == "好了")
     }
 
 }

@@ -18,6 +18,8 @@ struct RefConfirmView: View {
     var onPhotoChanged: (Data) async -> Void
     /// 点「开始生成」
     var onStart: () -> Void
+    /// 带渠道的下单（"wan" 或 "doubao:<slot>"）
+    var onStartChannel: (String) -> Void
     var onBack: () -> Void
 
     @State private var pickItem: PhotosPickerItem?
@@ -38,22 +40,28 @@ struct RefConfirmView: View {
     /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
     @State private var alreadyOrdered = false
     @State private var alreadyDone = false
+    // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
+    @State private var 渠道 = "wan"                 // "wan" 或 "doubao:<slot>"
+    @State private var 豆包号: [(String, String, Bool)] = []   // (slot, 名字, 登着)
 
     init(name: String, photo: Data, charId: String = "",
          onPhotoChanged: @escaping (Data) async -> Void,
          onStart: @escaping () -> Void,
+         onStartChannel: @escaping (String) -> Void = { _ in },
          onBack: @escaping () -> Void) {
         self.name = name
         _photo = State(initialValue: photo)
         self.charId = charId
         self.onPhotoChanged = onPhotoChanged
         self.onStart = onStart
+        self.onStartChannel = onStartChannel
         self.onBack = onBack
     }
 
     var body: some View {
         bodyInner.task {
             if !charId.isEmpty { await checkOrdered() }
+            await 拉豆包号()
             if !charId.isEmpty && refImage == nil { await watchRef() }
         }
     }
@@ -114,6 +122,30 @@ struct RefConfirmView: View {
 
             Spacer(minLength: 18)
 
+            // ★ 用哪个做（跟登记页那个下拉一回事）
+            Menu {
+                Button("wan3.0 · 阿里云") { 渠道 = "wan" }
+                ForEach(豆包号, id: \.0) { a in
+                    Button("\(a.1) · \(a.2 ? "已登录" : "没登录")") { 渠道 = "doubao:" + a.0 }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("用哪个做").font(.system(size: 12)).foregroundStyle(Tw.gray500)
+                    Text(渠道文案).font(.system(size: 13, weight: .semibold)).foregroundStyle(Tw.gray900)
+                    Image(systemName: "chevron.down").font(.system(size: 10))
+                        .foregroundStyle(Tw.gray400)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Tw.gray50)
+                )
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 6)
+
             Text("就用这张开始做？")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Tw.gray900)
@@ -133,7 +165,8 @@ struct RefConfirmView: View {
                     return
                 }
                 awaitConfirm = false
-                onStart()
+                // 选的是豆包就把这条渠道带出去（onStart 那边按它下单）
+                onStartChannel(渠道)
             } label: {
                 HStack(spacing: 8) {
                     if swapBusy { ProgressView().tint(.white) }
@@ -248,6 +281,31 @@ struct RefConfirmView: View {
         let st = d.状态 ?? ""
         alreadyOrdered = (st == "生成中" || st == "排队中")
         alreadyDone = (st == "好了")
+    }
+
+
+    private var 渠道文案: String {
+        if 渠道 == "wan" { return "wan3.0 · 阿里云" }
+        let slot = String(渠道.dropFirst("doubao:".count))
+        for a in 豆包号 where a.0 == slot {
+            return a.1 + (a.2 ? " · 已登录" : " · 没登录")
+        }
+        return "豆包" + slot
+    }
+
+    /// 台子上记着哪些豆包号（拿不到就只显示 wan3.0，不装作有号）。
+    private func 拉豆包号() async {
+        guard let d = try? await ActLab.rawGet("/api/login/accounts", timeout: 15),
+              let obj = try? JSONSerialization.jsonObject(with: d),
+              let o = obj as? [String: Any],
+              let arr = o["账号"] as? [[String: Any]] else { return }
+        var out: [(String, String, Bool)] = []
+        for x in arr {
+            let s = (x["slot"] as? String) ?? "1"
+            let n = (x["名字"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? ("豆包" + s)
+            out.append((s, n, (x["登着没"] as? Bool) ?? false))
+        }
+        豆包号 = out
     }
 
 }

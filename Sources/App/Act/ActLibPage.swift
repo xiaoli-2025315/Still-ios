@@ -163,6 +163,24 @@ struct ActLibPage: View {
                 photo: refPhoto,
                 charId: c.id,
                 onPhotoChanged: { _ in },
+                onStartChannel: { 渠道 in
+                    // ★ 按参考图页选的渠道下单（坐立两条线都能走）
+                    Task {
+                        if 渠道.hasPrefix("doubao:") {
+                            let slot = String(渠道.dropFirst("doubao:".count))
+                            _ = try? await ActLab.rawPost("/api/gen",
+                                    query: ["char": c.id, "action": "sit", "账号": slot],
+                                    timeout: 60)
+                        } else {
+                            _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
+                        }
+                        await MainActor.run {
+                            UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
+                            refChar = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
+                        }
+                    }
+                },
                 onStart: {
                     // ★ 2026-11-03：这里**必须真的下单**。
                     //   以前只写了本地标记就跳制作页 → 台子上没有这一单 →

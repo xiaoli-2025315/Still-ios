@@ -1615,6 +1615,9 @@ struct NewRoleSheet: View {
     /// 下拉条下面那颗「＋ 添加」点了之后：选加什么
     /// ★ 2026-11-02：台子支持 wan3.0 吗（探到了才在下拉条里出现）
     @State private var wanOk = false
+    /// ★ 2026-11-03：余额（分）+ 单价（分）
+    @State private var walletFree = -1
+    @State private var walletPrice = 120
 
     @State private var showAddWhat = false
     /// 加豆包号＝登一个新号
@@ -1772,6 +1775,30 @@ struct NewRoleSheet: View {
                         dropdownRow(comboLabel)
                     }
 
+                    // ★ 2026-11-03（他定的）：余额 + 充值 —— 没余额就做不了，
+                    //   所以放在最显眼的位置，点「充值」直接开台子的充值页。
+                    HStack(spacing: 10) {
+                        Text(walletText)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(walletShort ? Tw.red600 : Tw.gray500)
+                        Spacer()
+                        Button {
+                            openPay()
+                        } label: {
+                            Text("充值")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Tw.gray900)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .strokeBorder(Tw.gray300, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(PressStyle(scale: 0.97))
+                    }
+                    .padding(.top, 14)
+
                     // ★★★ 2026-10-23（他的原话）：「要加一个添加按钮在这个下拉条下面，
                     //   用来添加新模型和新的豆包账号」—— 加号就在下拉条下面，不用跑到别处。
                     Button { showAddWhat = true } label: {
@@ -1793,6 +1820,11 @@ struct NewRoleSheet: View {
                     .task {
                         // ★ 探一次台子支不支持 wan（不支持就不显示那个选项）
                         if !wanOk { wanOk = await ActLab.wanAlive() }
+                        await refreshWallet()
+                    }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIApplication.didBecomeActiveNotification)) { _ in
+                        Task { await refreshWallet() }
                     }
                     .confirmationDialog("添加什么", isPresented: $showAddWhat, titleVisibility: .visible) {
                         Button("添加豆包账号") { showLogin = true }
@@ -2102,5 +2134,30 @@ extension ActLab.GenJob {
         ActLab.GenJob(job: nil, char: nil, stage: nil, phase: stage, msg: nil, progress: progress,
                       allDone: nil, matteAllDone: nil, failed: failed ? true : nil, done: nil,
                       acts: nil, each: nil, redo: nil, leftover: nil, pending: nil)
+    }
+
+    private var walletText: String {
+        if walletFree < 0 { return "余额 …" }
+        return String(format: "余额 %.2f 元 · 一条 %.2f 元",
+                      Double(walletFree) / 100.0, Double(walletPrice) / 100.0)
+    }
+
+    private var walletShort: Bool {
+        walletFree >= 0 && walletFree < walletPrice
+    }
+
+    private func refreshWallet() async {
+        if let w = await ActLab.wallet() {
+            walletFree = w.可用 ?? 0
+            walletPrice = w.单价 ?? 120
+        }
+    }
+
+    /// 打开台子的充值页（带登录票）。安卓也是打开这同一个网页。
+    private func openPay() {
+        let tk = Ticket.current.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let u = URL(string: ActLab.base + "/pay?t=" + tk) {
+            UIApplication.shared.open(u)
+        }
     }
 }

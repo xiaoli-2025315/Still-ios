@@ -362,6 +362,17 @@ enum ActLab {
         _ = try? await postSay("/api/wan/rebuild", query: [URLQueryItem(name: "char", value: c)])
     }
 
+    /// ★ 2026-11-03：钱包余额（单位：分）。1 点 = 0.01 元。
+    struct WalletResp: Decodable {
+        let ok: Bool?
+        let 可用: Int?
+        let 单价: Int?
+    }
+
+    static func wallet() async -> WalletResp? {
+        try? await get("/api/wallet")
+    }
+
     /// 走 wan3.0 下这一条（用户在下拉条里选的通道）。
     static func wanStart(charId: String, act: String) async throws -> Bool {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId

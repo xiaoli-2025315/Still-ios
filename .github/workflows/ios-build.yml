@@ -131,6 +131,12 @@ jobs:
           except Exception:
               txt = ''
           errs = [l.strip() for l in txt.splitlines() if 'error:' in l][:12]
+          # ★ 2026-11-03（我这边一直拿不到真实报错）：如果一条 error: 都没抓到，
+          #   就把日志**最后 40 行**发上来（放到 报错 里，前面加个标记），
+          #   否则我永远是空的、只能瞎猜。
+          if not errs:
+              tail = [l.strip() for l in txt.splitlines() if l.strip()][-40:]
+              errs = ["（没抓到 error:，下面是日志末尾）"] + tail
           body = json.dumps({"来源": "ci_error", "报错": errs}, ensure_ascii=False).encode()
           req = urllib.request.Request("https://still-ui-design.app.workbuddy.host/api/diag",
                                        data=body, headers={"Content-Type": "application/json"})

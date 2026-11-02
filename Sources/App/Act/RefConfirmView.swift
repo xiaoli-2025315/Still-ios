@@ -35,7 +35,7 @@ struct RefConfirmView: View {
     //   不满意可以「重新处理」，满意就点「开始生成」（仍然是点两下）。
     let charId: String
     @State private var refImage: UIImage? = nil
-    @State private var processing = false
+    @State private var processing = true    // ★ 一进来就是处理中：没处理完不该出现「重新处理」
     @State private var refTimedOut = false
     /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
     @State private var alreadyOrdered = false

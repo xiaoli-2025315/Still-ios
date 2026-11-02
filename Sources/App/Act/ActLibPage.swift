@@ -2055,6 +2055,30 @@ struct NewRoleSheet: View {
         }
         busy = false
     }
+    private var walletText: String {
+        if walletFree < 0 { return "余额 …" }
+        return String(format: "余额 %.2f 元 · 一条 %.2f 元",
+                      Double(walletFree) / 100.0, Double(walletPrice) / 100.0)
+    }
+
+    private var walletShort: Bool {
+        walletFree >= 0 && walletFree < walletPrice
+    }
+
+    private func refreshWallet() async {
+        if let w = await ActLab.wallet() {
+            walletFree = w.可用 ?? 0
+            walletPrice = w.单价 ?? 120
+        }
+    }
+
+    /// 打开台子的充值页（带登录票）。安卓也是打开这同一个网页。
+    private func openPay() {
+        let tk = Ticket.current.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let u = URL(string: ActLab.base + "/pay?t=" + tk) {
+            UIApplication.shared.open(u)
+        }
+    }
 }
 
 
@@ -2206,29 +2230,3 @@ extension ActLab.GenJob {
                       allDone: nil, matteAllDone: nil, failed: failed ? true : nil, done: nil,
                       acts: nil, each: nil, redo: nil, leftover: nil, pending: nil)
     }
-
-    private var walletText: String {
-        if walletFree < 0 { return "余额 …" }
-        return String(format: "余额 %.2f 元 · 一条 %.2f 元",
-                      Double(walletFree) / 100.0, Double(walletPrice) / 100.0)
-    }
-
-    private var walletShort: Bool {
-        walletFree >= 0 && walletFree < walletPrice
-    }
-
-    private func refreshWallet() async {
-        if let w = await ActLab.wallet() {
-            walletFree = w.可用 ?? 0
-            walletPrice = w.单价 ?? 120
-        }
-    }
-
-    /// 打开台子的充值页（带登录票）。安卓也是打开这同一个网页。
-    private func openPay() {
-        let tk = Ticket.current.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let u = URL(string: ActLab.base + "/pay?t=" + tk) {
-            UIApplication.shared.open(u)
-        }
-    }
-}

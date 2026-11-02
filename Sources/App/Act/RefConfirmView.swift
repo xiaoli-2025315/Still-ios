@@ -40,7 +40,8 @@ struct RefConfirmView: View {
     /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
     @State private var alreadyOrdered = false
     @State private var alreadyDone = false
-    @State private var autoRebuilt = false       // 自动补做只补一次
+    @State private var autoRebuilt = false
+    @State private var hasNewPhoto = false   // 换了图但还没重做       // 自动补做只补一次
     // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
     @State private var channel = "wan"                 // "wan" 或 "doubao:<slot>"
     struct BaoAccount: Identifiable { let id: String; let name: String; let ok: Bool }
@@ -225,10 +226,15 @@ struct RefConfirmView: View {
                 swapBusy = true
                 if let d = try? await item.loadTransferable(type: Data.self) {
                     photo = d
-                    await onPhotoChanged(d)     // 台子上那张也换掉
-                    // ★ 2026-11-03：光本地换没用 —— 必须传到台子，
-                    //   否则「重新处理」重做的还是旧图（他报的正是这个）。
-                    await uploadSwappedPhoto(d)
+                    // ★ 2026-11-03（他定的）：
+                    //   ① 换了图先**只显示新图**（refImage 清掉，露出刚选的这张）
+                    //      不自动重做 —— 他得先看见自己换成功了
+                    //   ② 要重做由他点「重新处理」
+                    refImage = nil
+                    processing = false
+                    refTimedOut = false
+                    hasNewPhoto = true
+                    await onPhotoChanged(d)
                 }
                 swapBusy = false
             }
@@ -282,6 +288,13 @@ struct RefConfirmView: View {
 
     private func rebuild() async {
         processing = true
+        if hasNewPhoto, let d = photo as Data? {
+            // 换过图：先把新图传到台子（台子会用新图重做）
+            hasNewPhoto = false
+            _ = await ActLab.charImg(charId: charId, png: d)
+            await watchRef()
+            return
+        }
         await ActLab.wanRebuild(charId: charId, force: true)
         await watchRef()
     }

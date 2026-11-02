@@ -42,7 +42,8 @@ struct RefConfirmView: View {
     @State private var alreadyDone = false
     // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
     @State private var 渠道 = "wan"                 // "wan" 或 "doubao:<slot>"
-    @State private var 豆包号: [(String, String, Bool)] = []   // (slot, 名字, 登着)
+    struct 号: Identifiable { let id: String; let 名字: String; let 登着: Bool }
+    @State private var 豆包号: [号] = []
 
     init(name: String, photo: Data, charId: String = "",
          onPhotoChanged: @escaping (Data) async -> Void,
@@ -125,8 +126,8 @@ struct RefConfirmView: View {
             // ★ 用哪个做（跟登记页那个下拉一回事）
             Menu {
                 Button("wan3.0 · 阿里云") { 渠道 = "wan" }
-                ForEach(豆包号, id: \.0) { a in
-                    Button("\(a.1) · \(a.2 ? "已登录" : "没登录")") { 渠道 = "doubao:" + a.0 }
+                ForEach(豆包号) { a in
+                    Button("\(a.名字) · \(a.登着 ? "已登录" : "没登录")") { 渠道 = "doubao:" + a.id }
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -287,8 +288,8 @@ struct RefConfirmView: View {
     private var 渠道文案: String {
         if 渠道 == "wan" { return "wan3.0 · 阿里云" }
         let slot = String(渠道.dropFirst("doubao:".count))
-        for a in 豆包号 where a.0 == slot {
-            return a.1 + (a.2 ? " · 已登录" : " · 没登录")
+        for a in 豆包号 where a.id == slot {
+            return a.名字 + (a.登着 ? " · 已登录" : " · 没登录")
         }
         return "豆包" + slot
     }
@@ -299,11 +300,11 @@ struct RefConfirmView: View {
               let obj = try? JSONSerialization.jsonObject(with: d),
               let o = obj as? [String: Any],
               let arr = o["账号"] as? [[String: Any]] else { return }
-        var out: [(String, String, Bool)] = []
+        var out: [号] = []
         for x in arr {
             let s = (x["slot"] as? String) ?? "1"
             let n = (x["名字"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? ("豆包" + s)
-            out.append((s, n, (x["登着没"] as? Bool) ?? false))
+            out.append(号(id: s, 名字: n, 登着: (x["登着没"] as? Bool) ?? false))
         }
         豆包号 = out
     }

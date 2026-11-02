@@ -1,4 +1,4 @@
-name: Still
+﻿name: Still
 options:
   bundleIdPrefix: com.still
   # ★★★ 2026-10-21：Siri 短语的语言必须是中文。
@@ -23,8 +23,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.120.0"
-    CURRENT_PROJECT_VERSION: "120"
+    MARKETING_VERSION: "1.121.0"
+    CURRENT_PROJECT_VERSION: "121"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 

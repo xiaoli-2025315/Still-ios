@@ -356,6 +356,26 @@ enum ActLab {
         return false
     }
 
+    /// ★ 2026-11-03：换图要真的换到台子上（不是只改手机显示）。
+    ///   台子收到后会覆盖形象图，并用新图重做参考图。
+    static func charImg(charId: String, png: Data) async -> Bool {
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        var comp = URLComponents(string: base + "/api/act/charimg")!
+        comp.queryItems = [URLQueryItem(name: "char", value: c),
+                           URLQueryItem(name: "ext", value: "png")]
+        var req = URLRequest(url: comp.url!)
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.stillStamp()
+        req.timeoutInterval = 120
+        req.httpBody = png
+        guard let (_, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            return false
+        }
+        return true
+    }
+
     /// ★ 2026-11-03：「重新处理」—— 让台子把这只的参考图重做一次（后台跑）。
     static func wanRebuild(charId: String) async {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId

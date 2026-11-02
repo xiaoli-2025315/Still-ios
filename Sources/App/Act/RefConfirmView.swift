@@ -40,6 +40,7 @@ struct RefConfirmView: View {
     /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
     @State private var alreadyOrdered = false
     @State private var alreadyDone = false
+    @State private var 自动补过 = false       // 自动补做只补一次
     // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
     @State private var 渠道 = "wan"                 // "wan" 或 "doubao:<slot>"
     struct 号: Identifiable { let id: String; let 名字: String; let 登着: Bool }
@@ -225,6 +226,9 @@ struct RefConfirmView: View {
                 if let d = try? await item.loadTransferable(type: Data.self) {
                     photo = d
                     await onPhotoChanged(d)     // 台子上那张也换掉
+                    // ★ 2026-11-03：光本地换没用 —— 必须传到台子，
+                    //   否则「重新处理」重做的还是旧图（他报的正是这个）。
+                    await 上传换的图(d)
                 }
                 swapBusy = false
             }
@@ -246,11 +250,18 @@ struct RefConfirmView: View {
     private func watchRef() async {
         processing = true
         refTimedOut = false
+        var tries = 0
         for _ in 0..<60 {
             if let ui = await fetchRef() {
                 refImage = ui
                 processing = false
                 return
+            }
+            tries += 1
+            // ★ 2026-11-03：老角色当年没做成 → 现在进页面会自动补一次（只补一次）
+            if tries == 4 && !自动补过 {
+                自动补过 = true
+                await ActLab.wanRebuild(charId: charId)
             }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
@@ -307,6 +318,19 @@ struct RefConfirmView: View {
             out.append(号(id: s, 名字: n, 登着: (x["登着没"] as? Bool) ?? false))
         }
         豆包号 = out
+    }
+
+
+    /// 把刚换的这张图传到台子（台子会用新图重做参考图）。
+    private func 上传换的图(_ d: Data) async {
+        processing = true
+        let ok = await ActLab.charImg(charId: charId, png: d)
+        if !ok {
+            processing = false
+            return
+        }
+        自动补过 = true          // 台子那边已经在做了，别再自动补
+        await watchRef()
     }
 
 }

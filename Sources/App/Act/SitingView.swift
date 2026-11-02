@@ -174,11 +174,16 @@ struct SitingView: View {
 
     private var bottomKey: (String, () -> Void)? {
         switch phase {
-        case .done: return ("确认下一步", onNext)
+        case .done: return ("确认下一步", { markSeen(); onNext() })
         case .failed(let why):
             return why.contains("额度") ? ("换个号", onBackToRef) : ("换一张图", onBackToRef)
         default: return nil
         }
+    }
+
+    /// ★ 2026-11-03：点「确认下一步」→ 记住他看过这一屏，以后不再拦。
+    private func markSeen() {
+        UserDefaults.standard.set(true, forKey: "still.seensit." + char.id)
     }
 
     private func watch() async {

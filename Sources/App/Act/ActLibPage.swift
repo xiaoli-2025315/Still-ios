@@ -342,6 +342,13 @@ struct ActLibPage: View {
     private func route(_ c: ActLab.Char) async {
         if await sitDone(c.id) {
             UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
+            // ★ 2026-11-03（他定的）：没看过「做好了」那一屏 → 先看一遍、点确认，
+            //   之后才直接进动作库。
+            let 看过 = UserDefaults.standard.bool(forKey: "still.seensit." + c.id)
+            if !看过 {
+                sitingChar = c
+                return
+            }
             watching = c
             return
         }

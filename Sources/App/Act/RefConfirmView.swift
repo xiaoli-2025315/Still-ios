@@ -31,17 +31,18 @@ struct RefConfirmView: View {
     // ★ 2026-11-03（他定的）：参考图是台子后台做出来的 ——
     //   进来先盖一层「正在做参考图…」（带光带），好了换成处理过的那张；
     //   不满意可以「重新处理」，满意就点「开始生成」（仍然是点两下）。
-    var charId: String = ""
+    let charId: String
     @State private var refImage: UIImage? = nil
     @State private var processing = false
     @State private var refTimedOut = false
 
-    init(name: String, photo: Data,
+    init(name: String, photo: Data, charId: String = "",
          onPhotoChanged: @escaping (Data) async -> Void,
          onStart: @escaping () -> Void,
          onBack: @escaping () -> Void) {
         self.name = name
         _photo = State(initialValue: photo)
+        self.charId = charId
         self.onPhotoChanged = onPhotoChanged
         self.onStart = onStart
         self.onBack = onBack

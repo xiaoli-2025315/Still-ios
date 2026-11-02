@@ -5,7 +5,7 @@ import PhotosUI
 //
 // ★ 2026-11-01（他定的流程）：登记完之后**加一页**，屏幕中间一张参考图，
 //   缓一下浮出一句「就用这张开始做？」，下面一颗「开始生成」。
-//   这一页只干这一件事：没有名字输入、没有豆包号、没有别的动作。
+//   这一页只干这一件事：没有名字输入、没有baoAccounts、没有别的动作。
 //   · 想换图：**直接点那张图**（不另设「换一张」键）
 //   · 返回：退回登记页，图还在
 
@@ -18,7 +18,7 @@ struct RefConfirmView: View {
     var onPhotoChanged: (Data) async -> Void
     /// 点「开始生成」
     var onStart: () -> Void
-    /// 带渠道的下单（"wan" 或 "doubao:<slot>"）
+    /// 带channel的下单（"wan" 或 "doubao:<slot>"）
     var onStartChannel: (String) -> Void
     var onBack: () -> Void
 
@@ -40,11 +40,11 @@ struct RefConfirmView: View {
     /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
     @State private var alreadyOrdered = false
     @State private var alreadyDone = false
-    @State private var 自动补过 = false       // 自动补做只补一次
+    @State private var autoRebuilt = false       // 自动补做只补一次
     // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
-    @State private var 渠道 = "wan"                 // "wan" 或 "doubao:<slot>"
-    struct 号: Identifiable { let id: String; let 名字: String; let 登着: Bool }
-    @State private var 豆包号: [号] = []
+    @State private var channel = "wan"                 // "wan" 或 "doubao:<slot>"
+    struct BaoAccount: Identifiable { let id: String; let name: String; let ok: Bool }
+    @State private var baoAccounts: [BaoAccount] = []
 
     init(name: String, photo: Data, charId: String = "",
          onPhotoChanged: @escaping (Data) async -> Void,
@@ -63,7 +63,7 @@ struct RefConfirmView: View {
     var body: some View {
         bodyInner.task {
             if !charId.isEmpty { await checkOrdered() }
-            await 拉豆包号()
+            await 拉baoAccounts()
             if !charId.isEmpty && refImage == nil { await watchRef() }
         }
     }
@@ -126,14 +126,14 @@ struct RefConfirmView: View {
 
             // ★ 用哪个做（跟登记页那个下拉一回事）
             Menu {
-                Button("wan3.0 · 阿里云") { 渠道 = "wan" }
-                ForEach(豆包号) { a in
-                    Button("\(a.名字) · \(a.登着 ? "已登录" : "没登录")") { 渠道 = "doubao:" + a.id }
+                Button("wan3.0 · 阿里云") { channel = "wan" }
+                ForEach(baoAccounts) { a in
+                    Button("\(a.name) · \(a.ok ? "已登录" : "没登录")") { channel = "doubao:" + a.id }
                 }
             } label: {
                 HStack(spacing: 6) {
                     Text("用哪个做").font(.system(size: 12)).foregroundStyle(Tw.gray500)
-                    Text(渠道文案).font(.system(size: 13, weight: .semibold)).foregroundStyle(Tw.gray900)
+                    Text(channelLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(Tw.gray900)
                     Image(systemName: "chevron.down").font(.system(size: 10))
                         .foregroundStyle(Tw.gray400)
                 }
@@ -167,8 +167,8 @@ struct RefConfirmView: View {
                     return
                 }
                 awaitConfirm = false
-                // 选的是豆包就把这条渠道带出去（onStart 那边按它下单）
-                onStartChannel(渠道)
+                // 选的是豆包就把这条channel带出去（onStart 那边按它下单）
+                onStartChannel(channel)
             } label: {
                 HStack(spacing: 8) {
                     if swapBusy { ProgressView().tint(.white) }
@@ -228,7 +228,7 @@ struct RefConfirmView: View {
                     await onPhotoChanged(d)     // 台子上那张也换掉
                     // ★ 2026-11-03：光本地换没用 —— 必须传到台子，
                     //   否则「重新处理」重做的还是旧图（他报的正是这个）。
-                    await 上传换的图(d)
+                    await uploadSwappedPhoto(d)
                 }
                 swapBusy = false
             }
@@ -259,8 +259,8 @@ struct RefConfirmView: View {
             }
             tries += 1
             // ★ 2026-11-03：老角色当年没做成 → 现在进页面会自动补一次（只补一次）
-            if tries == 4 && !自动补过 {
-                自动补过 = true
+            if tries == 4 && !autoRebuilt {
+                autoRebuilt = true
                 await ActLab.wanRebuild(charId: charId)
             }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -296,40 +296,40 @@ struct RefConfirmView: View {
     }
 
 
-    private var 渠道文案: String {
-        if 渠道 == "wan" { return "wan3.0 · 阿里云" }
-        let slot = String(渠道.dropFirst("doubao:".count))
-        for a in 豆包号 where a.id == slot {
-            return a.名字 + (a.登着 ? " · 已登录" : " · 没登录")
+    private var channelLabel: String {
+        if channel == "wan" { return "wan3.0 · 阿里云" }
+        let slot = String(channel.dropFirst("doubao:".count))
+        for a in baoAccounts where a.id == slot {
+            return a.name + (a.ok ? " · 已登录" : " · 没登录")
         }
         return "豆包" + slot
     }
 
-    /// 台子上记着哪些豆包号（拿不到就只显示 wan3.0，不装作有号）。
-    private func 拉豆包号() async {
+    /// 台子上记着哪些baoAccounts（拿不到就只显示 wan3.0，不装作有号）。
+    private func 拉baoAccounts() async {
         guard let d = try? await ActLab.rawGet("/api/login/accounts", timeout: 15),
               let obj = try? JSONSerialization.jsonObject(with: d),
               let o = obj as? [String: Any],
               let arr = o["账号"] as? [[String: Any]] else { return }
-        var out: [号] = []
+        var out: [BaoAccount] = []
         for x in arr {
             let s = (x["slot"] as? String) ?? "1"
             let n = (x["名字"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? ("豆包" + s)
-            out.append(号(id: s, 名字: n, 登着: (x["登着没"] as? Bool) ?? false))
+            out.append(BaoAccount(id: s, name: n, ok: (x["登着没"] as? Bool) ?? false))
         }
-        豆包号 = out
+        baoAccounts = out
     }
 
 
     /// 把刚换的这张图传到台子（台子会用新图重做参考图）。
-    private func 上传换的图(_ d: Data) async {
+    private func uploadSwappedPhoto(_ d: Data) async {
         processing = true
         let ok = await ActLab.charImg(charId: charId, png: d)
         if !ok {
             processing = false
             return
         }
-        自动补过 = true          // 台子那边已经在做了，别再自动补
+        autoRebuilt = true          // 台子那边已经在做了，别再自动补
         await watchRef()
     }
 

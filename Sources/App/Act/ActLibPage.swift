@@ -176,11 +176,11 @@ struct ActLibPage: View {
                         }
                     }
                 },
-                onStartChannel: { 渠道 in
+                onStartChannel: { chan in
                     // ★ 按参考图页选的渠道下单（坐立两条线都能走）
                     Task {
-                        if 渠道.hasPrefix("doubao:") {
-                            let slot = String(渠道.dropFirst("doubao:".count))
+                        if chan.hasPrefix("doubao:") {
+                            let slot = String(chan.dropFirst("doubao:".count))
                             _ = try? await ActLab.rawPost("/api/gen",
                                     query: ["char": c.id, "action": "sit", "账号": slot],
                                     timeout: 60)
@@ -362,8 +362,8 @@ struct ActLibPage: View {
             UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
             // ★ 2026-11-03（他定的）：没看过「做好了」那一屏 → 先看一遍、点确认，
             //   之后才直接进动作库。
-            let 看过 = UserDefaults.standard.bool(forKey: "still.seensit." + c.id)
-            if !看过 {
+            let seen = UserDefaults.standard.bool(forKey: "still.seensit." + c.id)
+            if !seen {
                 sitingChar = c
                 return
             }

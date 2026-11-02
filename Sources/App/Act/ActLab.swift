@@ -377,9 +377,13 @@ enum ActLab {
     }
 
     /// ★ 2026-11-03：「重新处理」—— 让台子把这只的参考图重做一次（后台跑）。
-    static func wanRebuild(charId: String) async {
+    static func wanRebuild(charId: String, force: Bool = false) async {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
-        _ = try? await postSay("/api/wan/rebuild", query: [URLQueryItem(name: "char", value: c)])
+        var q = [URLQueryItem(name: "char", value: c)]
+        // ★ 用户主动点「重新处理」→ force=1（跳过 10 分钟冷却）；
+        //   页面自动补做 → 不带 force（受冷却保护，不重复烧额度）
+        if force { q.append(URLQueryItem(name: "force", value: "1")) }
+        _ = try? await postSay("/api/wan/rebuild", query: q)
     }
 
     /// ★ 2026-11-03：钱包余额（单位：分）。1 点 = 0.01 元。

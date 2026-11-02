@@ -282,7 +282,7 @@ struct RefConfirmView: View {
 
     private func rebuild() async {
         processing = true
-        await ActLab.wanRebuild(charId: charId)
+        await ActLab.wanRebuild(charId: charId, force: true)
         await watchRef()
     }
 

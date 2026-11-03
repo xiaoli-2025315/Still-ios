@@ -190,6 +190,7 @@ struct SitingView: View {
     }
 
     private func watch() async {
+        lastOrder = UserDefaults.standard.string(forKey: "still.lastorder." + char.id) ?? ""
         var pollCount = 0
         while alive {
             // ★ 2026-11-02：wan3.0 是**用户在下拉条里选的另一条通道**，

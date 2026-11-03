@@ -373,6 +373,10 @@ struct RefConfirmView: View {
                 _ = try await ActLab.wanStart(charId: charId, act: "sit")
             }
             await ActLab.diagSay("参考图页下单成功 char=\(charId) channel=\(channel)")
+            // ★ 2026-11-03：把"下单回执"留在本地，制作页会显示出来 ——
+            //   这样"到底有没有下到单"用户自己就能看见，不用等我去翻诊断。
+            UserDefaults.standard.set("已下单 · \(channel) · \(Self.nowText())",
+                                      forKey: "still.lastorder." + charId)
             // ★ 台子可能丢了这一单（写盘节流 + 容器被换）→ 自查一次再说成功
             let landed1 = await ActLab.verifyOrder(charId: charId, act: "sit")
             if !landed1 {
@@ -385,8 +389,16 @@ struct RefConfirmView: View {
             // 台子那边余额不足会回 402；这里把原文给人看
             let msg = (error as NSError).localizedDescription
             orderErr = msg.isEmpty ? "下单没成功，再试一次" : msg
+            UserDefaults.standard.set("下单失败 · \((orderErr ?? ""))",
+                                      forKey: "still.lastorder." + charId)
             await ActLab.diagSay("参考图页下单失败 char=\(charId) channel=\(channel) 原因=\(orderErr ?? "")")
         }
     }
 
+
+    private static func nowText() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: Date())
+    }
 }

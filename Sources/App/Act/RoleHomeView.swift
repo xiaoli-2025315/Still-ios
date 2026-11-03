@@ -89,7 +89,13 @@ struct RoleHomeView: View {
             }
         }
         .background(Tw.gray50.ignoresSafeArea())
-        .task { await load() }
+        .task {
+            // ★ 每 5 秒重读一次：下完单不用退出去再进来，格子就会自己变
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
         .sheet(item: $genTarget) { t in
             // ★ 2026-11-03（线上诊断抓到的）：以前用 isPresented + 另一个 @State，
             //   sheet 拿到的是**旧值**（act 为空）→ 台子按整批接单、你点的那条被忽略。
@@ -449,6 +455,16 @@ struct RoleHomeView: View {
             err = ""
         } catch {
             err = "没取到它有哪些动作：" + error.localizedDescription
+        }
+        // ★ 2026-11-03（查出来的真 bug）：每一格显示什么状态，靠 `stage` 这个字典；
+        //   但它**从来没被填过** → 每格永远显示「生成 ›」→ 点了生成回来毫无变化。
+        //   现在把 /api/act/state 读回来灌进去（跟安卓读同一个接口）。
+        if let st = await ActLab.state(charId: char.id) {
+            var m2: [String: String] = [:]
+            for a in st.acts where a.状态 != "没做" && !a.状态.isEmpty {
+                m2[a.act] = a.状态
+            }
+            stage = m2
         }
         // 一条都没有 ⇒ 顺手问一句「它现在是在做、还是排在别人后面」
         if names.isEmpty, let g = try? await ActLab.genMine(), let j = g.of(char.id), j.queued == true {

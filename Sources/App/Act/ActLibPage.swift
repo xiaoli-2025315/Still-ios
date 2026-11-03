@@ -163,35 +163,18 @@ struct ActLibPage: View {
                 charId: c.id,
                 onPhotoChanged: { _ in },
                 onStart: {
-                    // ★ 2026-11-03：这里**必须真的下单**。
-                    //   以前只写了本地标记就跳制作页 → 台子上没有这一单 →
-                    //   制作页永远"准备中"（他报的"iOS 下的单根本没到台子"就是这个）。
-                    Task {
-                        _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
-                        await MainActor.run {
-                            UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
-                            refChar = nil
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
-                        }
-                    }
+                    // 下单在参考图页里做（RefConfirmView.placeOrder），这里只导航
+                    UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
+                    refChar = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
                 },
-                onStartChannel: { chan in
-                    // ★ 按参考图页选的渠道下单（坐立两条线都能走）
-                    Task {
-                        if chan.hasPrefix("doubao:") {
-                            let slot = String(chan.dropFirst("doubao:".count))
-                            _ = try? await ActLab.rawPost("/api/gen",
-                                    query: ["char": c.id, "action": "sit", "账号": slot],
-                                    timeout: 60)
-                        } else {
-                            _ = try? await ActLab.wanStart(charId: c.id, act: "sit")
-                        }
-                        await MainActor.run {
-                            UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
-                            refChar = nil
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
-                        }
-                    }
+                onStartChannel: { _ in
+                    // ★ 2026-11-03（查出来的真 bug）：参考图页**已经下过单**了，
+                    //   这里以前又下一单 → 一次点击下两单（第二单被 409 顶掉，
+                    //   但额度已经花掉，状态也会乱）。现在这里只管"跳制作页"。
+                    UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
+                    refChar = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
                 },
                 onBack: { refChar = nil }
             )

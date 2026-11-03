@@ -316,20 +316,39 @@ enum ActLab {
 
     /// ★ 2026-11-01：每一格现在到哪一步（跟安卓读的同一个接口）
     struct StateResp: Decodable {
+        let ok: Bool?
+        let char: String?
+        let acts: [Row]
         struct Row: Decodable {
             let act: String
             let 状态: String
             let 人话: String?
         }
-        let ok: Bool?
-        let char: String?
-        let acts: [Row]
     }
 
     /// 读这一只的动作状态。失败返回 nil（页面保持原样，不瞎改）。
     static func state(charId: String) async -> StateResp? {
         let enc = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
-        return try? await get("/api/act/state?char=" + enc)
+        guard let d = try? await rawGet("/api/act/state?char=" + enc, timeout: 20) else { return nil }
+        // ★ 2026-11-03（iOS 一直"准备中"的真凶在这个函数里）：
+        //   以前用 Codable 解码，**任何字段对不上就整份丢弃**，而且不报错 →
+        //   页面永远拿不到状态。现在手写解析：能拿到什么算什么，拿不到就把原文报上去。
+        guard let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
+            await diagSay("act/state 解析失败 raw=\(String(data: d.prefix(160), encoding: .utf8) ?? "")")
+            return nil
+        }
+        var rows: [StateResp.Row] = []
+        for e in (obj["acts"] as? [[String: Any]]) ?? [] {
+            let act = (e["act"] as? String) ?? ""
+            if act.isEmpty { continue }
+            rows.append(StateResp.Row(act: act,
+                                      状态: (e["状态"] as? String) ?? "",
+                                      人话: (e["人话"] as? String)))
+        }
+        if rows.isEmpty {
+            await diagSay("act/state 没有 acts char=\(charId) raw=\(String(data: d.prefix(160), encoding: .utf8) ?? "")")
+        }
+        return StateResp(ok: obj["ok"] as? Bool, char: obj["char"] as? String, acts: rows)
     }
 
     /// ★ 2026-11-02：wan3.0 那一单现在到哪一步（跟安卓读同一个接口）。
@@ -344,7 +363,13 @@ enum ActLab {
 
     static func wanState(charId: String, act: String) async -> WanResp? {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
-        return try? await get("/api/wan/state?char=" + c + "&act=" + act)
+        guard let d = try? await rawGet("/api/wan/state?char=" + c + "&act=" + act, timeout: 20),
+              let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return nil }
+        return WanResp(ok: obj["ok"] as? Bool,
+                       状态: obj["状态"] as? String,
+                       已等: obj["已等"] as? Int,
+                       人话: obj["人话"] as? String,
+                       地址: obj["地址"] as? String)
     }
 
     /// ★ 2026-11-02：台子上到底有没有 wan 这条通道。

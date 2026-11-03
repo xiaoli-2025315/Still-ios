@@ -102,11 +102,12 @@ struct RoleHomeView: View {
             .presentationDetents([.medium])
         }
         .fullScreenCover(isPresented: $showSiting) {
+            // 参数顺序必须跟 SitingView 的声明一致：char, act, actLabel, onBackToRef, onNext
             SitingView(char: char,
-                       onBackToRef: { showSiting = false },
-                       onNext: { showSiting = false; Task { await load() } },
                        act: sitingAct,
-                       actLabel: label(of: sitingAct))
+                       actLabel: label(of: sitingAct),
+                       onBackToRef: { showSiting = false },
+                       onNext: { showSiting = false; Task { await load() } })
         }
         .sheet(isPresented: $showAdd) {
             AddActionSheet(char: char) { await load() }

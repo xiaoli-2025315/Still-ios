@@ -47,7 +47,12 @@ struct GenOneSheet: View {
                     Menu {
                         Button("wan3.0 · 阿里云") { channel = "wan" }
                         ForEach(accounts) { a in
-                            Button("\(a.name) · \(a.ok ? "已登录" : "没登录")") { channel = "doubao:" + a.id }
+                            if a.ok {
+                                Button("\(a.name) · 已登录") { channel = "doubao:" + a.id }
+                            } else {
+                                // 没登录的号不给选（跟安卓一致：不让他选一个做不了事的号）
+                                Button("\(a.name) · 没登录") { }.disabled(true)
+                            }
                         }
                     } label: {
                         HStack {

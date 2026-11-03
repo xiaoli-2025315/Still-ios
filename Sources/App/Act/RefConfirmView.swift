@@ -44,6 +44,7 @@ struct RefConfirmView: View {
     @State private var hasNewPhoto = false   // 换了图但还没重做
     @State private var orderErr: String?     // 下单失败的原因（给用户看）
     @State private var ordering = false
+    @State private var showLogin = false
     /// ★ 2026-11-03：能不能开始（豆包没登录就不许点，跟安卓一样）
     private var canStart: Bool {
         if channel == "wan" { return true }
@@ -145,7 +146,13 @@ struct RefConfirmView: View {
             Menu {
                 Button("wan3.0 · 阿里云") { channel = "wan" }
                 ForEach(baoAccounts) { a in
-                    Button("\(a.name) · \(a.ok ? "已登录" : "没登录")") { channel = "doubao:" + a.id }
+                    if a.ok {
+                        Button("\(a.name) · 已登录") { channel = "doubao:" + a.id }
+                    } else {
+                        // ★ 2026-11-03（他指出的）：没登录的号**不该能选中** ——
+                        //   点了就带他去登录，不能让他选一个做不了事的号。
+                        Button("\(a.name) · 没登录（点了去登录）") { showLogin = true }
+                    }
                 }
             } label: {
                 HStack(spacing: 6) {

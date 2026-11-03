@@ -22,6 +22,11 @@ struct GenOneSheet: View {
     @State private var awaitConfirm = false
     @State private var busy = false
     @State private var err: String?
+    private var canStart: Bool {
+        if channel == "wan" { return true }
+        let slot = String(channel.dropFirst("doubao:".count))
+        return accounts.first(where: { $0.id == slot })?.ok == true
+    }
 
     struct BaoAcc: Identifiable { let id: String; let name: String; let ok: Bool }
 
@@ -56,6 +61,10 @@ struct GenOneSheet: View {
                     }
                 }
 
+                if channel.hasPrefix("doubao:") && !canStart {
+                    Text("这个豆包号没登录 —— 先回登记页把它登上")
+                        .font(.system(size: 12)).foregroundStyle(Tw.red600)
+                }
                 if let e = err {
                     Text(e).font(.system(size: 12)).foregroundStyle(Tw.red600)
                         .fixedSize(horizontal: false, vertical: true)
@@ -80,9 +89,9 @@ struct GenOneSheet: View {
                     .foregroundStyle(Tw.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
-                    .background(Capsule().fill(Tw.gray900))
+                    .background(Capsule().fill(canStart ? Tw.gray900 : Tw.gray300))
                 }
-                .disabled(busy)
+                .disabled(busy || !canStart)
                 .buttonStyle(PressStyle(scale: 0.97))
 
                 Spacer()

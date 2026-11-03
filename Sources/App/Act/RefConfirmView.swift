@@ -43,7 +43,13 @@ struct RefConfirmView: View {
     @State private var autoRebuilt = false
     @State private var hasNewPhoto = false   // 换了图但还没重做
     @State private var orderErr: String?     // 下单失败的原因（给用户看）
-    @State private var ordering = false       // 自动补做只补一次
+    @State private var ordering = false
+    /// ★ 2026-11-03：能不能开始（豆包没登录就不许点，跟安卓一样）
+    private var canStart: Bool {
+        if channel == "wan" { return true }
+        let slot = String(channel.dropFirst("doubao:".count))
+        return baoAccounts.first(where: { $0.id == slot })?.ok == true
+    }       // 自动补做只补一次
     // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
     @State private var channel = "wan"                 // "wan" 或 "doubao:<slot>"
     struct BaoAccount: Identifiable { let id: String; let name: String; let ok: Bool }
@@ -192,14 +198,21 @@ struct RefConfirmView: View {
                 .foregroundStyle(Tw.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(Capsule().fill(Tw.gray900))
+                .background(Capsule().fill(canStart ? Tw.gray900 : Tw.gray300))
             }
             .buttonStyle(PressStyle(scale: 0.97))
             .padding(.horizontal, 24)
-            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing)
+            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing || !canStart)
             // ★ 2026-11-03（他实测）：处理中不能露出「开始生成」
             .opacity((step >= 3 && !processing) ? 1 : 0)
 
+            if channel.hasPrefix("doubao:") && !canStart {
+                Text("这个豆包号没登录 —— 先回「登记」页把它登上，或者换 wan3.0")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.red600)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 6)
+            }
             if !processing && !charId.isEmpty {
                 Button { Task { await rebuild() } } label: {
                     Text("重新处理")

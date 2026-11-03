@@ -36,8 +36,9 @@ struct RoleHomeView: View {
     @State private var repairNote = ""
     @State private var showAdd = false
     /// ★ 2026-11-03：点了哪一格要生成 / 生成后去看哪一格
-    @State private var genAct: String = ""
-    @State private var showGenSheet = false
+    /// ★ 动作名包一层（sheet(item:) 才能真正把"点的是哪一格"带进去）
+    struct ActKey: Identifiable { let id: String }
+    @State private var genTarget: ActKey?
     @State private var watching: String?
     /// 一条动作都没有时那两句 —— 「还没开始做」／「前面还有几条在做」
     @State private var queueLine = ""
@@ -89,11 +90,12 @@ struct RoleHomeView: View {
         }
         .background(Tw.gray50.ignoresSafeArea())
         .task { await load() }
-        .sheet(isPresented: $showGenSheet) {
-            GenOneSheet(char: char, act: genAct, label: label(of: genAct)) { ok in
-                showGenSheet = false
-                // ★ 2026-11-03（照安卓）：下单成功就回动作库，**不进制作页** ——
-                //   这一格的进度由 action 墙上的环形/文字显示（跟安卓一模一样）。
+        .sheet(item: $genTarget) { t in
+            // ★ 2026-11-03（线上诊断抓到的）：以前用 isPresented + 另一个 @State，
+            //   sheet 拿到的是**旧值**（act 为空）→ 台子按整批接单、你点的那条被忽略。
+            //   现在把动作名一起装进 item，原子传过去。
+            GenOneSheet(char: char, act: t.id, label: label(of: t.id)) { ok in
+                genTarget = nil
                 if ok { Task { await load() } }
             }
             .presentationDetents([.medium])
@@ -365,8 +367,7 @@ struct RoleHomeView: View {
                     // ★ 2026-11-03（他报的"点生成没反应"）：
                     //   以前这里跳回角色列表，等于什么都没发生。
                     //   现在：这一格没做 → 弹「生成这一条」。
-                    genAct = key
-                    showGenSheet = true
+                    genTarget = ActKey(id: key)
                 }
             } label: {
                 ZStack(alignment: .bottom) {

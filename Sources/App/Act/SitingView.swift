@@ -189,11 +189,27 @@ struct SitingView: View {
         UserDefaults.standard.set(true, forKey: "still.seensit." + char.id)
     }
 
+    private var pollCount = 0
+
     private func watch() async {
         while alive {
             // ★ 2026-11-02：wan3.0 是**用户在下拉条里选的另一条通道**，
             //   它有自己的状态口径（排队中/生成中 + 已等 N 秒）。先问它；
             //   它说"没做"才回去问原来那套。
+            pollCount += 1
+            if pollCount % 5 == 0 {
+                // ★ 2026-11-03：把轮询看到的原始状态报上去，
+                //   否则"一直准备中"我这边只能猜。
+                if let d = await ActLab.wanState(charId: char.id, act: act) {
+                    let ws = d.状态 ?? "?"
+                    let ss: String
+                    if let st = await ActLab.state(charId: char.id),
+                       let a = st.acts.first(where: { $0.act == act }) {
+                        ss = a.状态
+                    } else { ss = "读不到" }
+                    await ActLab.diagSay("制作中轮询 char=\(char.id) act=\(act) wan=\(ws) act状态=\(ss)")
+                }
+            }
             if let w = await ActLab.wanState(charId: char.id, act: act),
                let ws = w.状态, !ws.isEmpty, ws != "没做" {
                 if ws == "好了" {

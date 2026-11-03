@@ -196,7 +196,7 @@ struct SitingView: View {
             //   它有自己的状态口径（排队中/生成中 + 已等 N 秒）。先问它；
             //   它说"没做"才回去问原来那套。
             pollCount += 1
-            if pollCount % 5 == 0 {
+            if pollCount % 30 == 0 {
                 // ★ 2026-11-03：把轮询看到的原始状态报上去，
                 //   否则"一直准备中"我这边只能猜。
                 if let d = await ActLab.wanState(charId: char.id, act: act) {

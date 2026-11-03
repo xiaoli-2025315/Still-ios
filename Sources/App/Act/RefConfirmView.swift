@@ -374,7 +374,8 @@ struct RefConfirmView: View {
             }
             await ActLab.diagSay("参考图页下单成功 char=\(charId) channel=\(channel)")
             // ★ 台子可能丢了这一单（写盘节流 + 容器被换）→ 自查一次再说成功
-            if !(await ActLab.verifyOrder(charId: charId, act: "sit")) {
+            let landed1 = await ActLab.verifyOrder(charId: charId, act: "sit")
+            if !landed1 {
                 await ActLab.diagSay("参考图页下单后查不到这一单 char=\(charId)")
                 orderErr = "这一单没落到台子上（机器刚被重启），再点一次就好"
                 return

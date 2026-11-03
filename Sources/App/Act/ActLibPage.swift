@@ -184,8 +184,11 @@ struct ActLibPage: View {
             SitingView(
                 char: c,
                 onBackToRef: {
-                    // ★ 2026-11-03（他定的）：制作页退出**直接回角色页**。
-                    //   以前退回参考图页 → 又能点一次生成 → 重复下单。
+                    // ★ 2026-11-03：制作页退出 → 回角色列表。
+                    //   并把"已下单"标记清掉：如果那一单其实是丢了（台子查不到），
+                    //   再进这只角色时会回到参考图页，可以重新下单；
+                    //   如果单还在做，状态一查就有，不会重复下单（参考图页会显示"已经在做了"）。
+                    UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
                     sitingChar = nil
                     refChar = nil
                 },

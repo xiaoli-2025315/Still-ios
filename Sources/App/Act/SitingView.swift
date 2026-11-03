@@ -189,9 +189,8 @@ struct SitingView: View {
         UserDefaults.standard.set(true, forKey: "still.seensit." + char.id)
     }
 
-    private var pollCount = 0
-
     private func watch() async {
+        var pollCount = 0
         while alive {
             // ★ 2026-11-02：wan3.0 是**用户在下拉条里选的另一条通道**，
             //   它有自己的状态口径（排队中/生成中 + 已等 N 秒）。先问它；

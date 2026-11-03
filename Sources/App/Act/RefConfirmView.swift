@@ -151,7 +151,7 @@ struct RefConfirmView: View {
                     } else {
                         // ★ 2026-11-03（他指出的）：没登录的号**不该能选中** ——
                         //   点了就带他去登录，不能让他选一个做不了事的号。
-                        Button("\(a.name) · 没登录（点了去登录）") { showLogin = true }
+                        Button("\(a.name) · 已失效（点了去登录）") { showLogin = true }
                     }
                 }
             } label: {
@@ -214,7 +214,7 @@ struct RefConfirmView: View {
             .opacity((step >= 3 && !processing) ? 1 : 0)
 
             if channel.hasPrefix("doubao:") && !canStart {
-                Text("这个豆包号没登录 —— 先回「登记」页把它登上，或者换 wan3.0")
+                Text("这个豆包号已失效（豆包那边把登录作废了）—— 点下拉里的「已失效（点了去登录）」重登，或换 wan3.0")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Tw.red600)
                     .multilineTextAlignment(.center)
@@ -363,6 +363,14 @@ struct RefConfirmView: View {
             out.append(BaoAccount(id: s, name: n, ok: (x["登着没"] as? Bool) ?? false))
         }
         baoAccounts = out
+        // ★ 2026-11-03（他指出的）：当前选中的号失效了 → 自动切到 wan3.0，
+        //   不能让他拿着一个已失效的号继续点生成。
+        if channel.hasPrefix("doubao:") {
+            let slot = String(channel.dropFirst("doubao:".count))
+            if baoAccounts.first(where: { $0.id == slot })?.ok != true {
+                channel = "wan"
+            }
+        }
     }
 
 

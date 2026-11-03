@@ -51,7 +51,7 @@ struct GenOneSheet: View {
                                 Button("\(a.name) · 已登录") { channel = "doubao:" + a.id }
                             } else {
                                 // 没登录的号不给选（跟安卓一致：不让他选一个做不了事的号）
-                                Button("\(a.name) · 没登录") { }.disabled(true)
+                                Button("\(a.name) · 已失效") { }.disabled(true)
                             }
                         }
                     } label: {
@@ -67,7 +67,7 @@ struct GenOneSheet: View {
                 }
 
                 if channel.hasPrefix("doubao:") && !canStart {
-                    Text("这个豆包号没登录 —— 先回登记页把它登上")
+                    Text("这个豆包号已失效 —— 回登记页重登，或换 wan3.0")
                         .font(.system(size: 12)).foregroundStyle(Tw.red600)
                 }
                 if let e = err {

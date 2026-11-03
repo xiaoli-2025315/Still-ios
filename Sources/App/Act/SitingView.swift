@@ -60,6 +60,9 @@ struct SitingView: View {
                 if !subText.isEmpty {
                     Text(subText).font(.system(size: 12)).foregroundStyle(Tw.gray400)
                 }
+                if !lastOrder.isEmpty {
+                    Text(lastOrder).font(.system(size: 11)).foregroundStyle(Tw.gray400)
+                }
                 if case .generating = phase {
                     // ★ 2026-11-03：生成阶段没有真百分比 → 光带（不确定态）
                     LightBandView()

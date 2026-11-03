@@ -125,16 +125,17 @@ struct GenOneSheet: View {
         do {
             if channel.hasPrefix("doubao:") {
                 let slot = String(channel.dropFirst("doubao:".count))
-                _ = try await ActLab.rawPost("/api/gen",
-                        query: ["char": char.id, "action": act, "账号": slot], timeout: 60)
+                try await ActLab.genOrder(charId: char.id, act: act, slot: slot)
             } else {
                 _ = try await ActLab.wanStart(charId: char.id, act: act)
             }
+            await ActLab.diagSay("生成这一条下单成功 char=\(char.id) act=\(act) channel=\(channel)")
             onDone(true)
             dismiss()
         } catch {
             let msg = (error as NSError).localizedDescription
             err = msg.isEmpty ? "下单没成功，再试一次" : msg
+            await ActLab.diagSay("生成这一条下单失败 char=\(char.id) act=\(act) 原因=\(err ?? "")")
         }
     }
 }

@@ -398,6 +398,35 @@ enum ActLab {
     }
 
     /// 走 wan3.0 下这一条（用户在下拉条里选的通道）。
+    /// ★ 2026-11-03（他报的"豆包那条线也没下单"）：
+    ///   台子的 /api/gen 要的是 **JSON 请求体**（char/action/账号），
+    ///   以前 iOS 把参数拼在地址上 → 台子回 ok:false，而代码没看这个字段
+    ///   → 静默跳页 → 永远"准备中"。这里按真实格式发，并把错误抛出来。
+    static func genOrder(charId: String, act: String, slot: String = "") async throws {
+        var body: [String: Any] = ["char": charId, "action": act]
+        if !slot.isEmpty { body["账号"] = slot }
+        let d = try await rawPost("/api/gen", body: body, timeout: 60)
+        let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+        let ok = (o?["ok"] as? Bool) ?? false
+        if !ok {
+            let why = (o?["错误"] as? String) ?? (o?["why"] as? String) ?? "台子没接这一单"
+            throw LabError(why)
+        }
+    }
+
+    /// ★ 2026-11-03：把 iOS 这边的下单结果报给台子诊断口（来源=ios_order）。
+    ///   否则"iOS 没下单"这种问题我只能在电话里猜。
+    static func diagSay(_ note: String) async {
+        let body = ["来源": "ios_order", "说": note]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+        var req = URLRequest(url: URL(string: base + "/api/diag")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        req.timeoutInterval = 15
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
     static func wanStart(charId: String, act: String) async throws -> Bool {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         let said = try await postSay("/api/wan/start", query: [

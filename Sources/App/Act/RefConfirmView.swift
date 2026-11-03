@@ -368,16 +368,17 @@ struct RefConfirmView: View {
         do {
             if channel.hasPrefix("doubao:") {
                 let slot = String(channel.dropFirst("doubao:".count))
-                _ = try await ActLab.rawPost("/api/gen",
-                        query: ["char": charId, "action": "sit", "账号": slot], timeout: 60)
+                try await ActLab.genOrder(charId: charId, act: "sit", slot: slot)
             } else {
                 _ = try await ActLab.wanStart(charId: charId, act: "sit")
             }
+            await ActLab.diagSay("参考图页下单成功 char=\(charId) channel=\(channel)")
             onStartChannel(channel)
         } catch {
             // 台子那边余额不足会回 402；这里把原文给人看
             let msg = (error as NSError).localizedDescription
             orderErr = msg.isEmpty ? "下单没成功，再试一次" : msg
+            await ActLab.diagSay("参考图页下单失败 char=\(charId) channel=\(channel) 原因=\(orderErr ?? "")")
         }
     }
 

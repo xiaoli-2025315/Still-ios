@@ -12,6 +12,9 @@ import SwiftUI
 struct SitingView: View {
 
     let char: ActLab.Char
+    /// ★ 2026-11-03：这一页现在能给**任意动作**用（以前写死 sit）
+    var act: String = "sit"
+    var actLabel: String = "坐着张望"
     var onBackToRef: () -> Void
     var onNext: () -> Void
 
@@ -153,7 +156,7 @@ struct SitingView: View {
         switch phase {
         case .queue: return "前面还有活在做，轮到它就开始"
         case .prepare: return "已经交出去了，马上开始"
-        case .generating: return wanHint.isEmpty ? "这一条：坐着张望" : wanHint
+        case .generating: return wanHint.isEmpty ? ("这一条：" + actLabel) : wanHint
         case .matted: return "片子拿到了，下一步去背景"
         case .matting: return "只有这一步有真百分比"
         case .done: return "点下一步进动作库，接着做剩下的"
@@ -191,7 +194,7 @@ struct SitingView: View {
             // ★ 2026-11-02：wan3.0 是**用户在下拉条里选的另一条通道**，
             //   它有自己的状态口径（排队中/生成中 + 已等 N 秒）。先问它；
             //   它说"没做"才回去问原来那套。
-            if let w = await ActLab.wanState(charId: char.id, act: "sit"),
+            if let w = await ActLab.wanState(charId: char.id, act: act),
                let ws = w.状态, !ws.isEmpty, ws != "没做" {
                 if ws == "好了" {
                     phase = .done
@@ -212,7 +215,7 @@ struct SitingView: View {
                 continue
             }
             if let st = await ActLab.state(charId: char.id),
-               let a = st.acts.first(where: { $0.act == "sit" }) {
+               let a = st.acts.first(where: { $0.act == act }) {
                 let s = a.状态
                 let why = a.人话 ?? ""
                 switch s {

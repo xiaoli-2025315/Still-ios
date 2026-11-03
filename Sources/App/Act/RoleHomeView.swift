@@ -35,6 +35,11 @@ struct RoleHomeView: View {
     @State private var repairing = false
     @State private var repairNote = ""
     @State private var showAdd = false
+    /// ★ 2026-11-03：点了哪一格要生成 / 生成后去看哪一格
+    @State private var genAct: String = ""
+    @State private var showGenSheet = false
+    @State private var sitingAct: String = ""
+    @State private var showSiting = false
     @State private var watching: String?
     /// 一条动作都没有时那两句 —— 「还没开始做」／「前面还有几条在做」
     @State private var queueLine = ""
@@ -86,6 +91,23 @@ struct RoleHomeView: View {
         }
         .background(Tw.gray50.ignoresSafeArea())
         .task { await load() }
+        .sheet(isPresented: $showGenSheet) {
+            GenOneSheet(char: char, act: genAct, label: label(of: genAct)) { ok in
+                showGenSheet = false
+                if ok {
+                    sitingAct = genAct
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showSiting = true }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+        .fullScreenCover(isPresented: $showSiting) {
+            SitingView(char: char,
+                       onBackToRef: { showSiting = false },
+                       onNext: { showSiting = false; Task { await load() } },
+                       act: sitingAct,
+                       actLabel: label(of: sitingAct))
+        }
         .sheet(isPresented: $showAdd) {
             AddActionSheet(char: char) { await load() }
                 .presentationDetents([.large])
@@ -347,7 +369,15 @@ struct RoleHomeView: View {
                 .lineLimit(1)
 
             Button {
-                if ok { watching = key } else { onStudio() }
+                if ok {
+                    watching = key
+                } else {
+                    // ★ 2026-11-03（他报的"点生成没反应"）：
+                    //   以前这里跳回角色列表，等于什么都没发生。
+                    //   现在：这一格没做 → 弹「生成这一条」。
+                    genAct = key
+                    showGenSheet = true
+                }
             } label: {
                 ZStack(alignment: .bottom) {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -622,4 +652,10 @@ struct AddActionSheet: View {
             + "它只认固定那 11 条动作，任意描述要等方舟那把钥匙。"
             + "\n你写的这句我留在这儿了。"
     }
+
+    /// 动作 key → 中文名（"坐立/舔毛"…）
+    private func label(of key: String) -> String {
+        ActLab.official.first(where: { $0.key == key })?.label ?? key
+    }
+
 }

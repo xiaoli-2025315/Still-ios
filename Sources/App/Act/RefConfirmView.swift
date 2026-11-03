@@ -41,7 +41,9 @@ struct RefConfirmView: View {
     @State private var alreadyOrdered = false
     @State private var alreadyDone = false
     @State private var autoRebuilt = false
-    @State private var hasNewPhoto = false   // 换了图但还没重做       // 自动补做只补一次
+    @State private var hasNewPhoto = false   // 换了图但还没重做
+    @State private var orderErr: String?     // 下单失败的原因（给用户看）
+    @State private var ordering = false       // 自动补做只补一次
     // ★ 2026-11-03（他纠正的）：坐立两条线都能走 —— 这里让他再选一次（防登记页选错）
     @State private var channel = "wan"                 // "wan" 或 "doubao:<slot>"
     struct BaoAccount: Identifiable { let id: String; let name: String; let ok: Bool }
@@ -62,7 +64,15 @@ struct RefConfirmView: View {
     }
 
     var body: some View {
-        bodyInner.task {
+        bodyInner.alert("没能开始做", isPresented: Binding(
+            get: { orderErr != nil },
+            set: { if !$0 { orderErr = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(orderErr ?? "")
+        }
+        .task {
             if !charId.isEmpty { await checkOrdered() }
             await 拉baoAccounts()
             if !charId.isEmpty && refImage == nil { await watchRef() }
@@ -168,8 +178,9 @@ struct RefConfirmView: View {
                     return
                 }
                 awaitConfirm = false
-                // 选的是豆包就把这条channel带出去（onStart 那边按它下单）
-                onStartChannel(channel)
+                // ★ 2026-11-03：真下单，失败要看得见（以前 try? 吞掉了，
+                //   余额不足也直接跳制作页 → 表现成"传不到台子"）
+                Task { await placeOrder() }
             } label: {
                 HStack(spacing: 8) {
                     if swapBusy { ProgressView().tint(.white) }
@@ -185,8 +196,9 @@ struct RefConfirmView: View {
             }
             .buttonStyle(PressStyle(scale: 0.97))
             .padding(.horizontal, 24)
-            .disabled(swapBusy || alreadyOrdered || alreadyDone)
-            .opacity(step >= 3 ? 1 : 0)
+            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing)
+            // ★ 2026-11-03（他实测）：处理中不能露出「开始生成」
+            .opacity((step >= 3 && !processing) ? 1 : 0)
 
             if !processing && !charId.isEmpty {
                 Button { Task { await rebuild() } } label: {
@@ -344,6 +356,29 @@ struct RefConfirmView: View {
         }
         autoRebuilt = true          // 台子那边已经在做了，别再自动补
         await watchRef()
+    }
+
+
+    /// 真下单：成功才往外走；失败把原因留下（尤其余额不足）。
+    private func placeOrder() async {
+        if ordering { return }
+        ordering = true
+        orderErr = nil
+        defer { ordering = false }
+        do {
+            if channel.hasPrefix("doubao:") {
+                let slot = String(channel.dropFirst("doubao:".count))
+                _ = try await ActLab.rawPost("/api/gen",
+                        query: ["char": charId, "action": "sit", "账号": slot], timeout: 60)
+            } else {
+                _ = try await ActLab.wanStart(charId: charId, act: "sit")
+            }
+            onStartChannel(channel)
+        } catch {
+            // 台子那边余额不足会回 402；这里把原文给人看
+            let msg = (error as NSError).localizedDescription
+            orderErr = msg.isEmpty ? "下单没成功，再试一次" : msg
+        }
     }
 
 }

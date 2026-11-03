@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
 
   push:
-    branches: [main, master]
+    branches: [main, master, ai-route]
 
 jobs:
   build:

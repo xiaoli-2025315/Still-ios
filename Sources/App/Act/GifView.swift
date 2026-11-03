@@ -1,3 +1,6 @@
+import SwiftUI
+import UIKit
+
 // ★ 2026-11-03：只把 GifView / GifBox 从删掉的旧生产页里留下 ——
 //   制作中页「做好了」那一屏要播动作预览，其余（RingProgress/DotsLabel/GenGlow/
 //   StudioModel/RoleStudioView）全部随旧流程一起删掉了。

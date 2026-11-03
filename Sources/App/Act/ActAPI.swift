@@ -238,21 +238,8 @@ extension ActLab {
         return 选 == "放弃" ? "知道了 —— 这几条以后不再提" : "约好了 —— 明天额度刷新了机器自己补上"
     }
 
-    /// ★ v94：一批做完的「结算单」—— 我名下还没播报过的那些。
-    /// 不管他在哪个页面都能问到，所以单独一个口子，不挂在某一只猫身上。
-    static func genSettle() async throws -> [SettleNote] {
-        let d = try await rawGet("/api/gen/settle", timeout: 25)
-        let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
-        let arr = (o?["结算"] as? [[String: Any]]) ?? []
-        return arr.compactMap { SettleNote.from($0) }
-    }
-
-    /// 弹窗已经给他看过了 ⇒ 告诉机器一声，别再弹。再来=true＝他选了「把没做成的再做一遍」。
-    static func genSettleAck(char: String, 再来: Bool) async throws {
-        var q = ["char": char]
-        if 再来 { q["再来"] = "1" }
-        _ = try await rawPost("/api/gen/settle/ack", query: q, timeout: 30)
-    }
+    // ★ 2026-11-03（他定的）：结算铃**整套删掉**（安卓早就删了，iOS 这里残留）。
+    //   所以 genSettle / genSettleAck 一并去掉，不再有任何"结算播报"。
 
     /// 只补一条动作（省额度用）。action 为空 = 整批。
     static func genStart(charId: String, action: String = "", replace: Bool = false) async throws -> (job: String, acts: [String]) {

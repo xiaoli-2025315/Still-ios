@@ -38,8 +38,6 @@ struct RoleHomeView: View {
     /// ★ 2026-11-03：点了哪一格要生成 / 生成后去看哪一格
     @State private var genAct: String = ""
     @State private var showGenSheet = false
-    @State private var sitingAct: String = ""
-    @State private var showSiting = false
     @State private var watching: String?
     /// 一条动作都没有时那两句 —— 「还没开始做」／「前面还有几条在做」
     @State private var queueLine = ""
@@ -94,20 +92,11 @@ struct RoleHomeView: View {
         .sheet(isPresented: $showGenSheet) {
             GenOneSheet(char: char, act: genAct, label: label(of: genAct)) { ok in
                 showGenSheet = false
-                if ok {
-                    sitingAct = genAct
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showSiting = true }
-                }
+                // ★ 2026-11-03（照安卓）：下单成功就回动作库，**不进制作页** ——
+                //   这一格的进度由 action 墙上的环形/文字显示（跟安卓一模一样）。
+                if ok { Task { await load() } }
             }
             .presentationDetents([.medium])
-        }
-        .fullScreenCover(isPresented: $showSiting) {
-            // 参数顺序必须跟 SitingView 的声明一致：char, act, actLabel, onBackToRef, onNext
-            SitingView(char: char,
-                       act: sitingAct,
-                       actLabel: label(of: sitingAct),
-                       onBackToRef: { showSiting = false },
-                       onNext: { showSiting = false; Task { await load() } })
         }
         .sheet(isPresented: $showAdd) {
             AddActionSheet(char: char) { await load() }

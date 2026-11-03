@@ -232,8 +232,17 @@ struct SitingView: View {
             if let st = await ActLab.state(charId: char.id),
                let a = st.acts.first(where: { $0.act == act }) {
                 let s = a.状态
+                if s == "没做" { missingPolls += 1 } else { missingPolls = 0 }
                 let why = a.人话 ?? ""
                 switch s {
+                case "没做":
+                    // ★ 2026-11-03：台子上根本没有这一条 —— 要么还没落到盘上（刚下单几秒），
+                    //   要么这一单在机器重启时丢了。等 45 秒还查不到就明说，别让人干等。
+                    if missingPolls >= 20 {
+                        phase = .failed("台子上查不到这一单了（机器重启时可能丢了）—— 回去重新点一次「开始生成」")
+                    } else {
+                        phase = .prepare
+                    }
                 case "好了": phase = .done
                 case "排队", "排队中": phase = .queue
                 case "生成中": phase = .generating

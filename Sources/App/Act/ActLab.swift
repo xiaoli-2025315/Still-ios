@@ -452,6 +452,23 @@ enum ActLab {
         _ = try? await URLSession.shared.data(for: req)
     }
 
+    /// ★ 2026-11-03（台子丢单事故的兜底）：
+    ///   台子下单是"先回 ok、后写盘"，写盘带 1.5 秒节流；
+    ///   容器正好在这窗口被换 → 单子没了，App 却以为下单成功 → 永远"准备中"。
+    ///   这里下单后回查一次状态：查不到就说实话，别让用户干等。
+    static func verifyOrder(charId: String, act: String, seconds: UInt64 = 6) async -> Bool {
+        try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+        for _ in 0..<3 {
+            if let st = await state(charId: charId),
+               let a = st.acts.first(where: { $0.act == act }),
+               a.状态 != "没做" {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        return false
+    }
+
     static func wanStart(charId: String, act: String) async throws -> Bool {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         let said = try await postSay("/api/wan/start", query: [

@@ -130,6 +130,11 @@ struct GenOneSheet: View {
                 _ = try await ActLab.wanStart(charId: char.id, act: act)
             }
             await ActLab.diagSay("生成这一条下单成功 char=\(char.id) act=\(act) channel=\(channel)")
+            if !(await ActLab.verifyOrder(charId: char.id, act: act)) {
+                await ActLab.diagSay("生成这一条下单后查不到 char=\(char.id) act=\(act)")
+                err = "这一单没落到台子上（机器刚被重启），再点一次就好"
+                return
+            }
             onDone(true)
             dismiss()
         } catch {

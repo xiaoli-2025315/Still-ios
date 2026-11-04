@@ -366,6 +366,10 @@ struct RoleHomeView: View {
         let s = stage[key] ?? ""
         let why = reason[key] ?? ""
         let 失败中 = (s == "失败" || s == "没做成") && !dismissed.contains(key)
+        // ★ 2026-11-04（他定的，照安卓）：只要这一条在台子上有状态（准备中/排队中/生成中/
+        //   等抠图/抠像中），这一格就算"在做" —— **点它不能进「生成这一条」**，
+        //   框里直接显示这几个字，不再用「看进度」这种看不懂的词。
+        let 进行中 = !ok && !失败中 && !s.isEmpty
         return VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.system(size: 13.5, weight: .medium))
@@ -376,8 +380,10 @@ struct RoleHomeView: View {
                 Button {
                     if ok {
                         watching = key
+                    } else if 进行中 {
+                        // ★ 正在做 → 点了什么也不发生（安卓就是这样堵住的）
                     } else if 失败中 {
-                        // 失败格：点框什么也不做（要重做就点右下「重做 ›」，要收起就点 ×）
+                        // 失败格：点框不做事（要重做点下面「重做 ›」，要收起点 ×）
                     } else {
                         genTarget = ActKey(id: key)
                     }
@@ -429,12 +435,14 @@ struct RoleHomeView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                            Text(s.isEmpty ? "生成 ›" : "看进度 ›")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(Tw.gray500)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.7))
+                            if !进行中 {
+                                Text("生成 ›")
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(Tw.gray500)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(Color.white.opacity(0.7))
+                            }
                         }
                     }
                     .aspectRatio(1.32, contentMode: .fit)
@@ -460,14 +468,22 @@ struct RoleHomeView: View {
         }
     }
 
+    /// 台子给的**中文**状态 → 格子上显示的字（照安卓 ActLibV2Activity 那几个词）
     private func stageWord(_ s: String) -> String {
         switch s {
+        case "准备中": return "准备中"
+        case "排队", "排队中": return "排队中"
+        case "生成中": return "生成中"
+        case "等抠图": return "等抠图"
+        case "抠像中": return "抠像中"
+        case "失败", "没做成": return "没做成"
+        // 兼容老英文键（历史数据）
         case "queued": return "排队中"
         case "gen":    return "生成中"
         case "saved":  return "等抠图"
         case "matte":  return "抠像中"
         case "warn":   return "没做成"
-        default:       return ""
+        default:       return s
         }
     }
 

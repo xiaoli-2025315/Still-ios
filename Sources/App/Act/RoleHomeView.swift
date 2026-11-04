@@ -30,6 +30,10 @@ struct RoleHomeView: View {
     @State private var names: Set<String> = []
     /// ★ 2026-10-31：每格现在在哪一段（排队中 / 生成中 / 等抠图 / 抠像中 / 没做成）
     @State private var stage: [String: String] = [:]
+    /// 每条动作的"人话原因"（失败时显示在框里）
+    @State private var reason: [String: String] = [:]
+    /// 点过 × 的失败格 —— 点过就回到「生成 ›」（跟安卓一样是本机记的）
+    @State private var dismissed: Set<String> = []
     @State private var loading = true
     @State private var err = ""
     @State private var repairing = false
@@ -360,54 +364,99 @@ struct RoleHomeView: View {
     private func actCell(_ key: String, _ label: String) -> some View {
         let ok = names.contains(key)
         let s = stage[key] ?? ""
+        let why = reason[key] ?? ""
+        let 失败中 = (s == "失败" || s == "没做成") && !dismissed.contains(key)
         return VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(Tw.gray900)
                 .lineLimit(1)
 
-            Button {
-                if ok {
-                    watching = key
-                } else {
-                    // ★ 2026-11-03（他报的"点生成没反应"）：
-                    //   以前这里跳回角色列表，等于什么都没发生。
-                    //   现在：这一格没做 → 弹「生成这一条」。
-                    genTarget = ActKey(id: key)
-                }
-            } label: {
-                ZStack(alignment: .bottom) {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Tw.gray50)
-
+            ZStack(alignment: .topTrailing) {
+                Button {
                     if ok {
-                        GifView(url: GifView.makeURL(char.id, key, width: 260))
-                            .padding(6)
+                        watching = key
+                    } else if 失败中 {
+                        // 失败格：点框什么也不做（要重做就点右下「重做 ›」，要收起就点 ×）
                     } else {
-                        VStack(spacing: 4) {
-                            if s.isEmpty {
-                                Color.clear.frame(height: 0)
-                            } else {
-                                Text(stageWord(s))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Tw.gray500)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                        // 底部那一行「生成 ›」（安卓同款）
-                        Text(s.isEmpty ? "生成 ›" : "看进度 ›")
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(Tw.gray500)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.7))
+                        genTarget = ActKey(id: key)
                     }
+                } label: {
+                    ZStack(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(失败中 ? Color(red: 1.0, green: 0.96, blue: 0.95) : Tw.gray50)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(失败中 ? Tw.red600.opacity(0.5) : Tw.gray200, lineWidth: 1)
+                            )
+
+                        if ok {
+                            GifView(url: GifView.makeURL(char.id, key, width: 260))
+                                .padding(6)
+
+                        } else if 失败中 {
+                            // ★ 跟安卓一样：**原因写在框里**
+                            VStack(spacing: 6) {
+                                Text("没做成")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Tw.red600)
+                                Text(why.isEmpty ? "这一条没做成" : why)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Tw.red600)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .padding(.horizontal, 8)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                            Text("重做 ›")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(Tw.red600)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.75))
+
+                        } else {
+                            VStack(spacing: 6) {
+                                if s.isEmpty {
+                                    Color.clear.frame(height: 0)
+                                } else {
+                                    ProgressView().scaleEffect(0.7)
+                                    Text(stageWord(s))
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Tw.gray500)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                            Text(s.isEmpty ? "生成 ›" : "看进度 ›")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(Tw.gray500)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.7))
+                        }
+                    }
+                    .aspectRatio(1.32, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .aspectRatio(1.32, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .buttonStyle(PressStyle(scale: 0.97))
+
+                // 失败格右上角的 ×：点过就回到「生成 ›」（原样照安卓）
+                if 失败中 {
+                    Button {
+                        dismissed.insert(key)
+                    } label: {
+                        Text("×")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Tw.gray600)
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(Color.white))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(6)
+                }
             }
-            .buttonStyle(PressStyle(scale: 0.97))
         }
     }
 
@@ -461,10 +510,13 @@ struct RoleHomeView: View {
         //   现在把 /api/act/state 读回来灌进去（跟安卓读同一个接口）。
         if let st = await ActLab.state(charId: char.id) {
             var m2: [String: String] = [:]
+            var r2: [String: String] = [:]
             for a in st.acts where a.状态 != "没做" && !a.状态.isEmpty {
                 m2[a.act] = a.状态
+                if let w = a.人话, !w.isEmpty { r2[a.act] = w }
             }
             stage = m2
+            reason = r2
         }
         // 一条都没有 ⇒ 顺手问一句「它现在是在做、还是排在别人后面」
         if names.isEmpty, let g = try? await ActLab.genMine(), let j = g.of(char.id), j.queued == true {

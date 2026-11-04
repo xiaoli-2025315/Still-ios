@@ -197,9 +197,10 @@ struct RefConfirmView: View {
             } label: {
                 HStack(spacing: 8) {
                     if swapBusy { ProgressView().tint(.white) }
-                    Text(alreadyDone ? "已经做好了，去看动作库"
-                         : (alreadyOrdered ? "已经在做了…"
-                            : (awaitConfirm ? "再点一次就开始" : "开始生成")))
+                    Text(ordering ? "正在下单…"
+                         : (alreadyDone ? "已经做好了，去看动作库"
+                            : (alreadyOrdered ? "已经在做了…"
+                               : (awaitConfirm ? "再点一次就开始" : "开始生成"))))
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .foregroundStyle(Tw.white)
@@ -209,7 +210,7 @@ struct RefConfirmView: View {
             }
             .buttonStyle(PressStyle(scale: 0.97))
             .padding(.horizontal, 24)
-            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing || !canStart)
+            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing || !canStart || ordering)
             // ★ 2026-11-03（他实测）：处理中不能露出「开始生成」
             .opacity((step >= 3 && !processing) ? 1 : 0)
 

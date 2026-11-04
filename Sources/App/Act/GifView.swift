@@ -12,6 +12,10 @@ final class GifBox: ObservableObject {
     private var frames: [UIImage] = []
     private var idx = 0
     private var timer: Timer?
+    // ★ 观测用（不改行为）：最后换帧时间 + 是否已经报过"卡住"
+    private var lastFrameAt = Date()
+    private var reportedStuck = false
+    private var watch: Timer?
     private var task: URLSessionDataTask?
     private var now: String = ""
 
@@ -27,7 +31,14 @@ final class GifBox: ObservableObject {
         var req = URLRequest(url: url)
         req.timeoutInterval = 30
         task = URLSession.shared.dataTask(with: req) { [weak self] d, _, _ in
-            guard let d, let src = CGImageSourceCreateWithData(d as CFData, nil) else { return }
+            guard let d else {
+                Task { await ActLab.diagSay("GifView 下载失败 url=\(key)") }
+                return
+            }
+            guard let src = CGImageSourceCreateWithData(d as CFData, nil) else {
+                Task { await ActLab.diagSay("GifView 解不出帧（数据不是动图）url=\(key) 字节=\(d.count)") }
+                return
+            }
             var out: [UIImage] = []
             let n = min(CGImageSourceGetCount(src), self?.cap ?? 90)
             for i in 0..<n {
@@ -35,7 +46,10 @@ final class GifBox: ObservableObject {
                     out.append(UIImage(cgImage: cg))
                 }
             }
-            guard !out.isEmpty else { return }
+            guard !out.isEmpty else {
+                Task { await ActLab.diagSay("GifView 解出来是空的 url=\(key)") }
+                return
+            }
             DispatchQueue.main.async {
                 guard let self, self.now == key else { return }
                 self.frames = out
@@ -56,15 +70,34 @@ final class GifBox: ObservableObject {
                 guard let self, !self.frames.isEmpty else { return }
                 self.idx = (self.idx + 1) % self.frames.count
                 self.img = self.frames[self.idx]
+                self.lastFrameAt = Date()
+                self.reportedStuck = false
             }
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t
+        lastFrameAt = Date()
+        reportedStuck = false
+        // ★ 只观测：每 2 秒看一眼有没有换帧；没换就报一条（不改任何行为）
+        watch?.invalidate()
+        let w = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if Date().timeIntervalSince(self.lastFrameAt) > 2.0, !self.reportedStuck {
+                    self.reportedStuck = true
+                    await ActLab.diagSay("GifView 2 秒没换帧 url=\(self.now) 帧数=\(self.frames.count)")
+                }
+            }
+        }
+        RunLoop.main.add(w, forMode: .common)
+        watch = w
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+        watch?.invalidate()
+        watch = nil
     }
 }
 

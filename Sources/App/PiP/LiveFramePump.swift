@@ -62,6 +62,9 @@ final class LiveFramePump {
     private let queue = DispatchQueue(label: "still.live.frame", qos: .userInitiated)
 
     private var displayLayer: AVSampleBufferDisplayLayer?
+    // ★ 只观测（不改行为）：最后一次"真的拿到新帧"的时间 + 是否已上报卡住
+    private var lastFreshAt = Date()
+    private var reportedStuck = false
     private var output: AVPlayerItemVideoOutput?
     private var bound: AVPlayerItem?
     private var timeObserver: Any?
@@ -263,6 +266,12 @@ final class LiveFramePump {
     // MARK: - 每一拍
 
     private func tick() {
+        // ★ 只观测：超过 2 秒没拿到新帧就报一条（不重建、不干预）
+        if Date().timeIntervalSince(lastFreshAt) > 2.0, !reportedStuck {
+            reportedStuck = true
+            let secs = Int(Date().timeIntervalSince(lastFreshAt))
+            Task { await ActLab.diagSay("帧泵 2 秒没新帧（\(secs) 秒）paused=\(paused)") }
+        }
         guard let layer = displayLayer else {
             lastError = "小窗的画面层还没接上"
             return
@@ -304,6 +313,8 @@ final class LiveFramePump {
             lastSample = sb
             enqueue(sb, on: layer)
             lastError = nil
+            lastFreshAt = Date()
+            reportedStuck = false
         } else if let sb = lastSample {
             enqueue(sb, on: layer)                  // 没新帧：重发上一张，维持「在播」
         }

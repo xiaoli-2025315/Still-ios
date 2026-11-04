@@ -134,39 +134,28 @@ final class Listening: ObservableObject {
     /// ★ 不标 @MainActor：调用方都在主线程（小窗回调、面板按钮）。
     ///   标了反而要在 DispatchQueue.main 闭包里写 assumeIsolated，徒增一类编译坑。
     func keyPressed() {
+        // ★★ 2026-11-04（他定的）：**把「一直听」删掉**。
+        //   以前单击=听一句、连按两下=一直听；结果一按就变成"一直听、一直听"，
+        //   而且一直开着麦反而听不到"说完那句"，猫也就不回话。
+        //   现在只有两种：没在听→开始听一句（说完自动停）；在听→停。
         let now = Date()
-        let quick = now.timeIntervalSince(lastPressAt) < Self.doubleTap
         lastPressAt = now
 
-        switch shape {
-        case .off:
+        if shape == .off {
             shape = .once
             onceMode = true
             begin()
-
-        case .once:
-            if quick {
-                // 升级：发动机本来就在跑，只把「说完就停」摘掉
-                shape = .always
-                onceMode = false
-                note = "一直听着 · 再按一下就关"
-            } else {
-                // 再要一句：把上一句作废，从头听
-                onceMode = true
-                note = "再说一句"
-                softRestart()
-            }
-
-        case .always:
+        } else {
             stop(reason: "不听了")
         }
     }
 
     /// 面板上那个开关（直接开/关，不用管单击双击）
     func toggleSwitch() {
+        // ★ 同一个规矩：只有"听一句"，不存在"一直听"
         if shape == .off {
-            shape = .always
-            onceMode = false
+            shape = .once
+            onceMode = true
             begin()
         } else {
             stop(reason: "不听了")

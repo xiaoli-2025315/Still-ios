@@ -34,6 +34,7 @@ struct RoleHomeView: View {
     @State private var reason: [String: String] = [:]
     /// 点过 × 的失败格 —— 点过就回到「生成 ›」（跟安卓一样是本机记的）
     @State private var dismissed: Set<String> = []
+    private var dismissKey: String { "still.actdismiss." + char.id }
     @State private var loading = true
     @State private var err = ""
     @State private var repairing = false
@@ -94,6 +95,10 @@ struct RoleHomeView: View {
         }
         .background(Tw.gray50.ignoresSafeArea())
         .task {
+            // ★ 把「点过 × 的失败格」读回来，别一进来又全弹出来
+            if let arr = UserDefaults.standard.stringArray(forKey: dismissKey) {
+                dismissed = Set(arr)
+            }
             // ★ 每 5 秒重读一次：下完单不用退出去再进来，格子就会自己变
             while !Task.isCancelled {
                 await load()
@@ -369,7 +374,8 @@ struct RoleHomeView: View {
         // ★ 2026-11-04（他定的，照安卓）：只要这一条在台子上有状态（准备中/排队中/生成中/
         //   等抠图/抠像中），这一格就算"在做" —— **点它不能进「生成这一条」**，
         //   框里直接显示这几个字，不再用「看进度」这种看不懂的词。
-        let 进行中 = !ok && !失败中 && !s.isEmpty
+        let 失败状态 = (s == "失败" || s == "没做成")
+        let 进行中 = !ok && !失败中 && !s.isEmpty && !失败状态
         return VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.system(size: 13.5, weight: .medium))
@@ -415,12 +421,6 @@ struct RoleHomeView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                            Text("重做 ›")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(Tw.red600)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.75))
 
                         } else {
                             VStack(spacing: 6) {
@@ -454,6 +454,9 @@ struct RoleHomeView: View {
                 if 失败中 {
                     Button {
                         dismissed.insert(key)
+                        // ★ 2026-11-04（他报的：关掉再进来又弹回来）：
+                        //   以前只记在内存里，退出去就忘；现在写进本机，一直记着
+                        UserDefaults.standard.set(Array(dismissed), forKey: dismissKey)
                     } label: {
                         Text("×")
                             .font(.system(size: 15, weight: .semibold))

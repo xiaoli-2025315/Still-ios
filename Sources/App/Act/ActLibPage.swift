@@ -128,8 +128,7 @@ struct ActLibPage: View {
                     // ★ 2026-10-21：「删角色」这功能的自救口。
                     //   删错了不用来找我 —— 下面这行点一下就回墙上，素材本来就没删。
                     if !model.dropped.isEmpty {
-                        droppedRow
-                    }
+                                }
 
                     Spacer(minLength: 30)
                 }
@@ -193,6 +192,8 @@ struct ActLibPage: View {
                     refChar = nil
                 },
                 onNext: {
+                    // ★ 2026-11-04（他报的：点过确认下一步，下次进来又要再点一遍）
+                    UserDefaults.standard.set(true, forKey: "still.seensit." + c.id)
                     UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
                     sitingChar = nil
                     // ★ 2026-11-03（他报的）：以前这里会弹旧的"生产页"（里面写着
@@ -261,37 +262,7 @@ struct ActLibPage: View {
         }
     }
 
-    /// 列表底下那行「已删掉 N 个」。
-    private var droppedRow: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("已删掉 \(model.dropped.count) 个（素材都还在，点「放回来」就回去了）")
-                .font(.system(size: 11))
-                .foregroundStyle(Tw.gray400)
-
-            ForEach(model.dropped) { c in
-                HStack(spacing: 8) {
-                    Text(c.title)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(Tw.gray600)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Button {
-                        Task { await restore(c) }
-                    } label: {
-                        Text("放回来")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundStyle(Tw.red600)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(Tw.red600.opacity(0.08)))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-    }
+    // ★ 2026-11-04（他定的）：iOS 不要「删掉的角色可以放回来」这个口子 —— 整块删掉（连文案）。
 
     // MARK: - 顶栏
 
@@ -490,20 +461,8 @@ struct ActLibPage: View {
                 .frame(width: 56, height: 56)
 
             // ★ 2026-11-03（他定的）：「用它」正在下包时，框里要有圆形进度
-            if store.downloading == c.id {
-                Circle()
-                    .stroke(Tw.gray200, lineWidth: 3)
-                    .frame(width: 40, height: 40)
-                Circle()
-                    .trim(from: 0, to: max(0.02, min(1.0, store.progress ?? 0)))
-                    .stroke(Tw.gray900, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .frame(width: 40, height: 40)
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.2), value: store.progress)
-                Text("\(Int((store.progress ?? 0) * 100))%")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Tw.gray700)
-            }
+                                // ★ 2026-11-04（他定的）：安卓没有这个百分比环，而且它会来回跳 —— 整块删掉。
+
 
             if let u = c.imgURL {
                 AsyncImage(url: u) { phase in

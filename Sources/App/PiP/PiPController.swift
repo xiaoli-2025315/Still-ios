@@ -762,10 +762,13 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
     func pictureInPictureController(
         _ controller: AVPictureInPictureController, setPlaying playing: Bool
     ) {
-        // ★ 2026-10-31：**先真的暂停/恢复画面**。
-        //   AVSampleBufferDisplayLayer 没有 play/pause，靠帧泵的 paused 开关实现；
-        //   原来只切了「听」，所以按下去画面不动、再按也不恢复 → 他觉得「无效 / 卡住」。
-        pumpPaused = !playing
+        // ★★ 2026-11-04（他定的，纠正 2026-10-31 那次改动）：
+        //   **这个键从来就不该有"暂停"功能** —— 它只负责"跟我说话"。
+        //   10-31 那次为了"让按下去有反应"，把帧泵的 paused 打开当暂停；
+        //   可 AVSampleBufferDisplayLayer 没有 play/pause，停推帧 = 画面断流，
+        //   再按一次要靠系统再发一次 setPlaying(true) 才恢复 —— 小窗里并不可靠，
+        //   于是就变成"一按就卡住"。现在：**永不暂停画面**，只切「听」。
+        //   （pumpPaused 恒为 false，画面一直流。）
         // 后台没有触觉（震动要 App 在前台），声音是唯一能立刻到手指的反馈。
         SoundKit.shared.tapInBackground()
         // 起窗那一下系统会调一次 false 来对表，这不是他按的。

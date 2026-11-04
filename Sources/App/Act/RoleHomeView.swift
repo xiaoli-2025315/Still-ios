@@ -423,14 +423,18 @@ struct RoleHomeView: View {
 
 
                         } else {
+                            // ★ 2026-11-04 20:2x（他实测 1.160 还在转圈）：
+                            //   这一支以前只要 s 非空就画进度圈 —— 而"已经点过 × 的失败"
+                            //   正好是"非空但不是进行中"，于是又转起来了。
+                            //   现在只有**真的进行中**才画圈；其余一律空白。
                             VStack(spacing: 6) {
-                                if s.isEmpty {
-                                    Color.clear.frame(height: 0)
-                                } else {
+                                if 进行中 {
                                     ProgressView().scaleEffect(0.7)
                                     Text(stageWord(s))
                                         .font(.system(size: 11))
                                         .foregroundStyle(Tw.gray500)
+                                } else {
+                                    Color.clear.frame(height: 0)
                                 }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

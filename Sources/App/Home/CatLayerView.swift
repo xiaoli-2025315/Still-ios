@@ -57,6 +57,7 @@ struct CatLayerView: View {
     }
 
     /// 原来那只（App 自带、程序画的）—— 没选任何猫时用它兜底
+    @ViewBuilder
     private var vectorCat: some View {
         let cat = CatView(pose: pose, width: w)
             .scaleEffect(x: engine.facing >= 0 ? 1 : -1, y: 1, anchor: .center)

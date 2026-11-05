@@ -163,7 +163,6 @@ struct ActLibPage: View {
                 onPhotoChanged: { _ in },
                 onStart: {
                     // 下单在参考图页里做（RefConfirmView.placeOrder），这里只导航
-                    UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
                     refChar = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
                 },
@@ -171,7 +170,6 @@ struct ActLibPage: View {
                     // ★ 2026-11-03（查出来的真 bug）：参考图页**已经下过单**了，
                     //   这里以前又下一单 → 一次点击下两单（第二单被 409 顶掉，
                     //   但额度已经花掉，状态也会乱）。现在这里只管"跳制作页"。
-                    UserDefaults.standard.set(true, forKey: "still.refok." + c.id)
                     refChar = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { sitingChar = c }
                 },
@@ -187,14 +185,12 @@ struct ActLibPage: View {
                     //   并把"已下单"标记清掉：如果那一单其实是丢了（台子查不到），
                     //   再进这只角色时会回到参考图页，可以重新下单；
                     //   如果单还在做，状态一查就有，不会重复下单（参考图页会显示"已经在做了"）。
-                    UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
                     sitingChar = nil
                     refChar = nil
                 },
                 onNext: {
                     // ★ 2026-11-04（他报的：点过确认下一步，下次进来又要再点一遍）
                     UserDefaults.standard.set(true, forKey: "still.seensit." + c.id)
-                    UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
                     sitingChar = nil
                     // ★ 2026-11-03（他报的）：以前这里会弹旧的"生产页"（里面写着
                     //   「坐立好了，你看一眼」）—— 那不是他要的东西，而且挡住所有动作。
@@ -309,24 +305,35 @@ struct ActLibPage: View {
     ///     点过「开始生成」 → 制作中（他上次退出的就是那页）
     ///     还没点过       → 参考图确认
     private func route(_ c: ActLab.Char) async {
-        if await sitDone(c.id) {
-            UserDefaults.standard.removeObject(forKey: "still.refok." + c.id)
-            // ★ 2026-11-03（他定的）：没看过「做好了」那一屏 → 先看一遍、点确认，
-            //   之后才直接进动作库。
+        // ★★ 2026-11-05（他定的）：**一律以台子为准**，不再看手机本地那条"已下单"标记。
+        //   规则：
+        //   · 台子说"坐立好了"       → 没看过「做好了」就先看，看过直接进动作库
+        //   · 台子说"在做（任一阶段）" → 直接回制作中页，接着看进度
+        //   · 台子说"失败/被打断"    → 也进制作中页（那里写原因、有出路）
+        //   · 台子说"没做 / 查不到"   → 回参考图页（可以重新下单）
+        let st = await sitStatus(c.id)
+        switch st {
+        case "好了":
             let seen = UserDefaults.standard.bool(forKey: "still.seensit." + c.id)
-            if !seen {
-                sitingChar = c
-                return
-            }
-            watching = c
-            return
-        }
-        if UserDefaults.standard.bool(forKey: "still.refok." + c.id) {
+            if !seen { sitingChar = c } else { watching = c }
+        case "准备中", "排队中", "排队", "生成中", "等抠图", "抠像中", "失败", "没做成", "被打断":
             sitingChar = c
-        } else {
+        default:
             refChar = c
             refPhoto = Data()
         }
+    }
+
+    /// 这只猫「坐立」现在是什么状态（以台子为准；查不到就当"没做"）
+    private func sitStatus(_ id: String) async -> String {
+        if let st = await ActLab.state(charId: id),
+           let a = st.acts.first(where: { $0.act == "sit" }) {
+            return a.状态
+        }
+        if let m = try? await ActLab.manifest(charId: id), m.names.contains("sit") {
+            return "好了"
+        }
+        return "没做"
     }
 
     /// 这只猫的坐立做好了没有（以台子为准）

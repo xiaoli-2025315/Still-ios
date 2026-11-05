@@ -44,9 +44,13 @@ struct RefConfirmView: View {
     @State private var hasNewPhoto = false   // 换了图但还没重做
     @State private var orderErr: String?     // 下单失败的原因（给用户看）
     @State private var ordering = false
+    /// ★ 台子是否在维护（维护期间不许下单）
+    @State private var maintOn = false
+    @State private var maintWhy = ""
     @State private var showLogin = false
     /// ★ 2026-11-03：能不能开始（豆包没登录就不许点，跟安卓一样）
     private var canStart: Bool {
+        if maintOn { return false }
         if channel == "wan" { return true }
         let slot = String(channel.dropFirst("doubao:".count))
         return baoAccounts.first(where: { $0.id == slot })?.ok == true
@@ -214,6 +218,13 @@ struct RefConfirmView: View {
             // ★ 2026-11-03（他实测）：处理中不能露出「开始生成」
             .opacity((step >= 3 && !processing) ? 1 : 0)
 
+            if maintOn {
+                Text("台子正在更新（\(maintWhy.isEmpty ? "几分钟就好" : maintWhy)）—— 等它更新完再下单")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.red600)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 6)
+            }
             if channel.hasPrefix("doubao:") && !canStart {
                 Text("这个豆包号已失效（豆包那边把登录作废了）—— 点下拉里的「已失效（点了去登录）」重登，或换 wan3.0")
                     .font(.system(size: 11.5))

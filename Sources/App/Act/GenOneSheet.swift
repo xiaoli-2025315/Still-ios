@@ -22,7 +22,10 @@ struct GenOneSheet: View {
     @State private var awaitConfirm = false
     @State private var busy = false
     @State private var err: String?
+    @State private var maintOn = false
+    @State private var maintWhy = ""
     private var canStart: Bool {
+        if maintOn { return false }
         if channel == "wan" { return true }
         let slot = String(channel.dropFirst("doubao:".count))
         return accounts.first(where: { $0.id == slot })?.ok == true
@@ -66,6 +69,10 @@ struct GenOneSheet: View {
                     }
                 }
 
+                if maintOn {
+                    Text("台子正在更新（\(maintWhy.isEmpty ? "几分钟就好" : maintWhy)）—— 等它更新完再下单")
+                        .font(.system(size: 12)).foregroundStyle(Tw.red600)
+                }
                 if channel.hasPrefix("doubao:") && !canStart {
                     Text("这个豆包号已失效 —— 回登记页重登，或换 wan3.0")
                         .font(.system(size: 12)).foregroundStyle(Tw.red600)
@@ -105,7 +112,12 @@ struct GenOneSheet: View {
             .navigationTitle("生成这一条")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关上") { dismiss() } } }
-            .task { await loadAccounts() }
+            .task {
+                let m = await ActLab.maintainState()
+                maintOn = m.on
+                maintWhy = m.why
+                await loadAccounts()
+            }
         }
     }
 

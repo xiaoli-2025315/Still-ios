@@ -469,6 +469,16 @@ enum ActLab {
         return false
     }
 
+    /// ★ 2026-11-05：台子是不是在维护（发版前的计划内重启）。
+    ///   维护期间**不许下单**，界面要写明"正在更新"，而不是报个看不懂的错。
+    static func maintainState() async -> (on: Bool, why: String) {
+        guard let d = try? await rawGet("/api/sys/state", timeout: 12),
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
+            return (false, "")
+        }
+        return ((o["维护"] as? Bool) ?? false, (o["说"] as? String) ?? "")
+    }
+
     static func wanStart(charId: String, act: String) async throws -> Bool {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         let said = try await postSay("/api/wan/start", query: [

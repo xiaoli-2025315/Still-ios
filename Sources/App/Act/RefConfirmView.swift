@@ -364,14 +364,9 @@ struct RefConfirmView: View {
             out.append(BaoAccount(id: s, name: n, ok: (x["登着没"] as? Bool) ?? false))
         }
         baoAccounts = out
-        // ★ 2026-11-03（他指出的）：当前选中的号失效了 → 自动切到 wan3.0，
-        //   不能让他拿着一个已失效的号继续点生成。
-        if channel.hasPrefix("doubao:") {
-            let slot = String(channel.dropFirst("doubao:".count))
-            if baoAccounts.first(where: { $0.id == slot })?.ok != true {
-                channel = "wan"
-            }
-        }
+        // ★★ 2026-11-05（他定的）：**选了什么就用什么，绝不自动换走**。
+        //   以前选中的号失效会自动切成另一条线 —— 等于替他改了主意。
+        //   现在：选中的号失效就照实提示、按钮变灰，让他自己决定换号还是换线。
     }
 
 

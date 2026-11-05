@@ -440,7 +440,11 @@ struct ActLibPage: View {
             let p = try await CatPackStore.shared.install(charId: c.id)
             CatPackStore.shared.use(p)
         } catch {
-            opErr = "换到「\(c.title)」没成：" + error.localizedDescription
+            // ★ 2026-11-05（他定的：换不上必须让用户知道怎么办）：
+            //   把原因同时写到台子诊断，界面上给出"重试"的出路。
+            let msg = error.localizedDescription
+            opErr = "换到「\(c.title)」没成：" + msg + "（再点一次「用它」可以重试）"
+            await ActLab.diagSay("用它失败 char=\(c.id) 原因=\(msg)")
         }
     }
 

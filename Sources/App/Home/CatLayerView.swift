@@ -46,6 +46,18 @@ struct CatLayerView: View {
     /// 走路的颠簸 和 待着的微动 是两回事，不能叠在一起
     @ViewBuilder
     private var catBody: some View {
+        // ★★ 2026-11-05（他定的）：主页框显示**选中的那只**。
+        //   画中画用的是包里的帧，跟这只矢量猫无关（查过：CatView 只被主页框和灵动岛用到），
+        //   所以这里换成"包里那只"不影响小窗。
+        if let pk = CatPackStore.shared.current {
+            PackCatView(pack: pk, width: w)
+        } else {
+            vectorCat
+        }
+    }
+
+    /// 原来那只（App 自带、程序画的）—— 没选任何猫时用它兜底
+    private var vectorCat: some View {
         let cat = CatView(pose: pose, width: w)
             .scaleEffect(x: engine.facing >= 0 ? 1 : -1, y: 1, anchor: .center)
 
@@ -127,5 +139,60 @@ struct WalkBob: ViewModifier {
             .animation(on
                        ? .easeInOut(duration: 0.34).repeatForever(autoreverses: true)
                        : .default, value: on)
+    }
+}
+
+
+// MARK: - 用"包里的帧"在主页框里播（选中的那只）
+//
+// ★ 2026-11-05：主页框以前只画程序画的那只；现在优先画选中的那只的真实帧。
+//   每格 20 次/秒，跟动作库里的预览同速，省内存（只缓存最近若干张）。
+
+struct PackCatView: View {
+
+    let pack: CatPack
+    let width: CGFloat
+
+    @State private var img: UIImage?
+    @State private var idx = 0
+    @State private var timer: Timer?
+
+    private var act: CatPack.Act? {
+        pack.acts.first(where: { $0.name == "sit" }) ?? pack.acts.first
+    }
+
+    var body: some View {
+        Group {
+            if let i = img {
+                Image(uiImage: i)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: width)
+        .onAppear { start() }
+        .onDisappear { stop() }
+    }
+
+    private func start() {
+        guard let a = act, a.frames > 0 else { return }
+        img = pack.image(act: a, index: 0)
+        stop()
+        let t = Timer(timeInterval: 1.0 / 20.0, repeats: true) { _ in
+            Task { @MainActor in
+                guard let a2 = act, a2.frames > 0 else { return }
+                idx = (idx + 1) % a2.frames
+                if let f = pack.image(act: a2, index: idx) { img = f }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
     }
 }

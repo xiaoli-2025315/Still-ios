@@ -37,6 +37,9 @@ struct RefConfirmView: View {
     @State private var refImage: UIImage? = nil
     @State private var processing = true    // ★ 一进来就是处理中：没处理完不该出现「重新处理」
     @State private var refTimedOut = false
+    /// ★ 有没有参考图 / 台子上是不是正在做
+    @State private var refHas = false
+    @State private var refBuilding = false
     /// 这一格是不是已经下过单（下过就不给再点，避免重复花钱）
     @State private var alreadyOrdered = false
     @State private var alreadyDone = false
@@ -86,7 +89,21 @@ struct RefConfirmView: View {
         .task {
             if !charId.isEmpty { await checkOrdered() }
             await 拉baoAccounts()
-            if !charId.isEmpty && refImage == nil { await watchRef() }
+            guard !charId.isEmpty else { return }
+            // ★★ 2026-11-05：**不再自动开始做参考图**。先问台子现在什么状态：
+            //   有图 → 显示图；正在做 → 显示处理中并等；没有 → 露出「开始处理参考图」按钮。
+            let st = await ActLab.refState(charId: charId)
+            refHas = st.has
+            refBuilding = st.building
+            if st.has {
+                if let ui = await fetchRef() { refImage = ui }
+                processing = false
+            } else if st.building {
+                await watchRef(自动开工: false)
+            } else {
+                processing = false
+                refTimedOut = false
+            }
         }
     }
 
@@ -232,7 +249,23 @@ struct RefConfirmView: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, 6)
             }
-            if !processing && !charId.isEmpty {
+            // ★★ 2026-11-05（他定的）：第一次处理参考图，**由用户点这个按钮才开始**。
+            //   没有图、也没在做的时候才露出来。
+            if !refHas && !processing && !charId.isEmpty {
+                Button { Task { await watchRef(自动开工: true) } } label: {
+                    Text("开始处理参考图")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Tw.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(Capsule().fill(Tw.gray900))
+                }
+                .buttonStyle(PressStyle(scale: 0.97))
+                .padding(.horizontal, 24)
+                .padding(.top, 6)
+            }
+
+            if !processing && !charId.isEmpty && (refHas || refTimedOut) {
                 Button { Task { await rebuild() } } label: {
                     Text("重新处理")
                         .font(.system(size: 13, weight: .semibold))
@@ -297,25 +330,27 @@ struct RefConfirmView: View {
 
     // MARK: - 参考图（处理中 → 换图 → 重新处理）
 
-    private func watchRef() async {
+    /// 等参考图出来。`自动开工` 只在"用户按了开始处理"时为 true（那时才发起）；
+    /// 其它情况只是**等**台子上已经在跑的那一次，绝不重复发起（避免重复花额度）。
+    private func watchRef(自动开工: Bool = false) async {
         processing = true
         refTimedOut = false
-        var tries = 0
-        for _ in 0..<60 {
+        if 自动开工 {
+            await ActLab.wanRebuild(charId: charId, force: true)
+            refBuilding = true
+        }
+        for _ in 0..<80 {
             if let ui = await fetchRef() {
                 refImage = ui
+                refHas = true
+                refBuilding = false
                 processing = false
                 return
-            }
-            tries += 1
-            // ★ 2026-11-03：老角色当年没做成 → 现在进页面会自动补一次（只补一次）
-            if tries == 4 && !autoRebuilt {
-                autoRebuilt = true
-                await ActLab.wanRebuild(charId: charId)
             }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
         processing = false
+        refBuilding = false
         refTimedOut = true
     }
 

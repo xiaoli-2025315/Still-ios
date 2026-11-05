@@ -469,6 +469,19 @@ enum ActLab {
         return false
     }
 
+    /// ★ 2026-11-05：参考图现在几点了 —— 有没有图 / 是不是正在做。
+    ///   进页面先问它，决定显示"图 / 正在处理 / 开始处理按钮"。
+    static func refState(charId: String) async -> (has: Bool, building: Bool, coolLeft: Int) {
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        guard let d = try? await rawGet("/api/wan/refstate?char=" + c, timeout: 12),
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
+            return (false, false, 0)
+        }
+        return ((o["有图"] as? Bool) ?? false,
+                (o["正在做"] as? Bool) ?? false,
+                (o["冷却剩秒"] as? Int) ?? 0)
+    }
+
     /// ★ 2026-11-05：台子是不是在维护（发版前的计划内重启）。
     ///   维护期间**不许下单**，界面要写明"正在更新"，而不是报个看不懂的错。
     static func maintainState() async -> (on: Bool, why: String) {

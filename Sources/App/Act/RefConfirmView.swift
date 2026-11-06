@@ -163,7 +163,9 @@ struct RefConfirmView: View {
 
             Spacer(minLength: 18)
 
-            // ★ 用哪个做（跟登记页那个下拉一回事）
+            // ★★ 2026-11-07（他定的）：参考图没处理完之前，"用哪个做"这个下拉不出现。
+            if refHas {
+            // 用哪个做（跟登记页那个下拉一回事）
             Menu {
                 Button("wan3.0 · 阿里云") { channel = "wan" }
                 ForEach(baoAccounts) { a in
@@ -192,6 +194,7 @@ struct RefConfirmView: View {
             }
             .padding(.horizontal, 24)
             .padding(.top, 6)
+            }
 
             Text("就用这张开始做？")
                 .font(.system(size: 17, weight: .semibold))

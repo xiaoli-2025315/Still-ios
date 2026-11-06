@@ -126,7 +126,14 @@ struct RefConfirmView: View {
             Spacer(minLength: 12)
 
             // 参考图（点它就换）
-            Button { showPick = true } label: {
+            // ★★ 2026-11-07（他报的「处理的过程中怎么能替换呢」）：
+            //   安卓 11-03 就堵了 —— 处理中只弹一句「正在做参考图，等它做完再换」，不让换。
+            //   以前 iOS 只盖一层白纱，按钮照样能点，而且一换图就把「正在做」抹成「没在做」，
+            //   看着像做完了、台子却还在抠。现在点不动，底下那句话也跟着说明原因。
+            Button {
+                guard !processing && !swapBusy else { return }
+                showPick = true
+            } label: {
                 Group {
                     if let ui = (refImage ?? UIImage(data: photo)) {
                         Image(uiImage: ui)
@@ -290,7 +297,7 @@ struct RefConfirmView: View {
                     .foregroundStyle(Tw.gray400)
                     .padding(.top, 6)
             }
-            Text("点一下那张图可以换一张")
+            Text(processing ? "正在做参考图，等它做完再换" : "点一下那张图可以换一张")
                 .font(.system(size: 11))
                 .foregroundStyle(Tw.gray400)
                 .padding(.top, 10)
@@ -302,6 +309,8 @@ struct RefConfirmView: View {
         .photosPicker(isPresented: $showPick, selection: $pickItem, matching: .images)
         .onChange(of: pickItem) { _, item in
             guard let item else { return }
+            // ★ 再兜一道：万一中途开始处理了，这一张也不收（防绕过上面那道按钮闸）。
+            guard !processing && !swapBusy else { pickItem = nil; return }
             Task {
                 swapBusy = true
                 if let d = try? await item.loadTransferable(type: Data.self) {

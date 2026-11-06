@@ -476,17 +476,12 @@ struct ActLibPage: View {
 
 
             if let u = c.imgURL {
-                AsyncImage(url: u) { phase in
-                    if let img = phase.image {
-                        img.resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "cat.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(Tw.gray400)
-                    }
-                }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                // ★★ 2026-11-07（他报的：每次点进来这些预览图都重新加载）：
+                //   台子对图片回 no-store，系统 AsyncImage 每次都联网重下。
+                //   换成落盘缓存：先读手机里那张（毫秒级），后台再校验有没有换过。
+                StillCachedImage(url: u)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
                 Image(systemName: "cat.fill")
                     .font(.system(size: 22))

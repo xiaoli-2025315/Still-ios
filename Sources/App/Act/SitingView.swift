@@ -239,7 +239,8 @@ struct SitingView: View {
                     stage = .done
                 case "失败", "没做成":
                     let quota = why.contains("额度") || why.contains("付费")
-                    stage = .failed(why.isEmpty ? (quota ? "豆包额度不够" : "这张图涉及侵权") : why, quota)
+                    // ★★ 2026-11-07（他定的）：没原因就只写「没做成」，不再自己编"侵权"
+                    stage = .failed(why.isEmpty ? (quota ? "豆包额度不够" : "没做成") : why, quota)
                 case "排队", "排队中":
                     stage = .queue
                 case "生成中":

@@ -646,6 +646,8 @@ struct NewRoleSheet: View {
     @State private var picked: PhotosPickerItem?
     @State private var photo: Data?
     @State private var photoName = ""
+    /// ★ 白底提示词那块的小提示
+    @State private var toldWhite = ""
     @State private var busy = false
     @State private var err: String?
 
@@ -802,7 +804,45 @@ struct NewRoleSheet: View {
                         Task { await takePhoto(newItem) }
                     }
 
-                    Text("一张就够 · 正面清楚最好")
+                    Text("请上传统一白底的角色图 · 全身或半身都行 · 背景越干净抠图越准")
+
+                    // ★★ 2026-11-07（他定的）：给个"怎么弄白底图"的快捷方式
+                    HStack(spacing: 8) {
+                        Button {
+                            UIPasteboard.general.string =
+                                "保留人物的样子、服装和姿势完全不变，全身完整入画，" +
+                                "把背景换成纯白色（#FFFFFF），背景要干净、均匀、没有其他东西，" +
+                                "不要投影，人物不要贴边。"
+                            toldWhite = "提示词复制好了 —— 去豆包贴一下，拿到白底图再回来上传"
+                        } label: {
+                            Text("复制白底提示词")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Tw.gray900)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(Capsule().fill(Tw.gray100))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            if let u = URL(string: "https://www.doubao.com/chat/") {
+                                UIApplication.shared.open(u)
+                            }
+                        } label: {
+                            Text("打开豆包")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Tw.gray900)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(Capsule().fill(Tw.gray100))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 8)
+
+                    Text(toldWhite.isEmpty
+                         ? "已经有白底图就不用管；没有的话：复制提示词 → 打开豆包 → 改成白底全身图 → 回来上传"
+                         : toldWhite)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Tw.gray400)
                         .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)
                         .padding(.top, 6)

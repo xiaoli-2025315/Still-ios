@@ -231,9 +231,9 @@ struct RefConfirmView: View {
             }
             .buttonStyle(PressStyle(scale: 0.97))
             .padding(.horizontal, 24)
-            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing || !canStart || ordering)
+            .disabled(swapBusy || alreadyOrdered || alreadyDone || processing || !canStart || ordering || !refHas)
             // ★ 2026-11-03（他实测）：处理中不能露出「开始生成」
-            .opacity((step >= 3 && !processing) ? 1 : 0)
+            .opacity((step >= 3 && !processing && refHas) ? 1 : 0)
 
             if maintOn {
                 Text("台子正在更新（\(maintWhy.isEmpty ? "几分钟就好" : maintWhy)）—— 等它更新完再下单")

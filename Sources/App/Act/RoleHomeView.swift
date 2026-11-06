@@ -365,7 +365,7 @@ struct RoleHomeView: View {
         .padding(.top, 6)
     }
 
-    /// 一格动作：名字在上，下面图 / 或「生成 ›」
+    /// 一格动作：框在上，名字在框外面下面靠左（跟安卓 ActLibV2Activity 一样：先 addView(pic) 再 addView(nm)）
     private func actCell(_ key: String, _ label: String) -> some View {
         let ok = names.contains(key)
         let s = stage[key] ?? ""
@@ -377,11 +377,6 @@ struct RoleHomeView: View {
         let 失败状态 = (s == "失败" || s == "没做成")
         let 进行中 = !ok && !失败中 && !s.isEmpty && !失败状态
         return VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundStyle(Tw.gray900)
-                .lineLimit(1)
-
             ZStack(alignment: .topTrailing) {
                 Button {
                     if ok {
@@ -472,6 +467,12 @@ struct RoleHomeView: View {
                     .padding(6)
                 }
             }
+            // ★ 2026-11-07（他定的「和安卓一样」）：名字挪到框的**外面下面**、靠左。
+            //   以前放在框上面，看着像压在左上角；现在图在上、名字在下，不盖画面。
+            Text(label)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Tw.gray900)
+                .lineLimit(1)
         }
     }
 

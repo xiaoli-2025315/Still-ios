@@ -52,6 +52,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         //   ★ 这也是「装完要打开一次 App」的真正原因：苹果要求 App 至少跑过一趟，
         //     短语才会被索引。豆包方案里那句「App 被杀掉要自己处理唤醒」同理。
         StillShortcuts.updateAppShortcutParameters()
+
+        // ★★★ 2026-11-08：挂上「做完就喊我一声」的那条线。
+        //   台子把动作做完、打好的那一刻主动推过来，App 自己把整套动作画面
+        //   搬下来装好，再回一句「装好了」—— 台子收到才让「做好了」亮。
+        //   不用点「用它」、不用进动作库、不用切角色，每一条动作都一样。
+        PackEvents.shared.start()
         return true
     }
 

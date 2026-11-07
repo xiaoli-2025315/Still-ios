@@ -316,6 +316,11 @@ struct ActLibPage: View {
         case "好了":
             let seen = UserDefaults.standard.bool(forKey: "still.seensit." + c.id)
             if !seen { sitingChar = c } else { watching = c }
+        // ★★★ 2026-11-08：**做出来了 ≠ 手机里有了**。
+        //   台子说「正在送到手机」时这一条还不算完成，不许显示「做好了」、
+        //   「用它」也不该冒出来；等装好后台子改口说「好了」才会走上面那支。
+        case "正在送到手机":
+            sitingChar = c
         case "准备中", "排队中", "排队", "生成中", "等抠图", "抠像中", "失败", "没做成", "被打断":
             sitingChar = c
         default:

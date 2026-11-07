@@ -484,6 +484,8 @@ struct RoleHomeView: View {
         case "生成中": return "生成中"
         case "等抠图": return "等抠图"
         case "抠像中": return "抠像中"
+        // ★★★ 2026-11-08：做出来了 ≠ 手机里有了。装到手机之前不许说好了。
+        case "正在送到手机": return "正在装到手机里"
         case "失败", "没做成": return "没做成"
         // 兼容老英文键（历史数据）
         case "queued": return "排队中"

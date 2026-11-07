@@ -329,7 +329,8 @@ enum ActLab {
     /// 读这一只的动作状态。失败返回 nil（页面保持原样，不瞎改）。
     static func state(charId: String) async -> StateResp? {
         let enc = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
-        guard let d = try? await rawGet("/api/act/state?char=" + enc, timeout: 20) else { return nil }
+        // ★ 2026-11-08：带新版标记，台子才会把「做好了」压到手机真装好那一刻。
+        guard let d = try? await rawGet("/api/act/state?char=" + enc + "&delivery=1", timeout: 20) else { return nil }
         // ★ 2026-11-03（iOS 一直"准备中"的真凶在这个函数里）：
         //   以前用 Codable 解码，**任何字段对不上就整份丢弃**，而且不报错 →
         //   页面永远拿不到状态。现在手写解析：能拿到什么算什么，拿不到就把原文报上去。

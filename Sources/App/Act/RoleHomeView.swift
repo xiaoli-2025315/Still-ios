@@ -476,24 +476,18 @@ struct RoleHomeView: View {
         }
     }
 
-    /// 台子给的**中文**状态 → 格子上显示的字（照安卓 ActLibV2Activity 那几个词）
+    /// 台子给的中文状态 → 格子上显示的字。
+    /// ★★★ 2026-11-09（他定的，两端同一套）：**只有三个阶段** —— 排队 / 正在生成 / 抠图中。
+    ///   「等抠图 / 抠像中 / 正在送到手机（下载安装）」全部并进「抠图中」，
+    ///   不再各自成段；「准备中」并进「排队」。
     private func stageWord(_ s: String) -> String {
         switch s {
-        case "准备中": return "准备中"
-        case "排队", "排队中": return "排队中"
-        case "生成中": return "生成中"
-        case "等抠图": return "等抠图"
-        case "抠像中": return "抠像中"
-        // ★★★ 2026-11-08：做出来了 ≠ 手机里有了。装到手机之前不许说好了。
-        case "正在送到手机": return "正在装到手机里"
-        case "失败", "没做成": return "没做成"
-        // 兼容老英文键（历史数据）
-        case "queued": return "排队中"
-        case "gen":    return "生成中"
-        case "saved":  return "等抠图"
-        case "matte":  return "抠像中"
-        case "warn":   return "没做成"
-        default:       return s
+        case "准备中", "排队", "排队中", "queued": return "排队"
+        case "生成中", "gen":                        return "正在生成"
+        case "等抠图", "抠像中", "正在送到手机",
+             "saved", "matte":                       return "抠图中"
+        case "失败", "没做成", "warn":               return "没做成"
+        default:                                     return s
         }
     }
 

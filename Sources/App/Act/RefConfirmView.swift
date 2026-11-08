@@ -46,6 +46,8 @@ struct RefConfirmView: View {
     @State private var autoRebuilt = false
     @State private var hasNewPhoto = false   // 换了图但还没重做
     @State private var orderErr: String?     // 下单失败的原因（给用户看）
+    /// ★ 2026-11-09：参考图这一单没做成的真实原因（台子盘上那句话）
+    @State private var refErr = ""
     @State private var ordering = false
     /// ★ 台子是否在维护（维护期间不许下单）
     @State private var maintOn = false
@@ -103,6 +105,11 @@ struct RefConfirmView: View {
             } else {
                 processing = false
                 refTimedOut = false
+                // ★ 2026-11-09：上次这一单没做成 / 没做完，把原因照实摆出来。
+                //   以前退进这里跟「从没点过」长得一模一样，他只能猜到底有没有下成。
+                if st.state == "没做成" || st.state == "没做完" {
+                    refErr = st.why.isEmpty ? "上次这一单没做成，再点一次就好" : st.why
+                }
             }
         }
     }
@@ -291,7 +298,16 @@ struct RefConfirmView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
             }
-            if refTimedOut {
+            // ★ 2026-11-09：没做成的真实原因。台子给什么就说什么，不自己编。
+            if !refErr.isEmpty {
+                Text(refErr)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.red600)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 8)
+            }
+            if refTimedOut && refErr.isEmpty {
                 Text("参考图还没做好，先用你上传的这张")
                     .font(.system(size: 11))
                     .foregroundStyle(Tw.gray400)
@@ -347,6 +363,7 @@ struct RefConfirmView: View {
     private func watchRef(自动开工: Bool = false) async {
         processing = true
         refTimedOut = false
+        refErr = ""
         if 自动开工 {
             await ActLab.wanRebuild(charId: charId, force: true)
             refBuilding = true
@@ -355,6 +372,17 @@ struct RefConfirmView: View {
             if let ui = await fetchRef() {
                 refImage = ui
                 refHas = true
+                refBuilding = false
+                processing = false
+                return
+            }
+            // ★ 2026-11-09：每轮顺手看一眼台子盘上那一单 ——
+            //   已经判「没做成 / 没做完」就立刻停，把原因照实说出来；
+            //   以前不管成没成都要白等 4 分钟，最后只说一句「还没做好」。
+            let s = await ActLab.refState(charId: charId)
+            if !s.building && (s.state == "没做成" || s.state == "没做完") {
+                refErr = s.why.isEmpty ? "这一单没做成，再点一次就好" : s.why
+                refTimedOut = true
                 refBuilding = false
                 processing = false
                 return
@@ -379,10 +407,21 @@ struct RefConfirmView: View {
 
     private func rebuild() async {
         processing = true
+        refErr = ""
         if hasNewPhoto, let d = photo as Data? {
             // 换过图：先把新图传到台子（台子会用新图重做）
-            hasNewPhoto = false
-            _ = await ActLab.charImg(charId: charId, png: d)
+            // ★ 2026-11-09：传不上去要说原因，而且要留住「有新图待重做」这个状态 ——
+            //   以前 `_ = await` 把结果丢掉，图没传上去、页面却开始干等，
+            //   看着就像「点了重新处理但什么也没发生」。
+            do {
+                _ = try await ActLab.charImg(charId: charId, photo: d)
+                hasNewPhoto = false
+            } catch {
+                refErr = error.localizedDescription
+                processing = false
+                refTimedOut = true
+                return
+            }
             await watchRef()
             return
         }
@@ -431,8 +470,11 @@ struct RefConfirmView: View {
     /// 把刚换的这张图传到台子（台子会用新图重做参考图）。
     private func uploadSwappedPhoto(_ d: Data) async {
         processing = true
-        let ok = await ActLab.charImg(charId: charId, png: d)
-        if !ok {
+        refErr = ""
+        do {
+            _ = try await ActLab.charImg(charId: charId, photo: d)
+        } catch {
+            refErr = error.localizedDescription
             processing = false
             return
         }

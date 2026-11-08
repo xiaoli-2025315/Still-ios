@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 // MARK: - 台子上的「动作库」
 //
@@ -388,22 +389,37 @@ enum ActLab {
 
     /// ★ 2026-11-03：换图要真的换到台子上（不是只改手机显示）。
     ///   台子收到后会覆盖形象图，并用新图重做参考图。
-    static func charImg(charId: String, png: Data) async -> Bool {
+    /// ★★ 2026-11-09：**传之前先转成普通照片（JPEG）**。
+    ///   相册里 iPhone 的照片常常是 HEIC，以前是原样按 `ext=png` 传上去 ——
+    ///   台子存下来却打不开，抠图连着做 5 次全失败（线上 c1108233000 就是这么废的）。
+    ///   而且失败必须把台子那句话带回来：以前只回一个 false，页面什么都不说。
+    @discardableResult
+    static func charImg(charId: String, photo: Data) async throws -> String {
+        guard let img = UIImage(data: photo),
+              let jpg = img.jpegData(compressionQuality: 0.9) else {
+            throw LabError("这张照片读不出来，换一张试试")
+        }
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         var comp = URLComponents(string: base + "/api/act/charimg")!
         comp.queryItems = [URLQueryItem(name: "char", value: c),
-                           URLQueryItem(name: "ext", value: "png")]
+                           URLQueryItem(name: "ext", value: "jpg")]
         var req = URLRequest(url: comp.url!)
         req.httpMethod = "POST"
-        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
         req.stillStamp()
         req.timeoutInterval = 120
-        req.httpBody = png
-        guard let (_, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return false
+        let (data, resp) = try await URLSession.shared.upload(for: req, from: jpg)
+        guard let http = resp as? HTTPURLResponse else { throw LabError("没接到服务器的回话") }
+        let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        // 台子对「这一单没接」（单车道占着 / 正在维护）也是 200 + ok:false
+        if (o?["ok"] as? Bool) == false {
+            let why = (o?["错误"] as? String) ?? ""
+            throw LabError(why.isEmpty ? "这张图没换上去，再试一次" : why)
         }
-        return true
+        guard (200..<300).contains(http.statusCode) else {
+            throw 台子回错了(http.statusCode, data)
+        }
+        return (o?["说"] as? String) ?? "图换了，正在重做参考图"
     }
 
     /// ★ 2026-11-03：「重新处理」—— 让台子把这只的参考图重做一次（后台跑）。
@@ -476,15 +492,23 @@ enum ActLab {
 
     /// ★ 2026-11-05：参考图现在几点了 —— 有没有图 / 是不是正在做。
     ///   进页面先问它，决定显示"图 / 正在处理 / 开始处理按钮"。
-    static func refState(charId: String) async -> (has: Bool, building: Bool, coolLeft: Int) {
+    /// ★ 2026-11-09：除了「有没有图 / 在不在做」，还要把盘上那一单的真实状态读回来 ——
+    ///   `状态`（没做过/在做/好了/没做成/没做完）、`说`（没做成的原因）、`开工`（几点开始）。
+    ///   以前只读前三个旧字段，台子明明写了「这张图打不开」，页面上一个字都看不到，
+    ///   只能干等 4 分钟然后说「还没做好」。
+    static func refState(charId: String) async -> (has: Bool, building: Bool, coolLeft: Int,
+                                                   state: String, why: String, startedAt: Int) {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         guard let d = try? await rawGet("/api/wan/refstate?char=" + c, timeout: 12),
               let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
-            return (false, false, 0)
+            return (false, false, 0, "", "", 0)
         }
         return ((o["有图"] as? Bool) ?? false,
                 (o["正在做"] as? Bool) ?? false,
-                (o["冷却剩秒"] as? Int) ?? 0)
+                (o["冷却剩秒"] as? Int) ?? 0,
+                (o["状态"] as? String) ?? "",
+                (o["说"] as? String) ?? "",
+                (o["开工"] as? Int) ?? 0)
     }
 
     /// ★ 2026-11-05：台子是不是在维护（发版前的计划内重启）。

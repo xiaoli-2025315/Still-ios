@@ -38,6 +38,7 @@ struct HomeComposer: View {
     /// 它回的那句（左侧白气泡）
     @State private var reply = ""
     @State private var thinking = false
+    @State private var costText: String? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -180,6 +181,14 @@ struct HomeComposer: View {
                     Spacer(minLength: 44)
                 }
             }
+
+            // 这次花了多少，只显示台子真给的数，拿不到就不画。
+            if let c = costText, !thinking, !reply.isEmpty {
+                Text(c)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Tw.gray400)
+                    .padding(.leading, 12)
+            }
         }
         .padding(.horizontal, 16)
         .transition(.opacity)
@@ -257,11 +266,12 @@ struct HomeComposer: View {
         text = ""
         mine = m
         reply = ""
+        costText = nil
         thinking = true
         SoundKit.shared.tap()
 
         Task { @MainActor in
-            let r = await CatTalk.say(m)
+            let r = await CatTalk.say(m, onFinish: { c in costText = c })
             reply = r
             thinking = false
             pulse += 1

@@ -33,15 +33,27 @@ struct TalkPage: View {
     @State private var cats: [ActLab.Char] = []
     @State private var switching = ""
 
+    // 群聊：入口、挑中的猫、建群中、加载中、失败提示；标题上的群名（空 = 单聊）
+    @State private var showNewGroup = false
+    @State private var groupCats: [ActLab.Char] = []
+    @State private var picked: Set<String> = []
+    @State private var creating = false
+    @State private var loadingGroup = false
+    @State private var groupErr: String? = nil
+    @State private var groupTitle = ""
+
     struct Line: Identifiable {
         let id = UUID()
         let mine: Bool
-        let text: String
+        var text: String
+        var cost: String? = nil     // 回复下面那行小字，拿不到花费就不显示
+        var speaker: String? = nil  // 群聊里回话的那只猫
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            groupBar
             dialog
         }
         .background(Tw.gray50.ignoresSafeArea())
@@ -81,10 +93,10 @@ struct TalkPage: View {
             .buttonStyle(PressStyle(scale: 0.9))
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("跟它还说话")
+                Text(groupTitle.isEmpty ? "跟它还说话" : groupTitle)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Tw.gray900)
-                Text(busy ? "它在想…" : "说一句，它就应一句")
+                Text(busy ? "它在想…" : (groupTitle.isEmpty ? "说一句，它就应一句" : "几只猫一起听着"))
                     .font(.system(size: 11))
                     .foregroundStyle(Tw.gray400)
             }
@@ -131,20 +143,33 @@ struct TalkPage: View {
     private func bubble(_ l: Line) -> some View {
         HStack {
             if l.mine { Spacer(minLength: 40) }
-            Text(l.text)
-                .font(.system(size: 14))
-                .foregroundStyle(l.mine ? Tw.white : Tw.gray900)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(l.mine ? Tw.red600 : Tw.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(l.mine ? Color.clear : Tw.gray200, lineWidth: 1)
-                )
-                .textSelection(.enabled)
+            VStack(alignment: l.mine ? .trailing : .leading, spacing: 3) {
+                if !l.mine, let s = l.speaker, !s.isEmpty {
+                    Text(s)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Tw.gray400)
+                }
+                Text(l.text)
+                    .font(.system(size: 14))
+                    .foregroundStyle(l.mine ? Tw.white : Tw.gray900)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(l.mine ? Tw.red600 : Tw.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(l.mine ? Color.clear : Tw.gray200, lineWidth: 1)
+                    )
+                    .textSelection(.enabled)
+                // 每条回复下面一行小字：这次花了多少，只显示台子真给的数。
+                if !l.mine, let c = l.cost {
+                    Text(c)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Tw.gray400)
+                }
+            }
             if !l.mine { Spacer(minLength: 40) }
         }
     }
@@ -229,6 +254,148 @@ struct TalkPage: View {
 
     // MARK: - 起
 
+    // MARK: - 群聊
+
+    /// 常驻的一排：左边进群、右边回单聊。两个口子一直都在，不藏在条件里。
+    private var groupBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                showNewGroup = true
+                loadGroupCats()
+            } label: {
+                Text("＋ 新建群聊")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Tw.red600)
+            }
+            .buttonStyle(PressStyle(scale: 0.94))
+
+            Spacer(minLength: 0)
+
+            Button {
+                leaveGroup()
+            } label: {
+                Text("回到单聊")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Tw.gray500)
+            }
+            .buttonStyle(PressStyle(scale: 0.94))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Tw.white)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Tw.gray200).frame(height: 0.5)
+        }
+        .sheet(isPresented: $showNewGroup) { newGroupSheet }
+    }
+
+    /// 挑猫建群的那一页。
+    private var newGroupSheet: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if let e = groupErr {
+                    Text(e)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Tw.red600)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                } else if creating {
+                    Text("正在把猫凑到一起…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Tw.gray400)
+                        .padding()
+                } else if loadingGroup {
+                    Text("正在把猫找来…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Tw.gray400)
+                        .padding()
+                } else if picked.count < 2 {
+                    Text("多挑几只，才好一起聊")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Tw.gray400)
+                        .padding(.vertical, 8)
+                }
+                List {
+                    ForEach(groupCats) { c in
+                        Button {
+                            togglePick(c.id)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(c.title)
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(Tw.gray900)
+                                Spacer()
+                                if picked.contains(c.id) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(Tw.red600)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("拉几只猫一起聊")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关上") { showNewGroup = false }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("建群") { Task { await createGroup() } }
+                        .disabled(picked.count < 2 || creating)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func togglePick(_ id: String) {
+        if picked.contains(id) { _ = picked.remove(id) }
+        else { _ = picked.insert(id) }
+    }
+
+    private func loadGroupCats() {
+        picked = []
+        groupErr = nil
+        loadingGroup = true
+        Task {
+            do {
+                let list = try await ActLab.chars()
+                groupCats = list.filter { $0.dropped != true }
+            } catch {
+                groupErr = "没连上，等会儿再试"
+            }
+            loadingGroup = false
+        }
+    }
+
+    @MainActor
+    private func createGroup() async {
+        guard picked.count >= 2, !creating else { return }
+        creating = true
+        groupErr = nil
+        defer { creating = false }
+        let chosen = groupCats.filter { picked.contains($0.id) }
+        let ids = chosen.map { $0.id }
+        var names: [String: String] = [:]
+        for c in chosen { names[c.id] = c.title }
+        if let number = await CatBrain.createGroup(members: ids, names: names) {
+            CatBrain.saveGroup(number: number, members: ids, names: names,
+                               title: CatBrain.groupDefaultTitle)
+            groupTitle = CatBrain.groupDefaultTitle
+            showNewGroup = false
+        } else {
+            groupErr = "没连上，等会儿再试"
+        }
+    }
+
+    /// 退出群聊 / 回到单聊：清空当前群号（单聊时点了也无害）。
+    private func leaveGroup() {
+        CatBrain.clearGroup()
+        groupTitle = ""
+        showNewGroup = false
+    }
+
     /// 左边那张「猫列表」—— 点一只就换成它来聊（对齐安卓聊天页的侧栏）
     private var catList: some View {
         NavigationStack {
@@ -290,6 +457,9 @@ struct TalkPage: View {
     }
 
     private func boot() {
+        // 冷启动把上次那个群找回来；单聊就是空标题。
+        CatBrain.loadGroup()
+        groupTitle = CatBrain.group?.title ?? ""
         // ★ v48：整段记录都摆出来（以前只有最后一句）。
         //   老数据只有 last 那一句 —— 记录是空的就退回它，别让人以为记录被清了。
         let rows = ChatLog.all()
@@ -323,11 +493,33 @@ struct TalkPage: View {
         text = ""
         busy = true
         lines.append(Line(mine: true, text: m))
+        // 先摆一条空回复，流式收到字就往这条里填（主聊天页边收边显示）。
+        let waiting = Line(mine: false, text: "（它在想…）")
+        lines.append(waiting)
+        let rid = waiting.id
         pulse += 1                     // 发完还留在输入态，想接着说就接着打
 
         Task { @MainActor in
-            let reply = await CatTalk.say(m)
-            lines.append(Line(mine: false, text: reply))
+            let reply = await CatTalk.say(m,
+                onStream: { full in
+                    // 台子给的「当前完整回话」直接写进去（片段已追加、重来已替换）。
+                    if let i = lines.firstIndex(where: { $0.id == rid }) {
+                        lines[i].text = full
+                    }
+                },
+                onFinish: { cost in
+                    if let cost,
+                       let i = lines.firstIndex(where: { $0.id == rid }) {
+                        lines[i].cost = cost
+                    }
+                })
+            // 用返回值做最后对齐：中文错误提示、或断网回落的本地猫话，都落进气泡。
+            if let i = lines.firstIndex(where: { $0.id == rid }) {
+                lines[i].text = reply
+                if CatBrain.group != nil {
+                    lines[i].speaker = CatTalk.lastSpeakerName
+                }
+            }
             busy = false
             pulse += 1
         }

@@ -21,6 +21,7 @@ struct TalkSheet: View {
 
     @State private var text = ""
     @State private var reply: String?
+    @State private var costText: String?
     @State private var busy = false
     /// 推一下 = 再抢一次焦点
     @State private var pulse = 0
@@ -77,6 +78,14 @@ struct TalkSheet: View {
                     .lineLimit(2)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 2)
+                // 这次花了多少，只显示台子真给的数，拿不到就不画。
+                if let c = costText {
+                    Text(c)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(gray400)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 2)
+                }
             }
 
             // 抢不到键盘时，把卡在哪一步写出来。正常不显示。
@@ -135,8 +144,9 @@ struct TalkSheet: View {
         text = ""
         busy = true
         reply = "（它在听…）"
+        costText = nil
         Task { @MainActor in
-            reply = await CatTalk.say(m)
+            reply = await CatTalk.say(m, onFinish: { c in costText = c })
             busy = false
             pulse += 1          // 发完还留在输入态，想接着说就接着打
         }

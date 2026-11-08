@@ -38,6 +38,11 @@ enum CatTalk {
 
     private static let key = "still.talk.last"
 
+    /// 群聊里，这次是哪只猫回的话（台子返回「谁」→ 名字表里翻成名字）。
+    /// 单聊为 nil。聊天页在 say 返回后读它，给气泡标上那只猫的名字；
+    /// 客户端不自己选发言人，只认台子给的「谁」。
+    static var lastSpeakerName: String? = nil
+
     private static var defaults: UserDefaults? { UserDefaults(suiteName: SharedStore.suiteName) }
 
     static func last() -> Turn? {
@@ -57,7 +62,9 @@ enum CatTalk {
     ///   Siri 那边能 await（Intent 的 perform 本身就是异步的），
     ///   界面那边用 Task 包一下，都不影响「抬头」那一帧。
     @discardableResult
-    static func say(_ message: String) async -> String {
+    static func say(_ message: String,
+                    onStream: (@MainActor (String) -> Void)? = nil,
+                    onFinish: (@MainActor (String?) -> Void)? = nil) async -> String {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = PetName.current
 
@@ -74,10 +81,30 @@ enum CatTalk {
         //    壳没挂上的时候这句看不见，但也不亏 —— 回话一到就把它换掉。
         SayBubble.shared.say("它听见了…", seconds: 60)
 
-        // ③ 要一句回话。真 AI 优先；问不到（断网 / 没钥匙 / 模型抽风）
-        //    就掉回本地那套 —— 它永远不会不回你。
-        let reply = await CatBrain.replyFromCloud(to: m, catName: name)
-                    ?? CatBrain.reply(to: m, catName: name)
+        // ③ 要一句回话。统一问台子；问不到（断网 / 台子没回）才掉回本地那套。
+        //    传了 onStream 就走流式，边收边把当前回话交给界面。
+        let stage: CatBrain.StageReply?
+        if let onStream {
+            stage = await CatBrain.streamReply(to: m, catName: name, onText: onStream)
+        } else {
+            stage = await CatBrain.replyFromCloud(to: m, catName: name)
+        }
+        // 群聊：台子说这次是谁回的，翻成名字给聊天页标气泡用。单聊 / 没拿到就是 nil。
+        if let who = stage?.who, let g = CatBrain.group {
+            lastSpeakerName = g.names[who]
+        } else {
+            lastSpeakerName = nil
+        }
+        // 台子正常回话、或明确报错（中文提示直接显示），都算「有结果」；
+        // 网络失败、或台子既没回话也没给错误，才回落本地猫话 —— 它永远不会不回你。
+        let fromStage = stage.flatMap {
+            $0.errorText ?? ($0.reply.isEmpty ? nil : $0.reply)
+        }
+        let reply = fromStage ?? CatBrain.reply(to: m, catName: name)
+        // 花费小字只从台子返回值带出；没拿到就是 nil，界面不显示。
+        if let onFinish {
+            await onFinish(stage?.costText)
+        }
 
         if let d = defaults,
            let data = try? JSONEncoder().encode(Turn(mine: m, reply: reply, at: Date())) {

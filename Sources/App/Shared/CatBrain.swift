@@ -26,31 +26,28 @@ enum CatBrain {
     /// 实测模型回一句约 1 秒；给到 8 秒是为了地铁、电梯这种弱网也能等到，
     /// 再长就不等了 —— Siri 那边你举着手机干等，比回一句普通的更难熬。
     private static let cloudTimeout: TimeInterval = 8
+    /// 流式是挂着的连接，等模型一个字一个字吐，给足余量。
+    private static let streamTimeout: TimeInterval = 120
 
-    /// 问真 AI。**拿不到就返回 nil**（不是抛错）—— 调用方自己掉回本地那套。
+    /// 问真 AI —— **统一走台子** `/api/cat/chat`，不再直连用户自己填的钥匙。
+    /// 拿不到（断网 / 超时 / 台子没回）就返回 nil，调用方自己掉回本地那套。
     ///
-    /// ★★★ 2026-10-23（他的原话）：「IOS 也要可以加 key 啊，他是用户可以自己接入 API
-    ///   给每个角色的」。原来是「钥匙插在台子上」—— 用户想用自己的模型，
-    ///   只能在服务器上改，手机上根本没地方填。现在两条路：
-    ///
-    ///   ① **这只猫自己有一把钥匙** → 直连模型（智谱 / DeepSeek，跟安卓同两家同型号）；
-    ///   ② 没填，或者直连失败 → 走台子 `/api/cat/chat`（台子上插着的那把）。
-    ///
-    ///   ★ 为什么②不能砍：台子那条是「装完就能说话」的默认值。
-    ///     砍了以后，没填钥匙的人打开就是一只只会喵的猫，比现在更差。
-    ///   ★ 为什么①失败要静默掉回②、而不是报错：一句（蹭了蹭你）也比什么都不说好。
-    static func replyFromCloud(to message: String, catName: String) async -> String? {
+    /// ★ 为什么统一走台子：花费、余额都由台子记账，手机上自己接模型就绕过了账，
+    ///   也没法把「这次花了多少」显示给他。钥匙那一套留在下面只是设置页还在用，
+    ///   聊天不再走它。
+    static func replyFromCloud(to message: String, catName: String) async -> StageReply? {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !m.isEmpty else { return nil }
-
-        // ① 这只猫自己的钥匙
-        let k = key(for: currentCharId)
-        if !k.isEmpty, let r = await askModel(m, key: k, catName: catName) {
-            return r
-        }
-
-        // ② 台子
         return await askStage(m)
+    }
+
+    /// 同样是问台子，只是 `stream=1`：边收边把「当前完整回话」交给 onText，
+    /// 结束时才拿到「花了元」。拿不到就返回 nil。
+    static func streamReply(to message: String, catName: String,
+                            onText: @MainActor (String) -> Void) async -> StageReply? {
+        let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty else { return nil }
+        return await askStageStream(m, onText: onText)
     }
 
     // MARK: - 用户自己的钥匙（每只猫一把）
@@ -160,33 +157,267 @@ enum CatBrain {
         }
     }
 
-    /// 走台子那条（原来的路，钥匙在服务器上）。
-    private static func askStage(_ m: String) async -> String? {
-        let payload: [String: Any] = ["msg": m, "history": []]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+    // MARK: - 台子（唯一的一条聊天路）
 
-        var req = URLRequest(url: cloudURL)
-        req.stillStamp()      // ★ 登录制：贴票
+    /// 一次回话的结果。花费小字、中文错误都从台子返回值里来，拿不到就是 nil。
+    struct StageReply {
+        var reply: String = ""
+        var costText: String? = nil
+        var errorText: String? = nil
+        /// 台子说「这次是哪只猫回的」。单聊没有，群聊才带；客户端只认这个值，
+        /// 不自己选发言人、不轮流、不轮询。
+        var who: String? = nil
+    }
+
+    // MARK: - 群聊（当前选中的那个群）
+
+    /// 一个群：群号、成员、谁叫什么。建群成功后由聊天页存下，退出群聊时清掉。
+    /// ★ 台子负责判定「一条消息只让一只猫回」（点名 > 当场规矩 > 性格 > 最近没说话），
+    ///   客户端这里只记群信息 + 认返回的「谁」，不做任何轮流 / 轮询选发言人。
+    struct GroupInfo: Codable {
+        var number: String           // 群号
+        var members: [String]        // 成员 id
+        var names: [String: String]  // 名字表：id -> 名字
+        var title: String            // 标题上显示的群名
+    }
+
+    /// 当前所在的群。nil = 单聊（老逻辑原样，一个群字段都不带）。
+    static var group: GroupInfo? = nil
+
+    /// 建群时「随便一句中文」的群名，客户端标题跟台子用同一句。
+    static let groupDefaultTitle = "几只猫凑一桌"
+
+    private static let groupKey = "still.group.current"
+
+    static func saveGroup(number: String, members: [String],
+                          names: [String: String], title: String) {
+        let g = GroupInfo(number: number, members: members, names: names, title: title)
+        group = g
+        if let data = try? JSONEncoder().encode(g) {
+            UserDefaults.standard.set(data, forKey: groupKey)
+        }
+    }
+
+    /// 冷启动把上次那个群找回来（记住群成员与名字表）。
+    static func loadGroup() {
+        guard let data = UserDefaults.standard.data(forKey: groupKey),
+              let g = try? JSONDecoder().decode(GroupInfo.self, from: data) else {
+            group = nil
+            return
+        }
+        group = g
+    }
+
+    /// 退出群聊 / 回到单聊：清空当前群号。
+    static func clearGroup() {
+        group = nil
+        UserDefaults.standard.removeObject(forKey: groupKey)
+    }
+
+    /// 建群。票用 stillStamp()，body 用中文键；成功返回群号，连不上或台子没认就返回 nil。
+    /// ★ 失败一律由调用方翻成中文人话，这里不把英文错误 / JSON 递出去。
+    static func createGroup(members: [String], names: [String: String]) async -> String? {
+        guard members.count >= 2,
+              let url = URL(string:
+                "https://still-ui-design.app.workbuddy.host/api/group/create") else { return nil }
+        let payload: [String: Any] = [
+            "名字": groupDefaultTitle,
+            "成员": members,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+        var req = URLRequest(url: url)
+        req.stillStamp()                     // ★ 票用现成的，别自己写 Authorization
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = cloudTimeout
         req.httpBody = body
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["ok"] as? Bool == true,
+              let no = json["群号"] as? String, !no.isEmpty else { return nil }
+        return no
+    }
 
+    /// 组请求体。契约：msg / char / history / stream 必有；
+    /// 群聊时再补 群号 + 名字表，char 填群里任一只（台子自己定谁回）。
+    private static func stageBody(_ m: String, stream: Int) -> Data? {
+        // char 不许为空：单聊至少是内置那只，群聊用成员里的第一只。
+        let charId = currentCharId.isEmpty ? builtinId : currentCharId
+        var payload: [String: Any] = [
+            "msg": m,
+            "char": charId,
+            "history": [],
+            "stream": stream,
+        ]
+        if let g = group {
+            payload["群号"] = g.number
+            payload["名字表"] = g.names
+            if let first = g.members.first { payload["char"] = first }
+        }
+        return try? JSONSerialization.data(withJSONObject: payload)
+    }
+
+    private static func stageRequest(_ m: String, stream: Int) -> URLRequest? {
+        guard let body = stageBody(m, stream: stream) else { return nil }
+        var req = URLRequest(url: cloudURL)
+        req.stillStamp()                     // ★ 票用现成的，别自己写 Authorization
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(stream == 1 ? "text/event-stream" : "application/json",
+                     forHTTPHeaderField: "Accept")
+        req.timeoutInterval = stream == 1 ? streamTimeout : cloudTimeout
+        req.httpBody = body
+        return req
+    }
+
+    /// 「这次花了 X 元」。数字原样取自台子的「花了元」，不四舍五入、不编造。
+    private static func costText(_ json: [String: Any]) -> String? {
+        guard let n = json["花了元"] as? NSNumber else { return nil }
+        return "这次花了 \(n.stringValue) 元"
+    }
+
+    /// 整包结果（非流的响应 / 流式的 done、err）都翻成 StageReply。
+    private static func parse(_ json: [String: Any], fallbackReply: String) -> StageReply {
+        var r = StageReply(reply: fallbackReply)
+        // 整包 / 流式 done 块里都带「谁」：这次是哪只猫回的。客户端只认它。
+        r.who = json["谁"] as? String
+        if json["ok"] as? Bool == true {
+            if let t = json["reply"] as? String, !t.isEmpty { r.reply = t }
+            r.costText = costText(json)
+        } else {
+            r.reply = ""
+            r.errorText = json["错误"] as? String
+        }
+        return r
+    }
+
+    /// 走台子那条（非流式）：一次性读完整包，解析 reply / 花了元 / 错误。
+    /// 不是 2xx、断网、解析不出来都当「这次没问到」，调用方回落本地。
+    private static func askStage(_ m: String) async -> StageReply? {
+        guard let req = stageRequest(m, stream: 0) else { return nil }
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
-            // 不是 2xx 就当没问到 —— 台子 500 / 网关拦了 / 钥匙没插，都走这条路。
             guard let http = resp as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else { return nil }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  json["ok"] as? Bool == true,
-                  let text = json["reply"] as? String else { return nil }
-            let r = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return r.isEmpty ? nil : r
+                  (200..<300).contains(http.statusCode),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            var r = parse(json, fallbackReply: "")
+            r.reply = r.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+            return r
         } catch {
-            // 断网 / 超时 / 证书问题，一律当「这次没问到」，不惊动任何人。
             return nil
         }
+    }
+
+    /// 走台子那条（流式）：照 PackEvents 的 bytes(for:) 逐字节拼行，
+    /// 攒到空行（即 `\n\n`）就是一个事件，取块里的 `data: ` 行解析。
+    ///  · 片段 → 追加到当前回话
+    ///  · 重来 → 替换整个回话（不是追加）
+    ///  · done → 结束，这时才有「花了元」
+    ///  · err  → 中文错误提示
+    private static func askStageStream(_ m: String,
+                                       onText: @MainActor (String) -> Void) async -> StageReply? {
+        guard let req = stageRequest(m, stream: 1) else { return nil }
+        do {
+            let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+            guard let http = resp as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+
+            var line: [UInt8] = []            // 当前这一行的字节
+            var eventLines: [String] = []     // 当前事件攒下的 data 内容
+            var full = ""                     // 当前完整回话
+            var result: StageReply? = nil
+
+            for try await b in bytes {
+                if b == 10 {                  // \n
+                    let s = String(decoding: line, as: UTF8.self)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    line.removeAll(keepingCapacity: true)
+                    if s.isEmpty {
+                        // 空行 = 一个事件到齐（台子每行 `data: {...}\n\n`）。
+                        if !eventLines.isEmpty {
+                            let step = apply(lines: eventLines, full: &full)
+                            for text in step.texts { await onText(text) }
+                            if let r = step.result { result = r; break }   // done / err，收工
+                            eventLines.removeAll()
+                        }
+                    } else if s.hasPrefix("data:") {
+                        eventLines.append(
+                            String(s.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    // ": ping" 心跳等注释行一律跳过
+                } else {
+                    line.append(b)
+                }
+            }
+            // 连接被关掉前最后一块可能没跟空行，补一次。
+            if result == nil, !eventLines.isEmpty {
+                let step = apply(lines: eventLines, full: &full)
+                for text in step.texts { await onText(text) }
+                result = step.result
+            }
+            return result
+        } catch {
+            return nil
+        }
+    }
+
+    /// 处理一个事件攒下的 data 行（同步，不跨挂起点）。
+    /// 返回更新后的结果：该吐给界面的文本快照，以及是否该收工（done / err）。
+    private static func apply(lines: [String], full: inout String)
+        -> (result: StageReply?, texts: [String]) {
+        var result: StageReply? = nil
+        var texts: [String] = []
+        for jsonStr in lines {
+            guard let d = jsonStr.data(using: .utf8),
+                  let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+            else { continue }
+            let t = j["类型"] as? String ?? ""
+            switch t {
+            case "片段":
+                full += (j["字"] as? String) ?? ""
+                texts.append(full)
+            case "重来":
+                full = (j["字"] as? String) ?? ""
+                texts.append(full)
+            case "done":
+                var r = parse(j, fallbackReply: full)
+                if r.reply.isEmpty { r.reply = full }
+                full = r.reply
+                texts.append(r.reply)
+                result = r
+            case "err":
+                result = parse(j, fallbackReply: full)
+            default:
+                break
+            }
+            if result != nil { break }
+        }
+        return (result, texts)
+    }
+
+    // MARK: - 聊天钱包（设置页那一行）
+
+    /// 设置页的「还剩 / 今天 / 本月」。只走 GET /api/chat/wallet，
+    /// 取不到、或三个数没齐，就返回 nil —— 界面整行不显示，绝不拿 0 冒充。
+    /// ★ 动作生成那个钱包是 ActLab 的 /api/wallet，别混；这是聊天的另一个口。
+    static func walletLine() async -> String? {
+        guard let url = URL(string:
+            "https://still-ui-design.app.workbuddy.host/api/chat/wallet") else { return nil }
+        var req = URLRequest(url: url)
+        req.stillStamp()
+        req.httpMethod = "GET"
+        req.timeoutInterval = 10
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["ok"] as? Bool == true,
+              let a = json["剩余元"] as? NSNumber,
+              let b = json["今天已花元"] as? NSNumber,
+              let c = json["本月已花元"] as? NSNumber else { return nil }
+        return "还剩 \(a.stringValue) 元\n今天花了 \(b.stringValue) 元\n本月花了 \(c.stringValue) 元"
     }
 
     /// 本地那套：规则匹配（你好 / 吃饭 / 想你 / 名字…）+ 兜底随机一句猫味的话。

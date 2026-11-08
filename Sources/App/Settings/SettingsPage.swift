@@ -16,6 +16,8 @@ struct SettingsPage: View {
     // 大脑的钥匙：跟 StatusPanelView 一样，每只猫一把
     @State private var brainKey = ""
     @State private var brainNote = ""
+    /// 聊天钱包那一行：取不到就整行不显示。
+    @State private var walletText: String? = nil
     @State private var showBrain = false
     @State private var showDispatch = false
     @State private var showTapSheet = false
@@ -39,6 +41,11 @@ struct SettingsPage: View {
                     row("按键声", SoundKit.tapNames[SoundKit.shared.tapKind],
                         tappable: true) { showTapSheet = true }
                     divider()
+                    // 聊天钱包：异步问台子，取不到整行不画，不拿 0 冒充。
+                    if let w = walletText {
+                        walletRow(w)
+                        divider()
+                    }
                     // ★ 「关于」不能是 Button：row() 本身就是 Button，套一层会双按钮嵌套。
                     //   用普通行 + 点击计数：3 秒内连点 5 下 = 截当前画面传回台子。
                     HStack {
@@ -94,6 +101,7 @@ struct SettingsPage: View {
         .onAppear {
             brainKey = CatBrain.key(for: brainCharId)
             refreshBrainNote()
+            Task { walletText = await CatBrain.walletLine() }
         }
         // 连接大脑
         .sheet(isPresented: $showBrain) {
@@ -149,6 +157,21 @@ struct SettingsPage: View {
         Rectangle()
             .fill(Cfg.Palette.line.opacity(0.18))
             .frame(height: 0.8)
+    }
+
+    /// 聊天钱包那一行：三个数都从接口来，缺一个整行就不画。
+    private func walletRow(_ w: String) -> some View {
+        HStack(alignment: .top) {
+            Text("花费")
+                .font(.system(size: 15))
+                .foregroundStyle(Cfg.Palette.ink)
+            Spacer()
+            Text(w)
+                .font(.system(size: 12))
+                .foregroundStyle(Cfg.Palette.faint)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 16)
     }
 
     // MARK: - 数据

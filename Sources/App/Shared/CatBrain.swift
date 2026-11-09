@@ -239,6 +239,71 @@ enum CatBrain {
         return no
     }
 
+    // MARK: - 群管理（列群 / 改群名 / 拉人 / 踢人）
+    //
+    // ★ 2026-11-10：拉人、踢人、列群台子早就有，两端一直没接；改群名是本轮新加的。
+    //   全走现成的票（stillStamp）；失败只把台子那句人话带回去，不自己编理由。
+
+    struct GroupRow: Identifiable {
+        var id: String { number }
+        let number: String
+        let name: String
+        let members: [String]
+        let rules: Int
+    }
+
+    /// 列我名下的群。ok=false ＝ 没连上／没认票，跟「一个群都没有」是两回事。
+    static func listGroups() async -> (ok: Bool, 群: [GroupRow]) {
+        guard let d = try? await ActLab.rawGet("/api/group/list", timeout: 20),
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+              (o["ok"] as? Bool) == true,
+              let arr = o["群"] as? [[String: Any]] else { return (false, []) }
+        let rows: [GroupRow] = arr.compactMap { g in
+            let no = (g["群号"] as? String) ?? ""
+            guard !no.isEmpty else { return nil }
+            return GroupRow(number: no,
+                            name: (g["名字"] as? String) ?? "",
+                            members: (g["成员"] as? [String]) ?? [],
+                            rules: (g["规矩"] as? Int) ?? 0)
+        }
+        return (true, rows)
+    }
+
+    /// 群管理四条 POST 共用：不管 HTTP 码是多少，都把台子正文里的「错误」读回来。
+    /// （空群名 / 没有这个群这类，台子会回 400/404 + 一句人话，不能丢。）
+    private static func 群管理(_ path: String, _ body: [String: Any]) async -> (ok: Bool, 错误: String) {
+        guard let url = URL(string: ActLab.base + path),
+              let raw = try? JSONSerialization.data(withJSONObject: body) else {
+            return (false, "没连上，等会儿再试")
+        }
+        var req = URLRequest(url: url)
+        req.stillStamp()
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.timeoutInterval = 30
+        req.httpBody = raw
+        guard let (d, _) = try? await URLSession.shared.data(for: req),
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
+            return (false, "没连上，等会儿再试")
+        }
+        let ok = (o["ok"] as? Bool) ?? false
+        let why = (o["错误"] as? String) ?? ""
+        return (ok, ok ? "" : (why.isEmpty ? "没做成，等会儿再试" : why))
+    }
+
+    static func renameGroup(number: String, name: String) async -> (ok: Bool, 错误: String) {
+        await 群管理("/api/group/rename", ["群号": number, "名字": name])
+    }
+
+    static func addToGroup(number: String, char: String) async -> (ok: Bool, 错误: String) {
+        await 群管理("/api/group/add", ["群号": number, "char": char])
+    }
+
+    static func removeFromGroup(number: String, char: String) async -> (ok: Bool, 错误: String) {
+        await 群管理("/api/group/remove", ["群号": number, "char": char])
+    }
+
     /// 组请求体。契约：msg / char / history / stream 必有；
     /// 群聊时再补 群号 + 名字表，char 填群里任一只（台子自己定谁回）。
     private static func stageBody(_ m: String, stream: Int) -> Data? {

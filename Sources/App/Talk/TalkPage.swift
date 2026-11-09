@@ -42,6 +42,21 @@ struct TalkPage: View {
     @State private var groupErr: String? = nil
     @State private var groupTitle = ""
 
+    // ★ 2026-11-10：侧栏（从左边出 + 顶上两个分页）、群列表、群设置
+    @State private var drawerTab = 0              // 0 = 群聊，1 = 单人对话框
+    @State private var groups: [CatBrain.GroupRow] = []
+    @State private var groupListErr = ""
+    @State private var loadingGroups = false
+    @State private var showGroupSettings = false
+    /// 群设置页自己留一份当前群，改完就地刷新（CatBrain.group 是静态值，视图不会自己重画）
+    @State private var setNumber = ""
+    @State private var setTitle = ""
+    @State private var setMembers: [String] = []
+    @State private var setNames: [String: String] = [:]
+    @State private var setNameInput = ""
+    @State private var setBusy = false
+    @State private var setErr = ""
+
     struct Line: Identifiable {
         let id = UUID()
         let mine: Bool
@@ -51,22 +66,38 @@ struct TalkPage: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            groupBar
-            dialog
+        // ★★ 2026-11-10（他报的「侧栏不是从左侧出来而是从下边出」）：
+        //   猫列表不再用系统那种「从底部升起的卡片」，换成贴左边进出的抽屉 + 遮罩，
+        //   跟安卓 ChatV2Activity 的 Gravity.START 一个样子。
+        ZStack(alignment: .leading) {
+            VStack(spacing: 0) {
+                header
+                dialog
+            }
+            .background(Tw.gray50.ignoresSafeArea())
+            // ★★★★ 2026-11-09（他定）：**只在这一页**浮一只，形式跟安卓浮窗一样。
+            //   挂在 safeAreaInset 之前 ⇒ 它的活动范围就是气泡那一块，压不到下面输入条；
+            //   退出聊天页这一层跟着销毁，不会跑到别的页、更不会跨 App。
+            //   ★ 主页那个展示框仍是上一轮改好的「只展示、不许碰」，两者互不牵连。
+            .overlay { TalkFloatPet() }
+            // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
+            //   不用自己算键盘高度，也不会被挡住。
+            .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
+            .onAppear(perform: boot)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if showCats {
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation { showCats = false } }
+                sideBar
+                    .frame(width: min(UIScreen.main.bounds.width * 0.82, CGFloat(320)))
+                    .transition(.move(edge: .leading))
+            }
         }
-        .background(Tw.gray50.ignoresSafeArea())
-        // ★★★★ 2026-11-09（他定）：**只在这一页**浮一只，形式跟安卓浮窗一样。
-        //   挂在 safeAreaInset 之前 ⇒ 它的活动范围就是气泡那一块，压不到下面输入条；
-        //   退出聊天页这一层跟着销毁，不会跑到别的页、更不会跨 App。
-        //   ★ 主页那个展示框仍是上一轮改好的「只展示、不许碰」，两者互不牵连。
-        .overlay { TalkFloatPet() }
-        // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
-        //   不用自己算键盘高度，也不会被挡住。
-        .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
-        .onAppear(perform: boot)
-        .sheet(isPresented: $showCats) { catList }
+        .animation(.easeOut(duration: 0.22), value: showCats)
+        .sheet(isPresented: $showNewGroup) { newGroupSheet }
+        .sheet(isPresented: $showGroupSettings) { groupSettingsSheet }
     }
 
     // MARK: - 顶栏
@@ -74,9 +105,9 @@ struct TalkPage: View {
     private var header: some View {
         HStack(spacing: 10) {
             // ★ 2026-10-31：左边那颗「换一只」—— 安卓聊天页左边是猫列表
+            // ★ 2026-11-10：现在拉开的是贴左边的会话栏（群聊 / 单人对话框两个分页）
             Button {
-                showCats = true
-                loadCats()
+                openDrawer()
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 13, weight: .semibold))
@@ -106,6 +137,20 @@ struct TalkPage: View {
                     .foregroundStyle(Tw.gray400)
             }
             Spacer(minLength: 0)
+
+            // ★ 2026-11-10：群聊右上角的「设置」—— 拉人 / 改群名 / 踢人。
+            //   常驻，不加显示条件：没在群里时点开会照实说「先在左边点一个群」。
+            Button {
+                syncSettings()
+                showGroupSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Tw.gray500)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Tw.gray100))
+            }
+            .buttonStyle(PressStyle(scale: 0.9))
         }
         .padding(.horizontal, 16)
         .padding(.top, 6)
@@ -261,37 +306,177 @@ struct TalkPage: View {
 
     // MARK: - 群聊
 
-    /// 常驻的一排：左边进群、右边回单聊。两个口子一直都在，不藏在条件里。
-    private var groupBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                showNewGroup = true
-                loadGroupCats()
-            } label: {
-                Text("＋ 新建群聊")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Tw.red600)
-            }
-            .buttonStyle(PressStyle(scale: 0.94))
+    // MARK: - 左边的会话栏（贴左边出，顶上两个分页）
 
-            Spacer(minLength: 0)
-
-            Button {
-                leaveGroup()
-            } label: {
-                Text("回到单聊")
-                    .font(.system(size: 12.5, weight: .medium))
+    /// ★ 2026-11-10（他报的两处）：
+    ///   ① 「建群聊」原来挂在顶栏下面那条独立横排，现在照安卓放进会话栏；
+    ///   ② 侧栏从左边出来，不再是从底部升起的半屏卡片。
+    ///   顶部两个分页「群聊 / 单人对话框」—— 群列表不再堆在单人列表下面。
+    ///   底下「＋ 新建群聊」「回到单聊」两颗常驻，不藏在条件里。
+    private var sideBar: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("聊天")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Tw.gray900)
+                Spacer(minLength: 0)
+                Button("关上") { withAnimation { showCats = false } }
+                    .font(.system(size: 13))
                     .foregroundStyle(Tw.gray500)
             }
-            .buttonStyle(PressStyle(scale: 0.94))
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 10)
+
+            HStack(spacing: 0) {
+                drawerTabButton("群聊", 0)
+                drawerTabButton("单人对话框", 1)
+            }
+            .padding(4)
+            .background(Tw.gray100)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+
+            if drawerTab == 0 { groupTab } else { singleTab }
+
+            VStack(spacing: 0) {
+                Rectangle().fill(Tw.gray200).frame(height: 0.5)
+                Button {
+                    showNewGroup = true
+                    loadGroupCats()
+                } label: {
+                    Text("＋ 新建群聊")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Tw.red600)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
+                }
+                .buttonStyle(PressStyle(scale: 0.98))
+                Rectangle().fill(Tw.gray100).frame(height: 0.5)
+                Button {
+                    leaveGroup()
+                    withAnimation { showCats = false }
+                } label: {
+                    Text("回到单聊")
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Tw.gray600)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
+                }
+                .buttonStyle(PressStyle(scale: 0.98))
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Tw.white)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Tw.gray200).frame(height: 0.5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Tw.white.ignoresSafeArea())
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Tw.gray200).frame(width: 0.5)
         }
-        .sheet(isPresented: $showNewGroup) { newGroupSheet }
+    }
+
+    private func drawerTabButton(_ title: String, _ idx: Int) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { drawerTab = idx }
+        } label: {
+            Text(title)
+                .font(.system(size: 13, weight: drawerTab == idx ? .semibold : .regular))
+                .foregroundStyle(drawerTab == idx ? Tw.gray900 : Tw.gray400)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(drawerTab == idx ? Tw.white : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 群聊分页：台子真给过的群，点一个就进那个群。
+    private var groupTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if loadingGroups {
+                    HStack(spacing: 8) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("正在把群找来…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Tw.gray400)
+                    }
+                    .padding(.vertical, 14)
+                } else if !groupListErr.isEmpty {
+                    Text(groupListErr)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Tw.red600)
+                        .padding(.vertical, 14)
+                } else if groups.isEmpty {
+                    Text("还没有群 —— 点下面「＋ 新建群聊」凑一桌")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Tw.gray400)
+                        .padding(.vertical, 14)
+                } else {
+                    ForEach(groups) { g in
+                        Button {
+                            Task { await enterGroup(g) }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(g.name.isEmpty ? "小群" : g.name)
+                                    .font(.system(size: 14.5))
+                                    .foregroundStyle(Tw.gray900)
+                                Spacer(minLength: 0)
+                                if CatBrain.group?.number == g.number {
+                                    Text("在聊")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Tw.red600)
+                                }
+                            }
+                            .padding(.vertical, 11)
+                        }
+                        .buttonStyle(.plain)
+                        Rectangle().fill(Tw.gray100).frame(height: 0.5)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// 单人对话框分页：点一只就换成它来聊。
+    private var singleTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(cats) { c in
+                    Button {
+                        Task { await pick(c) }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Text(c.name)
+                                .font(.system(size: 14.5))
+                                .foregroundStyle(Tw.gray900)
+                            Spacer(minLength: 0)
+                            if c.id == CatBrain.currentCharId {
+                                Text("在用").font(.system(size: 11)).foregroundStyle(Tw.gray400)
+                            } else if switching == c.id {
+                                Text("在换…").font(.system(size: 11)).foregroundStyle(Tw.gray400)
+                            }
+                        }
+                        .padding(.vertical, 11)
+                    }
+                    .buttonStyle(.plain)
+                    Rectangle().fill(Tw.gray100).frame(height: 0.5)
+                }
+                if cats.isEmpty {
+                    Text("没找到猫 —— 关上再开一次就好")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Tw.gray400)
+                        .padding(.vertical, 14)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(maxHeight: .infinity)
     }
 
     /// 挑猫建群的那一页。
@@ -389,6 +574,8 @@ struct TalkPage: View {
                                title: CatBrain.groupDefaultTitle)
             groupTitle = CatBrain.groupDefaultTitle
             showNewGroup = false
+            drawerTab = 0
+            loadGroups()        // ★ 新群要立刻出现在侧栏「群聊」里
         } else {
             groupErr = "没连上，等会儿再试"
         }
@@ -399,41 +586,206 @@ struct TalkPage: View {
         CatBrain.clearGroup()
         groupTitle = ""
         showNewGroup = false
+        syncSettings()
     }
 
-    /// 左边那张「猫列表」—— 点一只就换成它来聊（对齐安卓聊天页的侧栏）
-    private var catList: some View {
+    // MARK: - 会话栏 / 群设置的活
+
+    private func openDrawer() {
+        // 现在在群聊就停在「群聊」，单聊就停在「单人对话框」
+        drawerTab = (CatBrain.group == nil) ? 1 : 0
+        loadCats()
+        loadGroups()
+        withAnimation { showCats = true }
+    }
+
+    private func loadGroups() {
+        loadingGroups = true
+        Task {
+            let r = await CatBrain.listGroups()
+            loadingGroups = false
+            if r.ok {
+                groups = r.群
+                groupListErr = ""
+            } else {
+                // ★ 查不到就说查不到，不把「还没连上」当成「一个群都没有」
+                groupListErr = "没连上，等会儿再试"
+            }
+        }
+    }
+
+    /// 点侧栏里的一个群：把台子给的成员与群号装进当前群，标题换成台子上那个群名。
+    @MainActor
+    private func enterGroup(_ g: CatBrain.GroupRow) async {
+        if cats.isEmpty, let l = try? await ActLab.chars() {
+            cats = l.filter { $0.dropped != true }
+        }
+        var names: [String: String] = [:]
+        for id in g.members {
+            if let c = cats.first(where: { $0.id == id }) { names[id] = c.name }
+        }
+        let title = g.name.isEmpty ? "小群" : g.name
+        CatBrain.saveGroup(number: g.number, members: g.members,
+                           names: names, title: title)
+        groupTitle = title
+        lines = []
+        boot()
+        withAnimation { showCats = false }
+    }
+
+    // MARK: - 群设置（右上角「设置」→ 拉人 / 改群名 / 踢人）
+
+    /// 名下这些猫里，还没进当前这个群的（拉人用）。
+    private var 可拉的猫: [ActLab.Char] {
+        cats.filter { !setMembers.contains($0.id) }
+    }
+
+    private func syncSettings() {
+        let g = CatBrain.group
+        setNumber = g?.number ?? ""
+        setTitle = g?.title ?? ""
+        setMembers = g?.members ?? []
+        setNames = g?.names ?? [:]
+        setNameInput = g?.title ?? ""
+        setErr = ""
+        loadCats()
+    }
+
+    private var groupSettingsSheet: some View {
         NavigationStack {
             List {
-                ForEach(cats) { c in
-                    Button {
-                        Task { await pick(c) }
-                    } label: {
-                        HStack(spacing: 10) {
-                            Text(c.name)
-                                .font(.system(size: 15))
-                                .foregroundStyle(Tw.gray900)
-                            Spacer()
-                            if c.id == CatBrain.currentCharId {
-                                Text("在用")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Tw.gray400)
-                            } else if switching == c.id {
-                                Text("在换…").font(.system(size: 11)).foregroundStyle(Tw.gray400)
+                if setNumber.isEmpty {
+                    Section {
+                        Text("现在没在群里 —— 先在左边「群聊」里点一个群，或者新建一个。")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Tw.gray500)
+                        Button("去群聊") {
+                            showGroupSettings = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                openDrawer()
                             }
                         }
                     }
+                } else {
+                    Section("群名") {
+                        HStack {
+                            TextField("给这个群起个名", text: $setNameInput)
+                                .font(.system(size: 14))
+                            Button("保存") { Task { await saveGroupName() } }
+                                .disabled(setBusy || setNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    Section("拉一只进来") {
+                        if 可拉的猫.isEmpty {
+                            Text("名下这些猫都已经在群里了")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Tw.gray400)
+                        } else {
+                            ForEach(可拉的猫) { c in
+                                Button { Task { await addMember(c) } } label: {
+                                    HStack {
+                                        Text(c.name).foregroundStyle(Tw.gray900)
+                                        Spacer(minLength: 0)
+                                        Text("拉进来")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Tw.red600)
+                                    }
+                                }
+                                .disabled(setBusy)
+                            }
+                        }
+                    }
+                    Section("群里的猫 · 点一下请它离开") {
+                        ForEach(setMembers, id: \.self) { id in
+                            Button { Task { await removeMember(id) } } label: {
+                                HStack {
+                                    Text(setNames[id] ?? id).foregroundStyle(Tw.gray900)
+                                    Spacer(minLength: 0)
+                                    Text("请它离开")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Tw.gray500)
+                                }
+                            }
+                            .disabled(setBusy)
+                        }
+                    }
+                }
+                if !setErr.isEmpty {
+                    Section {
+                        Text(setErr).font(.system(size: 12.5)).foregroundStyle(Tw.red600)
+                    }
                 }
             }
-            .navigationTitle("跟谁聊")
+            .navigationTitle("群设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("关上") { showCats = false }
+                    Button("关上") { showGroupSettings = false }
                 }
             }
         }
         .presentationDetents([.medium, .large])
+        .onAppear { syncSettings() }
+    }
+
+    @MainActor
+    private func saveGroupName() async {
+        let n = setNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, !setNumber.isEmpty, !setBusy else { return }
+        setBusy = true
+        defer { setBusy = false }
+        let r = await CatBrain.renameGroup(number: setNumber, name: n)
+        if r.ok {
+            setTitle = n
+            groupTitle = n
+            CatBrain.saveGroup(number: setNumber, members: setMembers,
+                               names: setNames, title: n)
+            loadGroups()
+            setErr = ""
+        } else {
+            setErr = r.错误
+        }
+    }
+
+    @MainActor
+    private func addMember(_ c: ActLab.Char) async {
+        guard !setNumber.isEmpty, !setBusy else { return }
+        setBusy = true
+        defer { setBusy = false }
+        let r = await CatBrain.addToGroup(number: setNumber, char: c.id)
+        if r.ok {
+            var m = setMembers
+            if !m.contains(c.id) { m.append(c.id) }
+            var n = setNames
+            n[c.id] = c.name
+            setMembers = m
+            setNames = n
+            CatBrain.saveGroup(number: setNumber, members: m, names: n, title: setTitle)
+            loadGroups()
+            setErr = ""
+        } else {
+            setErr = r.错误
+        }
+    }
+
+    @MainActor
+    private func removeMember(_ id: String) async {
+        guard !setNumber.isEmpty, !setBusy else { return }
+        setBusy = true
+        defer { setBusy = false }
+        let r = await CatBrain.removeFromGroup(number: setNumber, char: id)
+        if r.ok {
+            let m = setMembers.filter { $0 != id }
+            var n = setNames
+            n.removeValue(forKey: id)
+            setMembers = m
+            setNames = n
+            CatBrain.saveGroup(number: setNumber, members: m, names: n, title: setTitle)
+            loadGroups()
+            setErr = ""
+        } else {
+            setErr = r.错误
+        }
     }
 
     private func loadCats() {

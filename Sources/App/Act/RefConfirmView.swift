@@ -342,7 +342,8 @@ struct RefConfirmView: View {
                     .foregroundStyle(Tw.gray400)
                     .padding(.top, 6)
             }
-            Text(processing ? "正在做参考图，等它做完再换" : "点一下那张图可以换一张")
+            Text(processing ? "正在做参考图，等它做完再换"
+                 : (hasNewPhoto ? "换了新图 —— 先点「开始处理参考图」" : "点一下那张图可以换一张"))
                 .font(.system(size: 11))
                 .foregroundStyle(Tw.gray400)
                 .padding(.top, 10)
@@ -368,6 +369,13 @@ struct RefConfirmView: View {
                     processing = false
                     refTimedOut = false
                     hasNewPhoto = true
+                    // ★ 2026-11-10（他报的「换了图处理，还是上一张处理的图」）：
+                    //   旧的那张「处理过的参考图」跟这张新照片已经不是一回事了，
+                    //   先把它收起来 ⇒ 露出「开始处理参考图」，「开始生成」也不许点。
+                    //   新照片会在他真点处理/重做的那一刻传上台子（不悄悄开工、不花额度）。
+                    refHas = false
+                    refBuilding = false
+                    refErr = ""
                     await onPhotoChanged(d)
                 }
                 swapBusy = false
@@ -389,11 +397,40 @@ struct RefConfirmView: View {
 
     /// 等参考图出来。`自动开工` 只在"用户按了开始处理"时为 true（那时才发起）；
     /// 其它情况只是**等**台子上已经在跑的那一次，绝不重复发起（避免重复花额度）。
+    /// ★★ 2026-11-10（他报的「换了图处理，还是上一张处理的图」）：
+    ///   换过图时，**先传新图**（台子会用它重做参考图），再等**新做出来的那张**；
+    ///   以前只带着角色号去让台子重做，台子从盘上拿的是旧照片 ⇒ 永远还是上一张。
     private func watchRef(自动开工: Bool = false) async {
         processing = true
         refTimedOut = false
         refErr = ""
-        if 自动开工 {
+        // 先记住「开这一单之前」的那张参考图和那一单的号，用来分辨后来拿到的是不是新图
+        let 开单前 = await ActLab.refState(charId: charId)
+        let 旧图 = await fetchRefData()
+        var 等新图 = false
+        var 要发起 = 自动开工
+
+        if hasNewPhoto {
+            do {
+                _ = try await ActLab.charImg(charId: charId, photo: photo)
+                hasNewPhoto = false
+                等新图 = true
+                refHas = false
+                refBuilding = true
+                要发起 = false     // 台子收到新图就自己开工了，别再发一次 rebuild
+                let s = await ActLab.refState(charId: charId)
+                if !s.单号.isEmpty { ref单号 = s.单号 }
+                if s.startedAt > 0 { ref开工 = s.startedAt }
+            } catch {
+                // 传不上去就照实说；「有新图等着」这个状态留着，再点一次还能重试
+                refErr = error.localizedDescription
+                refBuilding = false
+                processing = false
+                return
+            }
+        }
+
+        if 要发起 {
             // ★ 2026-11-09：真读台子回执（ok / 错误 / 单号），不再白等 4 分钟
             let r = await ActLab.wanRebuild(charId: charId, force: true)
             if !r.ok {
@@ -410,24 +447,34 @@ struct RefConfirmView: View {
                 refBuilding = true
             }
         }
+
+        var 见过在做 = false
         for _ in 0..<80 {
-            if let ui = await fetchRef() {
-                refImage = ui
-                refHas = true
-                refBuilding = false
-                processing = false
-                return
-            }
-            // ★ 2026-11-09：每轮顺手看一眼台子盘上那一单 ——
-            //   已经判「没做成 / 没做完」就立刻停，把原因照实说出来；
-            //   以前不管成没成都要白等 4 分钟，最后只说一句「还没做好」。
             let s = await ActLab.refState(charId: charId)
+            if s.building { 见过在做 = true }
+            // ★ 2026-11-09：台子明说没做成 / 没做完才停，把原因照实说出来；
+            //   不按「查不到 / 等太久」自己编理由。
             if !s.building && (s.state == "没做成" || s.state == "没做完") {
                 refErr = s.why.isEmpty ? "这一单没做成" : s.why
                 refTimedOut = true
                 refBuilding = false
                 processing = false
                 return
+            }
+            if let d = await fetchRefData() {
+                // 不是换图那条路：拿到图就算好（沿用原来的口径）。
+                // 换过图：必须等「跟旧图不一样的那张」，或者台子明说这一单收了工。
+                let 跟旧图不同 = 旧图.map { d != $0 } ?? true
+                let 是新单 = (!s.单号.isEmpty && s.单号 != 开单前.单号)
+                             || s.startedAt > 开单前.startedAt
+                let 收工了 = 见过在做 && !s.building && 是新单
+                if !等新图 || 跟旧图不同 || 收工了 {
+                    refImage = UIImage(data: d)
+                    refHas = true
+                    refBuilding = false
+                    processing = false
+                    return
+                }
             }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
@@ -437,50 +484,26 @@ struct RefConfirmView: View {
     }
 
     private func fetchRef() async -> UIImage? {
+        guard let d = await fetchRefData() else { return nil }
+        return UIImage(data: d)
+    }
+
+    /// 直接拿字节：换图之后要靠它分「新做出来的」和「上一张留在盘上的」。
+    private func fetchRefData() async -> Data? {
         guard !charId.isEmpty else { return nil }
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         guard let url = URL(string: ActLab.base + "/api/wan/ref?char=" + c) else { return nil }
         do {
             let (d, resp) = try await URLSession.shared.data(from: url)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            return UIImage(data: d)
+            return d
         } catch { return nil }
     }
 
     private func rebuild() async {
-        processing = true
-        refErr = ""
-        if hasNewPhoto, let d = photo as Data? {
-            // 换过图：先把新图传到台子（台子会用新图重做）
-            // ★ 2026-11-09：传不上去要说原因，而且要留住「有新图待重做」这个状态 ——
-            //   以前 `_ = await` 把结果丢掉，图没传上去、页面却开始干等，
-            //   看着就像「点了重新处理但什么也没发生」。
-            do {
-                _ = try await ActLab.charImg(charId: charId, photo: d)
-                hasNewPhoto = false
-            } catch {
-                refErr = error.localizedDescription
-                processing = false
-                refTimedOut = true
-                return
-            }
-            await watchRef()
-            return
-        }
-        // ★ 2026-11-09：真读台子回执，ok:false 就把「错误」原话摆出来并停止轮询，
-        //   不再傻等 4 分钟。
-        let r = await ActLab.wanRebuild(charId: charId, force: true)
-        if !r.ok {
-            if !r.错误.isEmpty {
-                refErr = r.错误
-                refBuilding = false
-                processing = false
-                return
-            }
-        } else if !r.单号.isEmpty {
-            ref单号 = r.单号
-        }
-        await watchRef()
+        // ★ 2026-11-10：换图上传、等新图、真读回执全收在 watchRef 一处，
+        //   「开始处理」「重新处理」「进页面接着等」三条路不再各走一套。
+        await watchRef(自动开工: true)
     }
 
 
@@ -551,6 +574,12 @@ struct RefConfirmView: View {
 
     /// 真下单：成功才往外走；失败把原因留下（尤其余额不足）。
     private func placeOrder() async {
+        // ★ 2026-11-10：换了新图还没处理完，绝不能拿旧参考图去下单。
+        //   正常走不到这里（这颗按钮这时是收起来的），兜一道更稳。
+        if hasNewPhoto {
+            orderErr = "换了新图 —— 先点「开始处理参考图」，做好了再开始生成"
+            return
+        }
         if ordering { return }
         ordering = true
         orderErr = nil

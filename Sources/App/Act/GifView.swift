@@ -299,3 +299,33 @@ struct GifView: View {
 
 // MARK: - 圆环进度
 
+/// ★★★ 2026-11-10（他报的「动作库里制作过程中那些进度都没显示了」）：
+///   把圆环补回来。**只有台子真给了百分比才画**（抠像那一段按帧数算出来的真数），
+///   生成中绝不画圈、绝不给数字 —— 那段机器没报过进度，写了就是编的。
+struct RingProgress: View {
+    let pct: Int
+    var word: String = ""
+    private var v: Int { max(0, min(100, pct)) }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .stroke(Tw.gray200, lineWidth: 4)
+                Circle()
+                    .trim(from: 0, to: CGFloat(v) / 100)
+                    .stroke(Tw.gray900, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(v)%")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Tw.gray900)
+            }
+            .frame(width: 64, height: 64)
+            if !word.isEmpty {
+                Text(word)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray500)
+            }
+        }
+    }
+}

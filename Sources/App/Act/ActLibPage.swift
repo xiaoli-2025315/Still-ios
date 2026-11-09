@@ -174,7 +174,10 @@ struct ActLibPage: View {
                 name: c.title,
                 photo: refPhoto,
                 charId: c.id,
-                onPhotoChanged: { _ in },
+                onPhotoChanged: { d in
+                    // ★ 2026-11-10：换过的图留在这一层，从制作失败页退回来时还看得见
+                    refPhoto = d
+                },
                 onStart: {
                     // 下单在参考图页里做（RefConfirmView.placeOrder），这里只导航
                     refChar = nil
@@ -195,12 +198,17 @@ struct ActLibPage: View {
             SitingView(
                 char: c,
                 onBackToRef: {
-                    // ★ 2026-11-03：制作页退出 → 回角色列表。
-                    //   并把"已下单"标记清掉：如果那一单其实是丢了（台子查不到），
-                    //   再进这只角色时会回到参考图页，可以重新下单；
-                    //   如果单还在做，状态一查就有，不会重复下单（参考图页会显示"已经在做了"）。
+                    // ★★ 2026-11-10（他报的「点哪个都回不去，一直停在这一页」）：
+                    //   以前这里把两层弹页都关了、只回角色列表，而台子还记着「这一条失败」；
+                    //   再点这只猫又被送回同一个失败页，看着就是卡死。
+                    //   现在照安卓 SitingActivity.换图()：关制作页、**真回到参考图确认页**，
+                    //   在那儿可以换图 / 换号 / 重新下单。
+                    //   ★ 两张弹页挂在同一层，错开一点等前一张收完再开，别同时抢一个位置。
                     sitingChar = nil
                     refChar = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        refChar = c
+                    }
                 },
                 onNext: {
                     // ★ 2026-11-04（他报的：点过确认下一步，下次进来又要再点一遍）

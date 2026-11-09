@@ -408,10 +408,17 @@ struct RoleHomeView: View {
                             //   现在只有**真的进行中**才画圈；其余一律空白。
                             VStack(spacing: 6) {
                                 if 进行中 {
-                                    ProgressView().scaleEffect(0.7)
-                                    Text(stageWord(s))
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Tw.gray500)
+                                    // ★★ 2026-11-10：进度补回来 —— 抠像这一段台子真给了
+                                    //   百分比就画圈；其余（排队 / 正在生成）只转圈 + 三阶段字，
+                                    //   一个数字都不编。跟安卓 ActLibV2Activity.Ring 同一套。
+                                    if stageWord(s) == "抠图中", let p = 真百分比(key) {
+                                        RingProgress(pct: p, word: "抠图中")
+                                    } else {
+                                        ProgressView().scaleEffect(0.7)
+                                        Text(stageWord(s))
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Tw.gray500)
+                                    }
                                 } else {
                                     Color.clear.frame(height: 0)
                                 }
@@ -475,6 +482,20 @@ struct RoleHomeView: View {
         // ★ 2026-11-09：不把台子新状态原样漏出，兜底成三阶段之一
         default:                                     return "排队"
         }
+    }
+
+    /// ★★★ 界面上出现的每一个百分比都必须是台子真给过的。
+    ///   /api/act/state 的「人话」里写成「正在抠像（37%）」才算数（server.py:2563）；
+    ///   生成中那边也带过「%」，但那是编的，不许用 —— 所以调用处只在
+    ///   stageWord == 「抠图中」时才来取。别的一个数字都不显示。
+    private func 真百分比(_ key: String) -> Int? {
+        let why = reason[key] ?? ""
+        guard let l = why.firstIndex(of: "（"),
+              let r = why.firstIndex(of: "%"), r > l else { return nil }
+        let seg = why[why.index(after: l)..<r]
+        let num = seg.filter { $0.isNumber }
+        guard let n = Int(num), n >= 0, n <= 100 else { return nil }
+        return n
     }
 
     /// 最后一格：添加动作（安卓放在末尾）

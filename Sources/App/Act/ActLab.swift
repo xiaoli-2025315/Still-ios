@@ -423,13 +423,33 @@ enum ActLab {
     }
 
     /// ★ 2026-11-03：「重新处理」—— 让台子把这只的参考图重做一次（后台跑）。
-    static func wanRebuild(charId: String, force: Bool = false) async {
+    /// ★★ 2026-11-09：**真读台子当场回的回执**（ok / 错误 / 单号），不再丢掉。
+    ///   以前 `_ = try? await postSay(...)` 把响应整个丢了，409（闸拦）/ 404 / 400
+    ///   一律被当成成功，用户只看得见「正在处理…」然后白等 4 分钟。
+    ///   拿不到台子回话（网络失败）时 ok=false、错误为空 —— 调用方继续等，不弹失败。
+    static func wanRebuild(charId: String, force: Bool = false) async -> (ok: Bool, 错误: String, 单号: String) {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
-        var q = [URLQueryItem(name: "char", value: c)]
+        var comp = URLComponents(string: base + "/api/wan/rebuild")!
+        var items = [URLQueryItem(name: "char", value: c)]
         // ★ 用户主动点「重新处理」→ force=1（跳过 10 分钟冷却）；
         //   页面自动补做 → 不带 force（受冷却保护，不重复烧额度）
-        if force { q.append(URLQueryItem(name: "force", value: "1")) }
-        _ = try? await postSay("/api/wan/rebuild", query: q)
+        if force { items.append(URLQueryItem(name: "force", value: "1")) }
+        comp.queryItems = items
+        var req = URLRequest(url: comp.url!)
+        req.stillStamp()      // ★ 登录制：贴票
+        req.httpMethod = "POST"
+        req.timeoutInterval = 25
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = Data()
+        // ★ 409 / 404 / 400 也要读正文里那句「错误」，不能因为 HTTP 码不是 2xx 就丢掉
+        guard let (data, _) = try? await URLSession.shared.data(for: req) else {
+            return (false, "", "")
+        }
+        let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let ok = (o?["ok"] as? Bool) ?? false
+        let why = (o?["错误"] as? String) ?? (o?["说"] as? String) ?? ""
+        let no = (o?["单号"] as? String) ?? ""
+        return (ok, why, no)
     }
 
     /// ★ 2026-11-03：钱包余额（单位：分）。1 点 = 0.01 元。
@@ -473,42 +493,33 @@ enum ActLab {
         _ = try? await URLSession.shared.data(for: req)
     }
 
-    /// ★ 2026-11-03（台子丢单事故的兜底）：
-    ///   台子下单是"先回 ok、后写盘"，写盘带 1.5 秒节流；
-    ///   容器正好在这窗口被换 → 单子没了，App 却以为下单成功 → 永远"准备中"。
-    ///   这里下单后回查一次状态：查不到就说实话，别让用户干等。
-    static func verifyOrder(charId: String, act: String, seconds: UInt64 = 6) async -> Bool {
-        try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
-        for _ in 0..<3 {
-            if let st = await state(charId: charId),
-               let a = st.acts.first(where: { $0.act == act }),
-               a.状态 != "没做" {
-                return true
-            }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-        }
-        return false
-    }
+    // ★ 2026-11-09：**不再有事后再查一遍、查不到就判失败**（原 verifyOrder 整段删掉）。
+    //   下单结果只认台子当场回的 ok / 错误 / 单号；暂时查不到就继续等，
+    //   不弹失败、不诱导重复下单。
 
     /// ★ 2026-11-05：参考图现在几点了 —— 有没有图 / 是不是正在做。
     ///   进页面先问它，决定显示"图 / 正在处理 / 开始处理按钮"。
     /// ★ 2026-11-09：除了「有没有图 / 在不在做」，还要把盘上那一单的真实状态读回来 ——
-    ///   `状态`（没做过/在做/好了/没做成/没做完）、`说`（没做成的原因）、`开工`（几点开始）。
-    ///   以前只读前三个旧字段，台子明明写了「这张图打不开」，页面上一个字都看不到，
+    ///   `状态`（没做过/在做/好了/没做成/没做完）、`说`（没做成的原因）、`开工`（几点开始）、
+    ///   `单号`（上次那一单）、`不能做`（台子拦重复下单的闸：在做动作时不许换图/重做）。
+    ///   以前只读前几个旧字段，台子明明写了「这张图打不开」，页面上一个字都看不到，
     ///   只能干等 4 分钟然后说「还没做好」。
     static func refState(charId: String) async -> (has: Bool, building: Bool, coolLeft: Int,
-                                                   state: String, why: String, startedAt: Int) {
+                                                   state: String, why: String, startedAt: Int,
+                                                   单号: String, 不能做: String) {
         let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
         guard let d = try? await rawGet("/api/wan/refstate?char=" + c, timeout: 12),
               let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else {
-            return (false, false, 0, "", "", 0)
+            return (false, false, 0, "", "", 0, "", "")
         }
         return ((o["有图"] as? Bool) ?? false,
                 (o["正在做"] as? Bool) ?? false,
                 (o["冷却剩秒"] as? Int) ?? 0,
                 (o["状态"] as? String) ?? "",
                 (o["说"] as? String) ?? "",
-                (o["开工"] as? Int) ?? 0)
+                (o["开工"] as? Int) ?? 0,
+                (o["单号"] as? String) ?? "",
+                (o["不能做"] as? String) ?? "")
     }
 
     /// ★ 2026-11-05：台子是不是在维护（发版前的计划内重启）。
@@ -613,71 +624,8 @@ enum ActLab {
         return URL(string: s)
     }
 
-    // MARK: - 重摆 / 退回（v95 功能匹配：台子有、手机上以前没入口）
-
-    /// 把这只猫已经做好的动作**重新摆一遍大小**。
-    ///
-    /// 台子上早就有这本事（按「坐立」那把尺子统一身高和脚线，不重抠、不花额度、
-    /// 摆之前原包留备份），可两端手机上一颗键都没有 —— 他只能开电脑上网页按。
-    /// 这正是他要修的那类「台子有、App 没有」的缺口。
-    @discardableResult
-    static func realign(charId: String, dry: Bool) async throws -> String {
-        var q = [URLQueryItem(name: "char", value: charId)]
-        if dry { q.append(URLQueryItem(name: "dry", value: "1")) }
-        return try await postSay("/api/act/realign", query: q)
-    }
-
-    /// 重摆是**服务器后台跑**的 —— 这一句问「摆到哪儿了」。
-    struct RealignState: Decodable {
-        let running: Bool?
-        let done: Bool?
-        let progress: String?
-        let seen: Int?
-        let moved: Int?
-        let errors: [String]?
-        enum CodingKeys: String, CodingKey {
-            case running = "跑着"
-            case done = "干完了"
-            case progress = "进度"
-            case seen = "看过"
-            case moved = "动了"
-            case errors = "错"
-        }
-    }
-
-    static func realignState() async throws -> RealignState {
-        try await get("/api/act/realign")
-    }
-
-    /// 重摆的**退路**：把摆之前那份备份原样拷回去。
-    /// 某一版摆得不如从前、或者摆坏了，随时能退。
-    struct UndoResp: Decodable {
-        let ok: Bool?
-        let back: [String]?
-        let missing: [String]?
-        let why: String?
-        enum CodingKeys: String, CodingKey {
-            case ok
-            case back = "退回的"
-            case missing = "没备份可退"
-            case why = "错误"
-        }
-    }
-
-    static func alignUndo(charId: String) async throws -> UndoResp {
-        var comp = URLComponents(string: base + "/api/act/align/undo")!
-        comp.queryItems = [URLQueryItem(name: "char", value: charId)]
-        var req = URLRequest(url: comp.url!)
-        req.stillStamp()      // ★ 登录制：贴票
-        req.httpMethod = "POST"
-        req.timeoutInterval = 25
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw 台子回错了((resp as? HTTPURLResponse)?.statusCode ?? -1, data)
-        }
-        return (try? JSONDecoder().decode(UndoResp.self, from: data)) ?? UndoResp(ok: true, back: nil, missing: nil, why: nil)
-    }
+    // MARK: - 检查更新（v95 功能匹配）
+    // ★★★ 2026-11-09：重摆 / 退回的接口封装整套删掉（摆放规则已作废）。
 
     // MARK: - 检查更新（v95 功能匹配）
 

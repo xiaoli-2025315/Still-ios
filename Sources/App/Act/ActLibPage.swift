@@ -76,6 +76,8 @@ struct ActLibPage: View {
     @State private var askingDrop: ActLab.Char?
     /// 删 / 放回来 失败时的一句人话（显示在列表上方，不弹第二个 alert）
     @State private var opErr: String?
+    /// ★ 2026-11-09：点猫时台子状态查不到，停在「正在连接」，不踢回参考图页
+    @State private var connecting = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -103,6 +105,18 @@ struct ActLibPage: View {
                             .foregroundStyle(Tw.red600)
                             .padding(.horizontal, 20)
                             .padding(.bottom, 10)
+                    }
+
+                    // ★ 2026-11-09：状态查不到时只报「正在连接」，不判没做、不跳页
+                    if !connecting.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView().scaleEffect(0.7)
+                            Text(connecting)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Tw.gray500)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
                     }
 
                     // ★ 2026-10-30：两列网格，最后一格「＋ 登记新角色」（对齐安卓 ActListV2Activity）
@@ -300,52 +314,68 @@ struct ActLibPage: View {
     // MARK: - 一张卡
 
     /// ★ 2026-11-01（他说的）：入口只有角色页点进来这一个。
-    ///   进来落到哪一页，全看这只猫现在到哪一步 ——
-    ///     坐立已经好了   → 动作库
-    ///     点过「开始生成」 → 制作中（他上次退出的就是那页）
-    ///     还没点过       → 参考图确认
+    ///   进来落到哪一页，全看这只猫现在到哪一步（一律以台子为准）——
+    ///     坐立已经好了（含「正在送到手机」） → 动作库
+    ///     点过「开始生成」/ 在做任一阶段      → 制作中（他上次退出的就是那页）
+    ///     台子明确说「没做」                 → 参考图确认
+    ///     ★ 查不到状态 / 网络失败           → 停在「正在连接」，绝不回参考图页
     private func route(_ c: ActLab.Char) async {
-        // ★★ 2026-11-05（他定的）：**一律以台子为准**，不再看手机本地那条"已下单"标记。
-        //   规则：
-        //   · 台子说"坐立好了"       → 没看过「做好了」就先看，看过直接进动作库
-        //   · 台子说"在做（任一阶段）" → 直接回制作中页，接着看进度
-        //   · 台子说"失败/被打断"    → 也进制作中页（那里写原因、有出路）
-        //   · 台子说"没做 / 查不到"   → 回参考图页（可以重新下单）
-        let st = await sitStatus(c.id)
+        connecting = ""
+        // ★★ 2026-11-09（他报的「坐立做完了，过一会再点又退回到开始生成」）：
+        //   查不到就重试几次；实在拿不到台子准话，停在「正在连接，等一下」，
+        //   绝不默认成「没做」把已完成的老猫踢回参考图页。
+        var status: String? = nil
+        for attempt in 0..<3 {
+            if let s = await sitStatus(c.id) { status = s; break }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+        }
+        guard let st = status else {
+            connecting = "正在连接，等一下…（再点一次这只猫重试）"
+            return
+        }
         switch st {
         case "好了":
             let seen = UserDefaults.standard.bool(forKey: "still.seensit." + c.id)
             if !seen { sitingChar = c } else { watching = c }
-        // ★★★ 2026-11-08：**做出来了 ≠ 手机里有了**。
-        //   台子说「正在送到手机」时这一条还不算完成，不许显示「做好了」、
-        //   「用它」也不该冒出来；等装好后台子改口说「好了」才会走上面那支。
+        // ★★★ 2026-11-09：**「正在送到手机」＝ 坐立已经做完**，台子只是在等
+        //   手机把新抠那一版装好、回报 installed。当作完成，直接进动作库
+        //   （让后台把包装好），绝不退回参考图页或制作中页。
         case "正在送到手机":
-            sitingChar = c
+            watching = c
         case "准备中", "排队中", "排队", "生成中", "等抠图", "抠像中", "失败", "没做成", "被打断":
             sitingChar = c
-        default:
+        case "没做":
+            // 台子明确说「没做」才回参考图页（可以重新下单）
             refChar = c
             refPhoto = Data()
+        default:
+            // 台子给了没见过的状态：不猜、不判没做、不踢回参考图页
+            connecting = "正在连接，等一下…（再点一次这只猫重试）"
         }
     }
 
-    /// 这只猫「坐立」现在是什么状态（以台子为准；查不到就当"没做"）
-    private func sitStatus(_ id: String) async -> String {
+    /// 这只猫「坐立」现在是什么状态。返回 nil ＝ 台子没给准话（查不到 / 网络失败），
+    /// 绝不当成「没做」，也绝不硬说「好了」绕过 delivery 口径。
+    private func sitStatus(_ id: String) async -> String? {
         if let st = await ActLab.state(charId: id),
            let a = st.acts.first(where: { $0.act == "sit" }) {
             return a.状态
         }
+        // state 没给准话：回落 manifest。盘上真有 sit 说明坐立做出来了 ——
+        // 按「正在送到手机」走（当作完成、直接进动作库），保留这个兜底为「不判没做」，
+        // 但不硬说「好了」绕过台子的 delivery 口径（台子可能还在等手机装好）。
         if let m = try? await ActLab.manifest(charId: id), m.names.contains("sit") {
-            return "好了"
+            return "正在送到手机"
         }
-        return "没做"
+        return nil
     }
 
     /// 这只猫的坐立做好了没有（以台子为准）
     private func sitDone(_ id: String) async -> Bool {
         if let st = await ActLab.state(charId: id),
            let a = st.acts.first(where: { $0.act == "sit" }) {
-            return a.状态 == "好了"
+            // ★ 2026-11-09：「正在送到手机」＝ 台子已经做完、只等手机装好，也算完成
+            return a.状态 == "好了" || a.状态 == "正在送到手机"
         }
         if let m = try? await ActLab.manifest(charId: id) {
             return m.names.contains("sit")

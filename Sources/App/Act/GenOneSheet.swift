@@ -156,12 +156,9 @@ struct GenOneSheet: View {
                 _ = try await ActLab.wanStart(charId: char.id, act: act)
             }
             await ActLab.diagSay("生成这一条下单成功 char=\(char.id) act=\(act) channel=\(channel)")
-            let landed2 = await ActLab.verifyOrder(charId: char.id, act: act)
-            if !landed2 {
-                await ActLab.diagSay("生成这一条下单后查不到 char=\(char.id) act=\(act)")
-                err = "这一单没落到台子上（机器刚被重启），再点一次就好"
-                return
-            }
+            // ★ 2026-11-09：下单结果只认台子当场回的 ok / 错误 / 单号 ——
+            //   删掉「事后回查、查不到就判这一单没落到台子上、让用户再点一次」那一整段。
+            //   查不到就继续等，不弹失败、不诱导重复下单。
             onDone(true)
             dismiss()
         } catch {

@@ -57,6 +57,11 @@ struct TalkPage: View {
             dialog
         }
         .background(Tw.gray50.ignoresSafeArea())
+        // ★★★★ 2026-11-09（他定）：**只在这一页**浮一只，形式跟安卓浮窗一样。
+        //   挂在 safeAreaInset 之前 ⇒ 它的活动范围就是气泡那一块，压不到下面输入条；
+        //   退出聊天页这一层跟着销毁，不会跑到别的页、更不会跨 App。
+        //   ★ 主页那个展示框仍是上一轮改好的「只展示、不许碰」，两者互不牵连。
+        .overlay { TalkFloatPet() }
         // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
         //   不用自己算键盘高度，也不会被挡住。
         .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Foundation
 
 // MARK: - ② 制作中（照安卓 SitingActivity，2026-11-09 再对齐一次）
 //
@@ -38,13 +39,14 @@ struct SitingView: View {
 
     @State private var stage: Stage = .queue
     @State private var alive = true
-    @State private var missingPolls = 0
     @State private var lastOrder = ""
 
     /// 这一条真的在本机整猫包里了（＝下载安装到手机完成）
     @State private var 本机有 = false
     @State private var 装包中 = false
     @State private var 上次装包失败 = Date.distantPast
+    /// ★ 2026-11-09：装包失败的原因（不再吞掉、停在「抠图中」不吭声）
+    @State private var 装包原因 = ""
 
     private var cellW: CGFloat { UIScreen.main.bounds.width - 40 }
 
@@ -130,7 +132,7 @@ struct SitingView: View {
         case .queue: return "轮到它就开始"
         case .generating: return "通常 2–4 分钟"
         case .matting(let pct): return pct > 0 ? "正在去背景" : "正在去背景"
-        case .packing: return "片子好了，正在装进你的手机"
+        case .packing: return 装包原因.isEmpty ? "片子好了，正在装进你的手机" : "装进手机没成：\(装包原因)（过一会儿会自动再试）"
         case .done: return ""
         case .failed(_, let quota): return quota ? "换个号，或者等额度恢复" : "换一张重新做"
         }
@@ -199,7 +201,6 @@ struct SitingView: View {
         while alive {
             if let w = await ActLab.wanState(charId: char.id, act: act),
                let ws = w.状态, !ws.isEmpty, ws != "没做" {
-                missingPolls = 0
                 let why = w.人话 ?? ""
                 switch ws {
                 case "好了":
@@ -219,14 +220,14 @@ struct SitingView: View {
                let a = st.acts.first(where: { $0.act == act }) {
                 let s = a.状态
                 let why = a.人话 ?? ""
-                if s == "没做" { missingPolls += 1 } else { missingPolls = 0 }
                 switch s {
                 case "好了":
                     await 装进手机()
                 case "失败", "没做成", "被打断":
                     let quota = why.contains("额度") || why.contains("付费")
-                    // ★★ 2026-11-07（他定的）：没原因就只写「没做成」，不再自己编"侵权"
-                    stage = .failed(why.isEmpty ? (quota ? "豆包额度不够" : "没做成") : why, quota)
+                    // ★★ 2026-11-09（对齐安卓 SitingActivity:237-238）：没原因就只写
+                    //   「没做成」，一个字都不编 —— 删掉按「额度」字样推断的那句。
+                    stage = .failed(why.isEmpty ? "没做成" : why, quota)
                 case "排队", "排队中", "准备中":
                     stage = .queue
                 case "生成中":
@@ -237,27 +238,27 @@ struct SitingView: View {
                     if s == "正在送到手机" { await 装进手机() }
                 case "没做":
                     // 台子上还没有这一条：刚下完单的几秒是正常的。
-                    // ★ 2026-11-09：查不到就只是查不到 —— 不再写「机器可能在重启」这种猜的理由。
-                    if missingPolls >= 20 {
-                        stage = .failed("还没收到台子的回音 —— 点下面退回去，重新点一次「开始生成」", false)
-                    } else {
-                        stage = .queue
-                    }
+                    // ★ 2026-11-09：保持排队，不判失败、不编「机器在重启」、
+                    //   不诱导重新点「开始生成」。失败只认台子状态字面。
+                    stage = .queue
                 default:
                     stage = .queue
                 }
-            } else {
-                missingPolls += 1
-                if missingPolls >= 20 && stage != .done {
-                    stage = .failed("还没收到台子的回音 —— 点下面退回去，重新点一次「开始生成」", false)
-                }
             }
+            // ★ 2026-11-09：状态暂时拿不到（网络失败 / 解析失败）＝「不知道」，
+            //   保持当前阶段继续等，绝不判失败、绝不踢回去重新下单。
             try? await Task.sleep(nanoseconds: 2_200_000_000)
         }
     }
 
     // MARK: - 装进手机（★ 他定的：装好才算完成，才给「确认下一步」）
 
+    /// ★ 2026-11-09：**带台子 stamp 比对的强制安装**。
+    ///   `CatPackStore.install(force: false)` 只要本地有 pack.zip 就返回旧包、不比版本，
+    ///   台子新抠的那一版永远进不了手机。这里照 `PackEvents.deliver` 的口径：
+    ///   本地 stamp 落后 / 本地没这一条 ⇒ `force: true` 强制重下，装好才置 .done。
+    ///   装好回报一次 /api/act/installed，台子才会把「正在送到手机」改成「好了」。
+    ///   失败把原因摆出来，不再吞掉停在「抠图中」不吭声。
     private func 装进手机() async {
         if 本机有 {
             stage = .done
@@ -270,26 +271,66 @@ struct SitingView: View {
             return
         }
         装包中 = true
+        defer { 装包中 = false }
         stage = .packing
+        装包原因 = ""
         do {
-            var p = try await CatPackStore.shared.install(charId: char.id, force: false)
-            if !有这一条(p) {
-                // 本机那份是旧的，没有这一条 —— 重新下最新的一版
+            let m = try await ActLab.manifest(charId: char.id)
+            guard m.stamp > 0 else {
+                // 台子还没给版本号：下一轮再来。★ 必须上冷却，
+                //   否则 watch 每 2.2 秒就打一次清单，能把台子敲死。
+                上次装包失败 = Date()
+                装包原因 = "还没拿到这一版的号，过一会儿再试"
+                return
+            }
+            let key = "still.packstamp." + char.id
+            let local = Int64(UserDefaults.standard.integer(forKey: key))
+            let p: CatPack
+            if local >= m.stamp,
+               let old = CatPackStore.shared.installed(char.id), 有这一条(old) {
+                // 本机这一版就是台子最新那版，直接用，不重复下几十兆
+                p = old
+            } else {
+                // ★ 版本落后 / 本机没有这一条：强制重下，不认旧包
                 p = try await CatPackStore.shared.install(charId: char.id, force: true)
             }
-            if 有这一条(p) {
+            guard 有这一条(p) else {
+                上次装包失败 = Date()
+                装包原因 = "下下来的包里没有这一条"
+                return
+            }
+            if CatPackStore.shared.isCurrent(char.id) { CatPackStore.shared.use(p) }
+            // ★★★ 先回报、回报成了才把本地版本号记成最新。
+            //   反过来（先记后报）时，万一这一句没送到，本机以为已经装好最新版，
+            //   下轮比对版本就直接跳过，台子永远收不到 installed ⇒
+            //   状态会永久卡在「正在送到手机」。这正是老猫被踢回参考图页的源头。
+            if await 回报装好(stamp: m.stamp) {
+                UserDefaults.standard.set(m.stamp, forKey: key)
                 本机有 = true
                 stage = .done
             } else {
                 上次装包失败 = Date()
+                装包原因 = "还没跟台子对上，过一会儿会自动再试"
                 stage = .packing
             }
         } catch {
-            // 装不上就停在「抠图中 · 正在装进你的手机」，不判失败、不编原因
+            // ★ 装包失败：把原因摆出来（不再吞掉、停在「抠图中」不吭声）
             上次装包失败 = Date()
+            装包原因 = error.localizedDescription
             stage = .packing
         }
-        装包中 = false
+    }
+
+    /// 手机说：这版整包我已经装进本地了（body 同 PackEvents.ack：char + stamp）。
+    private func 回报装好(stamp: Int64) async -> Bool {
+        do {
+            let d = try await ActLab.rawPost("/api/act/installed",
+                                             body: ["char": char.id, "stamp": stamp])
+            let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+            return (o?["ok"] as? Bool) ?? true
+        } catch {
+            return false
+        }
     }
 
     private func 有这一条(_ p: CatPack) -> Bool {

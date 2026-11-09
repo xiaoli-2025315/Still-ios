@@ -62,10 +62,9 @@ extension URLRequest {
         //   10-24 台子把「没带票也算主人」这个口子收掉之后，iOS 这边全线 401：
         //   角色页、动作库、进度……凡是要点名认人的口，一个都进不去。
         //
-        //   现在两个头都发：X-Still-Ticket 为主（抢不走），Bearer 留着兜底
-        //   （老版本台子只认 Bearer 时也还能用）。
+        //   ★ 2026-11-09：只发 X-Still-Ticket —— 平台的网关会自己往请求里塞
+        //   一个同名 Authorization 头，Bearer 会被顶掉，白留着只会误导。
         setValue(t, forHTTPHeaderField: "X-Still-Ticket")
-        setValue("Bearer \(t)", forHTTPHeaderField: "Authorization")
     }
 }
 

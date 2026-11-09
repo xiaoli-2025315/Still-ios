@@ -157,25 +157,39 @@ final class PackEvents: @unchecked Sendable {
             }
             // ★ iOS 以前装过一次就直接把旧包交回去 —— 强制重下是这一步补上的。
             let pack = try await CatPackStore.shared.install(charId: id, force: true)
-            UserDefaults.standard.set(m.stamp, forKey: key)
             await MainActor.run {
                 // 正在用的这只装完要重挂一次，否则画面还拿旧包的索引
                 if CatPackStore.shared.isCurrent(id) { CatPackStore.shared.use(pack) }
             }
-            await ack(id: id, stamp: m.stamp)
+            // ★★★ 2026-11-09：先回报、成了才记版本号。先记后报时，
+            //   回报没送到 ⇒ 本机以为已是最新 ⇒ 台子永远收不到 installed ⇒
+            //   状态永久卡在「正在送到手机」（SSE 这条路和制作页那条路同一个坑）。
+            if await ack(id: id, stamp: m.stamp) {
+                UserDefaults.standard.set(m.stamp, forKey: key)
+            }
         } catch {
             // 不吭声，下次重连 / 下次开机再来
         }
     }
 
     /// 手机说：这版我已经装进本地了。台子收到才把「做好了」点亮。
-    private func ack(id: String, stamp: Int64) async {
-        guard let url = URL(string: ActLab.base + "/api/act/installed") else { return }
+    /// 返回「台子真的收下了没有」—— 没收下就不许把本地版本号记成最新。
+    @discardableResult
+    private func ack(id: String, stamp: Int64) async -> Bool {
+        guard let url = URL(string: ActLab.base + "/api/act/installed") else { return false }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.stillStamp()
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["char": id, "stamp": stamp])
-        _ = try? await URLSession.shared.data(for: req)
+        do {
+            let (d, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return false }
+            let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+            return (o?["ok"] as? Bool) ?? true
+        } catch {
+            return false
+        }
     }
 }

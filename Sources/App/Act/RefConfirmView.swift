@@ -49,6 +49,10 @@ struct RefConfirmView: View {
     /// ★ 2026-11-09：参考图这一单没做成的真实原因（台子盘上那句话）
     @State private var refErr = ""
     @State private var ordering = false
+    /// ★ 2026-11-09：台子盘上那一单 —— 单号 / 开工 / 拦换图的闸（不能做）
+    @State private var ref单号 = ""
+    @State private var ref开工 = 0
+    @State private var ref不能做 = ""
     /// ★ 台子是否在维护（维护期间不许下单）
     @State private var maintOn = false
     @State private var maintWhy = ""
@@ -97,6 +101,11 @@ struct RefConfirmView: View {
             let st = await ActLab.refState(charId: charId)
             refHas = st.has
             refBuilding = st.building
+            // ★ 2026-11-09：单号 / 开工用来显示「上一次做到哪了」；
+            //   「不能做」是台子拦重复下单的闸（在做动作时不许换图 / 重做）。
+            if !st.单号.isEmpty { ref单号 = st.单号 }
+            if st.startedAt > 0 { ref开工 = st.startedAt }
+            ref不能做 = st.不能做
             if st.has {
                 if let ui = await fetchRef() { refImage = ui }
                 processing = false
@@ -108,7 +117,7 @@ struct RefConfirmView: View {
                 // ★ 2026-11-09：上次这一单没做成 / 没做完，把原因照实摆出来。
                 //   以前退进这里跟「从没点过」长得一模一样，他只能猜到底有没有下成。
                 if st.state == "没做成" || st.state == "没做完" {
-                    refErr = st.why.isEmpty ? "上次这一单没做成，再点一次就好" : st.why
+                    refErr = st.why.isEmpty ? "上次这一单没做成" : st.why
                 }
             }
         }
@@ -138,7 +147,8 @@ struct RefConfirmView: View {
             //   以前 iOS 只盖一层白纱，按钮照样能点，而且一换图就把「正在做」抹成「没在做」，
             //   看着像做完了、台子却还在抠。现在点不动，底下那句话也跟着说明原因。
             Button {
-                guard !processing && !swapBusy else { return }
+                // ★ 2026-11-09：台子「不能做」非空（在做动作）时不许换图
+                guard !processing && !swapBusy && ref不能做.isEmpty else { return }
                 showPick = true
             } label: {
                 Group {
@@ -268,7 +278,7 @@ struct RefConfirmView: View {
             }
             // ★★ 2026-11-05（他定的）：第一次处理参考图，**由用户点这个按钮才开始**。
             //   没有图、也没在做的时候才露出来。
-            if !refHas && !processing && !charId.isEmpty {
+            if !refHas && !processing && !charId.isEmpty && ref不能做.isEmpty {
                 Button { Task { await watchRef(自动开工: true) } } label: {
                     Text("开始处理参考图")
                         .font(.system(size: 15, weight: .semibold))
@@ -282,7 +292,7 @@ struct RefConfirmView: View {
                 .padding(.top, 6)
             }
 
-            if !processing && !charId.isEmpty && (refHas || refTimedOut) {
+            if !processing && !charId.isEmpty && (refHas || refTimedOut) && ref不能做.isEmpty {
                 Button { Task { await rebuild() } } label: {
                     Text("重新处理")
                         .font(.system(size: 13, weight: .semibold))
@@ -297,6 +307,25 @@ struct RefConfirmView: View {
                 .buttonStyle(PressStyle(scale: 0.98))
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
+            }
+            // ★ 2026-11-09：台子闸「不能做」—— 在做动作时不许换图 / 重做，
+            //   把台子那句原话照实摆出来。
+            if !ref不能做.isEmpty {
+                Text(ref不能做)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.red600)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 8)
+            }
+            // ★ 2026-11-09：单号 + 开工 —— 这一单上次做到哪了（只显示台子真给过的）。
+            if !ref单号.isEmpty || ref开工 > 0 {
+                Text(上一次文字)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray400)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 6)
             }
             // ★ 2026-11-09：没做成的真实原因。台子给什么就说什么，不自己编。
             if !refErr.isEmpty {
@@ -325,8 +354,8 @@ struct RefConfirmView: View {
         .photosPicker(isPresented: $showPick, selection: $pickItem, matching: .images)
         .onChange(of: pickItem) { _, item in
             guard let item else { return }
-            // ★ 再兜一道：万一中途开始处理了，这一张也不收（防绕过上面那道按钮闸）。
-            guard !processing && !swapBusy else { pickItem = nil; return }
+            // ★ 再兜一道：万一中途开始处理了 / 台子闸「不能做」，这一张也不收。
+            guard !processing && !swapBusy && ref不能做.isEmpty else { pickItem = nil; return }
             Task {
                 swapBusy = true
                 if let d = try? await item.loadTransferable(type: Data.self) {
@@ -365,8 +394,21 @@ struct RefConfirmView: View {
         refTimedOut = false
         refErr = ""
         if 自动开工 {
-            await ActLab.wanRebuild(charId: charId, force: true)
-            refBuilding = true
+            // ★ 2026-11-09：真读台子回执（ok / 错误 / 单号），不再白等 4 分钟
+            let r = await ActLab.wanRebuild(charId: charId, force: true)
+            if !r.ok {
+                if !r.错误.isEmpty {
+                    // 台子当场拒了（闸 / 冷却 / 图打不开）：把「错误」原话摆出来，立刻停
+                    refErr = r.错误
+                    refBuilding = false
+                    processing = false
+                    return
+                }
+                // 没收到台子回话：继续等，不弹失败、不诱导重复下单
+            } else {
+                if !r.单号.isEmpty { ref单号 = r.单号 }
+                refBuilding = true
+            }
         }
         for _ in 0..<80 {
             if let ui = await fetchRef() {
@@ -381,7 +423,7 @@ struct RefConfirmView: View {
             //   以前不管成没成都要白等 4 分钟，最后只说一句「还没做好」。
             let s = await ActLab.refState(charId: charId)
             if !s.building && (s.state == "没做成" || s.state == "没做完") {
-                refErr = s.why.isEmpty ? "这一单没做成，再点一次就好" : s.why
+                refErr = s.why.isEmpty ? "这一单没做成" : s.why
                 refTimedOut = true
                 refBuilding = false
                 processing = false
@@ -425,17 +467,41 @@ struct RefConfirmView: View {
             await watchRef()
             return
         }
-        await ActLab.wanRebuild(charId: charId, force: true)
+        // ★ 2026-11-09：真读台子回执，ok:false 就把「错误」原话摆出来并停止轮询，
+        //   不再傻等 4 分钟。
+        let r = await ActLab.wanRebuild(charId: charId, force: true)
+        if !r.ok {
+            if !r.错误.isEmpty {
+                refErr = r.错误
+                refBuilding = false
+                processing = false
+                return
+            }
+        } else if !r.单号.isEmpty {
+            ref单号 = r.单号
+        }
         await watchRef()
     }
 
 
     /// 查这一格现在什么状态（没做 / 在做 / 做好）—— 决定按钮能不能点。
+    /// ★ 2026-11-09：以台子回执（act/state + refstate 的不能做 / 单号）为准，
+    ///   不只进页面查一次（placeOrder 下单前还会再查一次）；
+    ///   「没做 / 失败 / 没做成 / 查不到」允许重新发起，别把人堵死；
+    ///   真在跑（在做 / 进行中 / 不能做非空）才不许重复下单，不自己编状态。
     private func checkOrdered() async {
-        guard let d = await ActLab.wanState(charId: charId, act: "sit") else { return }
-        let st = d.状态 ?? ""
-        alreadyOrdered = (st == "生成中" || st == "排队中")
-        alreadyDone = (st == "好了")
+        let r = await ActLab.refState(charId: charId)
+        ref不能做 = r.不能做
+        if !r.单号.isEmpty { ref单号 = r.单号 }
+        if r.startedAt > 0 { ref开工 = r.startedAt }
+        var sit = ""
+        if let st = await ActLab.state(charId: charId),
+           let a = st.acts.first(where: { $0.act == "sit" }) { sit = a.状态 }
+        // 台子明说没做 / 失败 / 查不到：可以重新下单，不算「在跑」
+        let 可重来 = sit.isEmpty || sit == "没做" || sit == "失败"
+                   || sit == "没做成" || sit == "被打断"
+        alreadyOrdered = !可重来 || r.building || !r.不能做.isEmpty
+        alreadyDone = (sit == "好了" || sit == "正在送到手机")
     }
 
 
@@ -489,6 +555,15 @@ struct RefConfirmView: View {
         ordering = true
         orderErr = nil
         defer { ordering = false }
+        // ★ 2026-11-09：下单前再问一次台子（不只进页面那一次）——
+        //   这一单要是已经在跑 / 已经在做动作，就别重复发起。
+        await checkOrdered()
+        if alreadyOrdered || alreadyDone {
+            // ★ 2026-11-09：这一单已经在跑 / 已经做好了 —— 不许重复下单，
+            //   但也不能点了没反应。直接带他去看进度（制作页会按台子状态落页）。
+            onStartChannel(channel)
+            return
+        }
         do {
             if channel.hasPrefix("doubao:") {
                 let slot = String(channel.dropFirst("doubao:".count))
@@ -501,13 +576,9 @@ struct RefConfirmView: View {
             //   这样"到底有没有下到单"用户自己就能看见，不用等我去翻诊断。
             UserDefaults.standard.set("已下单 · \(channel) · \(Self.nowText())",
                                       forKey: "still.lastorder." + charId)
-            // ★ 台子可能丢了这一单（写盘节流 + 容器被换）→ 自查一次再说成功
-            let landed1 = await ActLab.verifyOrder(charId: charId, act: "sit")
-            if !landed1 {
-                await ActLab.diagSay("参考图页下单后查不到这一单 char=\(charId)")
-                orderErr = "这一单没落到台子上（机器刚被重启），再点一次就好"
-                return
-            }
+            // ★ 2026-11-09：下单结果只认台子当场回的回执 —— 删掉事后回查、
+            //   删掉「这一单没落到台子上（机器刚被重启），再点一次就好」；
+            //   查不到就继续等，不弹失败、不诱导重复下单。
             onStartChannel(channel)
         } catch {
             // 台子那边余额不足会回 402；这里把原文给人看
@@ -524,5 +595,21 @@ struct RefConfirmView: View {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         return f.string(from: Date())
+    }
+
+    /// 「上一次做到哪了」：单号 + 开工，只摆台子真给过的，不编进度。
+    private var 上一次文字: String {
+        var s = "上一次做到哪了"
+        if !ref单号.isEmpty { s += " · 单号 " + ref单号 }
+        s += Self.开工文(ref开工)
+        return s
+    }
+
+    /// 台子给的「开工」是秒（安卓 SitingActivity 同口径 t*1000）；只显时间，不编百分比。
+    private static func 开工文(_ t: Int) -> String {
+        guard t > 0 else { return "" }
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return "（" + f.string(from: Date(timeIntervalSince1970: TimeInterval(t))) + " 开始）"
     }
 }

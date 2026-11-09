@@ -259,24 +259,8 @@ struct RoleHomeView: View {
         ActLab.official.filter { !names.contains($0.key) }.count
     }
 
-    /// 这一趟现在卡在链路哪一段 —— 大白话，取值全是机器真的写进去的字。
-    private func stageWord(of j: ActLab.GenJob) -> String {
-        var gen = false, queued = false, any = false
-        for s in j.each ?? [] {
-            let t = s.stage ?? ""
-            any = true
-            if s.matteDone { continue }
-            if t.contains("抠") || t.contains("抽帧") || t.contains("打包") { return "正在抠背景" }
-            if t.contains("已发送") || t.contains("生成") || t.contains("落盘") || t.contains("送进") {
-                gen = true
-            } else if t.contains("排队") {
-                queued = true
-            }
-        }
-        if gen { return "豆包正在生成，一条大概 3–5 分钟" }
-        if queued { return "排着队，轮到它就开始" }
-        return any ? "" : ""
-    }
+    // ★ 2026-11-09：旧的 stageWord(of:)（正在抠背景 / 豆包正在生成… / 排着队）
+    //   整段删掉 —— 横幅 flightWord 改用下面那个三阶段映射 stageWord(_ s:)。
 
     private var topBox: some View {
         ZStack {
@@ -480,6 +464,7 @@ struct RoleHomeView: View {
     /// ★★★ 2026-11-09（他定的，两端同一套）：**只有三个阶段** —— 排队 / 正在生成 / 抠图中。
     ///   「等抠图 / 抠像中 / 正在送到手机（下载安装）」全部并进「抠图中」，
     ///   不再各自成段；「准备中」并进「排队」。
+    ///   ★ 认不出的台子新状态一律兜底成「排队」，绝不把原话原样漏到界面上。
     private func stageWord(_ s: String) -> String {
         switch s {
         case "准备中", "排队", "排队中", "queued": return "排队"
@@ -487,7 +472,8 @@ struct RoleHomeView: View {
         case "等抠图", "抠像中", "正在送到手机",
              "saved", "matte":                       return "抠图中"
         case "失败", "没做成", "warn":               return "没做成"
-        default:                                     return s
+        // ★ 2026-11-09：不把台子新状态原样漏出，兜底成三阶段之一
+        default:                                     return "排队"
         }
     }
 
@@ -563,7 +549,11 @@ struct RoleHomeView: View {
                     let doing = open.isEmpty ? (j.acts ?? []).map { label(of: $0) } : open
                     if !doing.isEmpty { inFlight = doing }
                     else if inFlight.isEmpty { inFlight = ["这一批"] }
-                    flightWord = stageWord(of: j)
+                    // ★ 2026-11-09：横幅只报三阶段之一（排队 / 正在生成 / 抠图中）——
+                    //   拿这一趟里还没做好那条在台子上的状态过一遍新映射；
+                    //   认不出来的新状态由映射兜底，不把台子原话漏出来。
+                    let openKey = (j.each ?? []).first { $0.matteDone != true }?.act ?? ""
+                    flightWord = stageWord(stage[openKey] ?? j.phaseText)
                 }
             }
         }

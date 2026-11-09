@@ -153,13 +153,20 @@ struct PackCatView: View {
 
     let pack: CatPack
     let width: CGFloat
+    /// ★ 2026-11-09：聊天页浮窗按住要演挣扎。默认还是坐立，
+    ///   主页框那个调用点一个字都不用改。包里没这个动作就自动退回坐立。
+    var actName: String = "sit"
 
     @State private var img: UIImage?
     @State private var idx = 0
     @State private var timer: Timer?
+    /// 现在播的是「哪一只的哪一段」。换猫 / 换动作才重起，见 start()。
+    @State private var playingKey = ""
 
     private var act: CatPack.Act? {
-        pack.acts.first(where: { $0.name == "sit" }) ?? pack.acts.first
+        pack.acts.first(where: { $0.name == actName })
+            ?? pack.acts.first(where: { $0.name == "sit" })
+            ?? pack.acts.first
     }
 
     var body: some View {
@@ -175,12 +182,23 @@ struct PackCatView: View {
         .frame(width: width)
         .onAppear { start() }
         .onDisappear { stop() }
+        // ★★★ 切猫 / 按住演挣扎 / 松手回坐立，都要从第一帧重新起：
+        //   不然会接着上一个动作的中段播，看着像抽了一下。
+        .onChange(of: pack.id) { start() }
+        .onChange(of: actName) { start() }
     }
 
     private func start() {
         guard let a = act, a.frames > 0 else { return }
-        img = pack.image(act: a, index: 0)
+        // ★★★ 换猫看 pack.id、换动作看动作名，两个一起才算「换了一段」。
+        //   包里没有 struggle 时（按住 / 松手都退回 sit）key 不变 ⇒ 不重起、不动 idx，
+        //   画面不会突然跳回第一帧；那个「抽一下」就是重起造成的。
+        let key = pack.id + "#" + a.name
+        if playingKey == key, timer != nil { return }
         stop()
+        playingKey = key
+        idx = 0
+        img = pack.image(act: a, index: 0)
         let t = Timer(timeInterval: 1.0 / 20.0, repeats: true) { _ in
             Task { @MainActor in
                 guard let a2 = act, a2.frames > 0 else { return }
@@ -195,5 +213,6 @@ struct PackCatView: View {
     private func stop() {
         timer?.invalidate()
         timer = nil
+        playingKey = ""
     }
 }

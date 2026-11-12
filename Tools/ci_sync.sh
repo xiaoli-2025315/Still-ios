@@ -17,6 +17,12 @@ set -uo pipefail
 : "${PUSH_KEY:?没有 IOS_PUSH_KEY}"
 : "${IPA:=out/Still.ipa}"
 : "${BASE:=https://still-ui-design.app.workbuddy.host}"
+# ★ 2026-11-12：平台网关只认「完整分享链接」里的那个码，裸域名一律 403
+#   （连只带上传钥匙 k= 的也 403）。这个码不是密钥，就是分享链接后面那串。
+#   ★★ 每次重新发布站点可能会换一个新的码 ⇒ 换码后要同步改这里的默认值，
+#      或在 workflow 里给这一步骤设 STILL_SHARE_CODE 覆盖它。
+: "${STILL_SHARE_CODE:=PLTUQFZRA7}"
+SHARE="$STILL_SHARE_CODE"
 : "${NAME:=Still.ipa}"
 : "${CHUNK:=2097152}"
 
@@ -24,16 +30,17 @@ LOG=$(mktemp)
 exec > >(tee -a "$LOG") 2>&1
 
 report() {
-  python3 - "$LOG" "$BASE" <<'PY' || true
+  python3 - "$LOG" "$BASE" "$SHARE" <<'PY' || true
 import json, sys, urllib.request
-log_path, base = sys.argv[1], sys.argv[2]
+log_path, base, share = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     text = open(log_path, encoding="utf-8", errors="replace").read()[-3500:]
 except Exception:
     text = ""
 body = json.dumps({"来源": "ci_sync", "日志": text}, ensure_ascii=False).encode()
 req = urllib.request.Request(base + "/api/diag", data=body,
-                             headers={"Content-Type": "application/json"})
+                             headers={"Content-Type": "application/json",
+                                      "X-Share-Code": share})
 try:
     urllib.request.urlopen(req, timeout=20).read()
 except Exception:
@@ -62,6 +69,7 @@ for f in .chunks/p*; do
   resp=$(curl -sS --max-time 180 --retry 4 --retry-all-errors --retry-delay 2 \
          -w '\nHTTP:%{http_code}' -X POST --data-binary @"$f" \
          -H "Content-Type: application/octet-stream" \
+         -H "X-Share-Code: $SHARE" \
          "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$off&size=$SIZE" 2>&1)
   code=$(printf '%s' "$resp" | tail -1 | sed 's/HTTP://')
   if ! printf '%s' "$resp" | grep -q '"ok": true'; then
@@ -73,13 +81,15 @@ for f in .chunks/p*; do
 done
 
 echo "=== 2) adopt ==="
-aresp=$(curl -sS --max-time 180 -X POST "$BASE/api/ios/adopt?k=$PUSH_KEY&name=$NAME" 2>&1)
+aresp=$(curl -sS --max-time 180 -X POST -H "X-Share-Code: $SHARE" \
+         "$BASE/api/ios/adopt?k=$PUSH_KEY&name=$NAME" 2>&1)
 echo "$aresp" | head -c 300; echo
 printf '%s' "$aresp" | grep -q '"ok": true' || { echo "adopt 失败"; exit 1; }
 
 echo "=== 3) 把线上包下回来验（这才是他真会装到的那个）==="
 sleep 2
-curl -sS --max-time 300 -o .verify.ipa "$BASE/api/ios/pkg.ipa" 2>/dev/null
+curl -sS --max-time 300 -H "X-Share-Code: $SHARE" \
+         -o .verify.ipa "$BASE/api/ios/pkg.ipa" 2>/dev/null
 gsize=$(wc -c < .verify.ipa | tr -d ' ')
 ghead=$(head -c 4 .verify.ipa | od -An -tx1 | tr -d ' \n')
 echo "  线上: 大小=$gsize (本地 $SIZE) 头=$ghead"
@@ -96,7 +106,7 @@ if command -v unzip >/dev/null 2>&1; then
 fi
 
 echo "=== 4) 版本号 ==="
-gotver=$(curl -sS --max-time 20 "$BASE/api/ios/pkg" | grep -o '"版本": *"[^"]*"' | head -1 | sed 's/.*"\(.*\)"/\1/')
+gotver=$(curl -sS --max-time 20 -H "X-Share-Code: $SHARE" "$BASE/api/ios/pkg" | grep -o '"版本": *"[^"]*"' | head -1 | sed 's/.*"\(.*\)"/\1/')
 echo "  台子版本=$gotver 期望=${WANT:-?}"
 [ -z "$WANT" ] || [ "$gotver" = "$WANT" ] || { echo "版本不一致"; exit 1; }
 

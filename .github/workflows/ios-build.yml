@@ -43,6 +43,10 @@ jobs:
     # 与下方升到 v5（Node 24）的 action 互为双保险。
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      # ★ 2026-11-12：平台网关只认完整分享链接里的码，裸域名一律 403。
+      #   重新发布站点换了码之后，在仓库 Settings → Variables 里改 STILL_SHARE_CODE
+      #   就能一处改全，不用再动脚本。
+      STILL_SHARE_CODE: ${{ vars.STILL_SHARE_CODE || 'PLTUQFZRA7' }}
       # secrets 上下文不能写在 if: 里（GitHub 不允许），所以先映射到 env，再用 env 做判断
       # 免费账号默认全空 → 走「只验证编译 + 出未签名包」；填上才走「真签名出包」
       IOS_SIGNING_CERT: ${{ secrets.IOS_SIGNING_CERT }}                     # 开发证书 P12（base64）
@@ -125,7 +129,7 @@ jobs:
         working-directory: ${{ steps.loc.outputs.dir }}
         run: |
           python3 - <<'PY' || true
-          import json, urllib.request
+          import json, os, urllib.request
           try:
               txt = open('build.log', encoding='utf-8', errors='replace').read()
           except Exception:
@@ -139,7 +143,10 @@ jobs:
               errs = ["（没抓到 error:，下面是日志末尾）"] + tail
           body = json.dumps({"来源": "ci_error", "报错": errs}, ensure_ascii=False).encode()
           req = urllib.request.Request("https://still-ui-design.app.workbuddy.host/api/diag",
-                                       data=body, headers={"Content-Type": "application/json"})
+                                       data=body,
+                                       headers={"Content-Type": "application/json",
+                                                "X-Share-Code": os.environ.get(
+                                                    "STILL_SHARE_CODE", "PLTUQFZRA7")})
           urllib.request.urlopen(req, timeout=20).read()
           print("已把 %d 条报错发到台子" % len(errs))
           PY

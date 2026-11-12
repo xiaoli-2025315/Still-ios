@@ -33,6 +33,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // ★★★ 2026-11-12：网关要分享码。统一请求头在 URLRequest.stillStamp() 里加，
+        //   这里开机再探一次带码首页，让网关种下 cookie —— 不经 stillStamp 的
+        //   那些请求（网页、图片）也能通。
+        Task {
+            var req = URLRequest(url: URL(string:
+                ActLab.base + "/?sharecode=" + StillShare.code)!)
+            req.timeoutInterval = 8
+            _ = try? await URLSession.shared.data(for: req)
+        }
         // 通知上的按钮得先登记，否则系统不认识那颗「让它过来」。
         Notifier.registerCategories()
         // ★★★ 2026-10-21：**先迁移名字，再通知 Siri 重拼**（顺序不能反）。

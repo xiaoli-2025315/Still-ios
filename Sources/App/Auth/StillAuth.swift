@@ -1,4 +1,10 @@
 import Foundation
+
+/// ★ 2026-11-12：平台网关现在只认完整分享链接里的码，裸域名一律 403。
+///   每次台子重新发布后要核对这个码有没有变（变了要同步两端 App）。
+enum StillShare {
+    static let code = "PLTUQFZRA7"
+}
 import Security
 
 // MARK: - 账号（登录制）
@@ -49,6 +55,11 @@ enum Ticket {
 /// 给请求贴票 —— 一行，所有走台子的请求都要过它。
 extension URLRequest {
     mutating func stillStamp() {
+        // ★★★ 2026-11-12：不管有没有票都要带分享码 —— 原来「没票就 return」，
+        //   那批请求会全被网关挡在门外。
+        if let h = url?.host, h.contains("workbuddy.host") {
+            setValue(StillShare.code, forHTTPHeaderField: "X-Share-Code")
+        }
         let t = Ticket.current
         guard !t.isEmpty else { return }
         // ★ 只给台子贴，别把票发给别人 —— 第三方地址一律不贴。

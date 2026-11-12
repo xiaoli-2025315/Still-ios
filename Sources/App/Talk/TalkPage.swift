@@ -1,5 +1,36 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
+
+// MARK: - 「相机」那一格：系统相机，拍完直接转 JPEG（不把 HEIC 交出去）
+struct StillCameraPicker: UIViewControllerRepresentable {
+    var onImage: (Data) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let p = UIImagePickerController()
+        p.sourceType = .camera
+        p.delegate = context.coordinator
+        return p
+    }
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: StillCameraPicker
+        init(_ parent: StillCameraPicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.originalImage] as? UIImage,
+               let jpg = img.jpegData(compressionQuality: 0.9) {
+                parent.onImage(jpg)
+            }
+            parent.dismiss()
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
+    }
+}
 
 // MARK: - 对话页（全屏）
 //
@@ -57,6 +88,46 @@ struct TalkPage: View {
     @State private var setBusy = false
     @State private var setErr = ""
 
+    // ★★★ 2026-11-12（照 v0.6 图稿）：输入框上方常驻小选项 ＋ 动作制作面板。
+    //   只加不删：老的「语音／键盘 → 整条按住说」那条路原样留着。
+    @State private var showMake = false
+    @State private var useTemplate = false
+    @State private var makeText = ""
+    @State private var pickedTpl = ""          // 词库里真有的 id
+    @State private var pickedName = ""
+    @State private var showAttach = false
+    @State private var makeBusy = false
+    @State private var pendingCard = false
+    @State private var draftNo = ""
+    @State private var draftState = ""
+    @State private var draftTime = ""
+    @State private var draftName = ""
+    // ★ 2026-11-12：开工前查登录、真开工回执、机器原话、附件清单
+    @State private var draftJob = ""
+    @State private var draftAct = ""
+    @State private var loginText = "豆包1"
+    @State private var machineErr = ""
+    @State private var progressText = ""
+    @State private var attachNames: [String] = []
+    @State private var showCamera = false
+    @State private var showFile = false
+    @State private var showPhotoPicker = false
+    @State private var pickedPhoto: PhotosPickerItem? = nil
+
+    private struct Tpl: Identifiable {
+        var id: String { key }
+        let key: String
+        let name: String
+    }
+    /// 中文名来自台子 act_queue.py 的现行 9 条清单，左边是词库里的真 id。
+    private let 已有动作: [Tpl] = [
+        Tpl(key: "sit", name: "端坐"), Tpl(key: "hunt1", name: "捕猎"),
+        Tpl(key: "hunt2", name: "抓咬"), Tpl(key: "sleep", name: "熟睡"),
+        Tpl(key: "struggle", name: "挣扎"), Tpl(key: "walk_r", name: "行走"),
+        Tpl(key: "groom", name: "舔毛"), Tpl(key: "inhale", name: "吸入"),
+        Tpl(key: "exhale", name: "呼出")
+    ]
+
     struct Line: Identifiable {
         let id = UUID()
         let mine: Bool
@@ -83,7 +154,7 @@ struct TalkPage: View {
             // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
             //   不用自己算键盘高度，也不会被挡住。
             .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
-            .onAppear(perform: boot)
+            .onAppear { boot(); loadDraft() }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if showCats {
@@ -93,6 +164,13 @@ struct TalkPage: View {
                 sideBar
                     .frame(width: min(UIScreen.main.bounds.width * 0.82, CGFloat(320)))
                     .transition(.move(edge: .leading))
+            }
+            // ★ 动作制作面板：从底部弹出来，压住上半部聊天；右上 × 退出，回普通聊天。
+            if showMake {
+                makePanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom))
+                    .zIndex(5)
             }
         }
         .animation(.easeOut(duration: 0.22), value: showCats)
@@ -177,6 +255,15 @@ struct TalkPage: View {
                     ForEach(lines) { l in
                         bubble(l).id(l.id)
                     }
+                    // ★ 提交后面板收起，确认卡／回执卡就是聊天记录里的一条。
+                    if pendingCard { makeConfirmCard }
+                    if !draftNo.isEmpty { makeReceiptCard }
+                    if !machineErr.isEmpty { machineCard }
+                    if !progressText.isEmpty {
+                        Text(progressText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Tw.gray400)
+                    }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 16)
@@ -229,77 +316,109 @@ struct TalkPage: View {
     // 形态照安卓 `TalkBar`：白底圆角 + 右边一块红的「说」。
 
     private var inputBar: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
+            // ★ 输入框上方那一排小选项：一直都在，不加显示条件
+            HStack(spacing: 6) {
+                smallChip("💬 对话 ⌄", false)
+                Button { showMake = true } label: { smallChip("✦ 动作制作", true) }
+                Spacer(minLength: 0)
+            }
+
             HStack(spacing: 8) {
-                // 左：键盘 / 语音 切换（安卓那颗「语音」）
+                // 左：相机（拍照）
+                Button { showAttach.toggle() } label: {
+                    Image(systemName: "camera")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Tw.gray500)
+                }
+                .frame(width: 24)
+
+                if voiceMode {
+                    // 老的整条录音键：按住说、上滑取消、<0.6 秒提示太短、24 根真音波
+                    TalkHoldBar(onSaid: { t in text = t; send() })
+                        .frame(height: 30)
+                } else {
+                    TalkField(text: $text, focusPulse: pulse, autoFocus: false,
+                              onSubmit: send,
+                              onBeginEdit: { PiPController.shared?.quiesceForTyping() },
+                              onEndEdit: { PiPController.shared?.resumeAfterTyping() })
+                        .frame(height: 22)
+                        .padding(.horizontal, 2)
+                }
+
+                // 右：语音圆钮（点一下＝切到老的语音模式）
                 Button {
                     voiceMode.toggle()
                     if voiceMode { focus.resign() }
                 } label: {
-                    Text(voiceMode ? "键盘" : "语音")
-                        .font(.system(size: 12.5, weight: .medium))
+                    Image(systemName: voiceMode ? "keyboard" : "waveform")
+                        .font(.system(size: 14))
                         .foregroundStyle(Tw.gray500)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Tw.gray50))
                 }
-                .buttonStyle(PressStyle(scale: 0.94))
 
-                if voiceMode {
-                    // ★ 2026-10-31（他报的）：原来只有那颗小话筒能按，**整条按不了**。
-                    //   现在整条就是录音键：按住说、上滑取消、<0.6 秒提示太短；
-                    //   说话时整条上显示 24 根真音波（跟安卓一样）。
-                    TalkHoldBar(onSaid: { t in
-                        text = t
-                        send()
-                    })
-                    .frame(height: 46)
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button { showAttach.toggle() } label: {
+                        Image(systemName: showAttach ? "xmark" : "plus")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Tw.gray500)
+                    }
+                    .frame(width: 26)
                 } else {
-                // ★ 2026-10-30：**固定一行高**。以前它没有高度约束，
-                //   在没历史消息时会把整页撑成一大块白框（他截图里那个"巨大的空框"）。
-                TalkField(text: $text, focusPulse: pulse, autoFocus: false,
-                          onSubmit: send,
-                          onBeginEdit: { PiPController.shared?.quiesceForTyping() },
-                          onEndEdit: { PiPController.shared?.resumeAfterTyping() })
-                    .frame(height: 22)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Tw.white)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(Tw.gray200, lineWidth: 1)
-                            )
-                    )
-
-                Button(action: send) {
-                    Text("说")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Tw.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 11)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(busy ? Tw.red600.opacity(0.45) : Tw.red600)
-                        )
-                }
-                .buttonStyle(PressStyle(scale: 0.94))
-                .disabled(busy)
+                    Button(action: send) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Tw.white)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(busy ? Tw.red600.opacity(0.45) : Tw.red600))
+                    }
+                    .disabled(busy)
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .fill(Tw.white)
+                    .overlay(RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .stroke(Tw.gray200, lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
+            )
+            // ★ 长按输入栏＝直接说话。iOS 这端先切到现成的整条录音键，
+            //   不接管 UITextField 的手势（不然打字和光标会坏）；真机验过再对齐安卓。
+            .onLongPressGesture(minimumDuration: 0.4) {
+                voiceMode = true
+                focus.resign()
+            }
 
+            if showAttach { attachGrid }
+        }
+        .sheet(isPresented: $showCamera) {
+            StillCameraPicker { data in uploadAttach("拍照.jpg", data) }
+                .ignoresSafeArea()
+        }
+        .fileImporter(isPresented: $showFile, allowedContentTypes: [.item]) { result in
+            if let url = try? result.get(), let data = try? Data(contentsOf: url) {
+                uploadAttach(url.lastPathComponent, data)
+            }
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $pickedPhoto, matching: .images)
+        .onChange(of: pickedPhoto) { item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    uploadAttach("照片.jpg", data)
+                }
+            }
+        }
+        .onChange(of: showMake) { on in
+            if on { Task { await checkLogin() } }
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
-        .padding(.bottom, 6)
-        .background(
-            Tw.white
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Tw.gray200).frame(height: 0.5)
-                }
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .padding(.bottom, 8)
+        .background(Tw.gray50.ignoresSafeArea(edges: .bottom))
     }
 
     // MARK: - 起
@@ -839,6 +958,381 @@ struct TalkPage: View {
         //   否则进过一次聊天记录，猫的画和声音就一直停着。
         PiPController.shared?.resumeAfterTyping()
         dismiss()
+    }
+
+    // ==================================================================
+    // ★★★ 2026-11-12（照 v0.6 图稿）：聊天里做一个新动作
+    // ==================================================================
+
+    private func smallChip(_ s: String, _ on: Bool) -> some View {
+        Text(s)
+            .font(.system(size: 11, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? Tw.red600 : Tw.gray500)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill(on ? Tw.red600.opacity(0.08) : Tw.white)
+                    .overlay(Capsule().stroke(on ? Tw.red600.opacity(0.35) : Tw.gray200,
+                                              lineWidth: 1))
+            )
+    }
+
+    /// ＋ 点开的三格：相机 / 相册 / 文件，三格都能真选、真传、真落盘。
+    private var attachGrid: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ForEach(["相机", "相册", "文件"], id: \.self) { s in
+                    Button { pickAttach(s) } label: {
+                        VStack(spacing: 5) {
+                            Image(systemName: s == "相机" ? "camera"
+                                  : (s == "相册" ? "photo" : "paperclip"))
+                                .font(.system(size: 19))
+                                .foregroundStyle(Tw.gray900)
+                            Text(s).font(.system(size: 11)).foregroundStyle(Tw.gray500)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 11).fill(Tw.white))
+                    }
+                }
+            }
+            Text(draftNo.isEmpty
+                 ? "先写下这个动作，附件会跟着那张回执一起收好"
+                 : "附件跟着这张回执一起收好")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Tw.gray400)
+        }
+    }
+
+    /// 底部动作制作面板（Agent 模式）
+    private var makePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Button { useTemplate = false } label: { smallChip("自定义动作", !useTemplate) }
+                Button { useTemplate = true } label: { smallChip("已有动作", useTemplate) }
+                Spacer(minLength: 0)
+                Button { showMake = false } label: {
+                    Image(systemName: "xmark").font(.system(size: 15))
+                        .foregroundStyle(Tw.gray500)
+                }
+            }
+            if useTemplate {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 6) {
+                    ForEach(已有动作) { t in
+                        Button {
+                            pickedTpl = t.key
+                            pickedName = t.name
+                        } label: { smallChip(t.name, pickedTpl == t.key) }
+                    }
+                }
+            } else {
+                Text("写下这个动作在做什么，一行一句。写完由纯代码套进固定骨架，不改写你的字。")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tw.gray500)
+            }
+            HStack(spacing: 6) {
+                smallChip("模型/豆包账号　" + loginText, false)
+                smallChip("5.00 秒 · 固定", false)
+            }
+            TextEditor(text: $makeText)
+                .frame(height: 62)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Tw.gray50))
+                .overlay(alignment: .topLeading) {
+                    if makeText.isEmpty {
+                        Text("描述你想创作的动作或选择动作模板")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Tw.gray400)
+                            .padding(.top, 13)
+                            .padding(.leading, 12)
+                    }
+                }
+            Button { submitDraft() } label: {
+                Text("写好了")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Tw.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Tw.red600))
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16).fill(Tw.white)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Tw.gray200, lineWidth: 1))
+        )
+        .padding(10)
+    }
+
+    private var makeConfirmCard: some View {
+        draftCard(title: draftName.isEmpty ? "新动作" : draftName,
+                  rows: [("时长", "5.00 秒"), ("时间轴", "固定，你写的字不改"),
+                         ("用哪个做", loginText)],
+                  note: nil, button: "开始制作", action: submitToServer)
+    }
+
+    private var makeReceiptCard: some View {
+        var rows: [(String, String)] = [("状态", draftState), ("单号", draftNo)]
+        if !draftJob.isEmpty { rows.append(("这一趟的单号", draftJob)) }
+        rows.append(("时间", draftTime))
+        for n in attachNames { rows.append(("附件", n)) }
+        return draftCard(title: "写好了 · " + draftName,
+                  rows: rows,
+                  note: "已经交给它去做了，退出再进还看得到做到哪了。",
+                  button: nil, action: {},
+                  extras: [("看看做到哪了", { refreshDraft() }),
+                           ("再做一个", { newOne() })])
+    }
+
+    /// 台子明说没接这单时，原话摆出来 + 一颗重试，不自己判失败。
+    private var machineCard: some View {
+        draftCard(title: "没接这单", rows: [], note: machineErr,
+                  button: "再试一次", action: { retryStart() })
+    }
+
+    private func draftCard(title: String, rows: [(String, String)], note: String?,
+                           button: String?, action: @escaping () -> Void,
+                           extras: [(String, () -> Void)] = []) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Tw.gray900)
+            ForEach(rows.indices, id: \.self) { i in
+                HStack {
+                    Text(rows[i].0).font(.system(size: 11.5)).foregroundStyle(Tw.gray500)
+                    Spacer(minLength: 0)
+                    Text(rows[i].1).font(.system(size: 11.5)).foregroundStyle(Tw.gray900)
+                }
+            }
+            if let n = note {
+                Text(n).font(.system(size: 11)).foregroundStyle(Tw.gray400)
+            }
+            if let b = button {
+                Button(action: action) {
+                    Text(b).font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Tw.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Tw.red600))
+                }
+                .padding(.top, 6)
+            }
+            if !extras.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(extras.indices, id: \.self) { i in
+                        Button(action: extras[i].1) {
+                            Text(extras[i].0)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Tw.gray900)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 9).fill(Tw.gray50))
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12).fill(Tw.white)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Tw.gray200, lineWidth: 1))
+        )
+    }
+
+    private func submitDraft() {
+        let s = makeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if useTemplate && pickedTpl.isEmpty { return }
+        if !useTemplate && s.isEmpty { return }
+        draftName = useTemplate ? pickedName : "新动作"
+        machineErr = ""
+        progressText = ""
+        pendingCard = true
+        showMake = false
+    }
+
+    // ---------- 写稿 → 点开始制作 → 真开工（免费豆包链）→ 回执落盘 ----------
+
+    private func postJSON(_ path: String, _ body: [String: Any]) async throws -> [String: Any] {
+        var req = URLRequest(url: URL(string: ActLab.base + path)!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.stillStamp()
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, _) = try await URLSession.shared.data(for: req)
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    /// ★ 他点「开始制作」才真的开工。已经有单在跑时任何一次进入都不许再下单。
+    private func submitToServer() {
+        guard !makeBusy else { return }
+        guard draftNo.isEmpty else { refreshDraft(); return }
+        makeBusy = true
+        let body: [String: Any] = [
+            "char": CatBrain.currentCharId,
+            "描述": makeText.trimmingCharacters(in: .whitespacesAndNewlines),
+            "模板": useTemplate ? pickedTpl : ""
+        ]
+        Task { @MainActor in
+            defer { makeBusy = false }
+            do {
+                let d = try await postJSON("/api/act/draft", body)
+                guard (d["ok"] as? Bool) == true else {
+                    machineErr = d["错误"] as? String ?? "没连上台子"
+                    return
+                }
+                let no = d["单号"] as? String ?? ""
+                guard !no.isEmpty else { return }
+                draftNo = no
+                draftAct = d["动作名"] as? String ?? ""
+                draftName = d["显示名"] as? String ?? draftName
+                draftState = d["状态"] as? String ?? ""
+                draftTime = d["时间"] as? String ?? ""
+                applyStart(try await postJSON("/api/act/draft/start", ["单号": no]))
+            } catch {
+                machineErr = "没连上台子，等会儿再试"
+            }
+        }
+    }
+
+    private func applyStart(_ s: [String: Any]) {
+        if (s["ok"] as? Bool) == true {
+            draftState = s["状态"] as? String ?? draftState
+            draftTime = s["时间"] as? String ?? draftTime
+            draftJob = s["job"] as? String ?? ""
+            pendingCard = false
+            machineErr = ""
+            saveDraft()
+        } else {
+            // ★ 只认机器明说的失败，原话原样摆出来，不替它编理由。
+            machineErr = s["错误"] as? String ?? "生成那边没接这单"
+        }
+    }
+
+    private func retryStart() {
+        guard !draftNo.isEmpty, !makeBusy else { return }
+        makeBusy = true
+        let no = draftNo
+        Task { @MainActor in
+            defer { makeBusy = false }
+            do { applyStart(try await postJSON("/api/act/draft/start", ["单号": no])) }
+            catch { machineErr = "没连上台子，等会儿再试" }
+        }
+    }
+
+    /// 退出再进 / 点按钮：只问台子「做到哪了」，只显示机器真写的字。
+    private func refreshDraft() {
+        guard !draftNo.isEmpty else { return }
+        let no = draftNo
+        Task { @MainActor in
+            do {
+                let o = try await postJSON("/api/act/draft/state", ["单号": no])
+                guard (o["ok"] as? Bool) == true else { return }
+                if let s = o["状态"] as? String, !s.isEmpty { draftState = s }
+                if let j = o["job"] as? String, !j.isEmpty { draftJob = j }
+                if let a = o["动作名"] as? String, !a.isEmpty { draftAct = a }
+                saveDraft()
+                if let say = o["进度说"] as? String, !say.isEmpty {
+                    progressText = say
+                } else if let g = o["进度"] as? [String: Any],
+                          let st = (g["阶段"] as? String) ?? (g["stage"] as? String),
+                          !st.isEmpty {
+                    progressText = "做到哪了　" + st
+                }
+                if let a = o["附件"] as? [[String: Any]], !a.isEmpty {
+                    attachNames = a.compactMap { x in
+                        guard let n = x["名字"] as? String else { return nil }
+                        return n + "　" + String((x["字节"] as? Int) ?? 0) + " 字节"
+                    }
+                }
+            } catch { /* 不编失败理由 */ }
+        }
+    }
+
+    private func checkLogin() async {
+        do {
+            let s = try await ActLab.loginState()
+            loginText = "豆包1 · " + (s.loggedIn ? "已登录" : "没登录")
+        } catch {
+            loginText = "豆包1 · 没问到"
+        }
+    }
+
+    private func newOne() {
+        draftNo = ""; draftState = ""; draftTime = ""; draftJob = ""; draftAct = ""
+        draftName = "新动作"; machineErr = ""; progressText = ""; attachNames = []
+        makeText = ""; useTemplate = false; pickedTpl = ""; pickedName = ""
+        let d = UserDefaults.standard
+        for k in ["act_draft_no", "act_draft_state", "act_draft_time",
+                  "act_draft_name", "act_draft_job", "act_draft_act"] {
+            d.removeObject(forKey: k)
+        }
+        showMake = true
+    }
+
+    // ---------- 三格附件：真选、真传、真落盘 ----------
+
+    private func pickAttach(_ s: String) {
+        if draftNo.isEmpty {
+            showAttach = false
+            showMake = true
+            progressText = "先写下这个动作，附件会跟着那张回执一起收好"
+            return
+        }
+        progressText = ""
+        showAttach = false
+        if s == "相机" { showCamera = true }
+        else if s == "相册" { showPhotoPicker = true }
+        else { showFile = true }
+    }
+
+    private func uploadAttach(_ name: String, _ data: Data) {
+        guard !draftNo.isEmpty else { return }
+        let no = draftNo
+        Task { @MainActor in
+            do {
+                var comp = URLComponents(string: ActLab.base + "/api/act/draft/file")!
+                comp.queryItems = [URLQueryItem(name: "单号", value: no),
+                                   URLQueryItem(name: "名字", value: name)]
+                var req = URLRequest(url: comp.url!)
+                req.httpMethod = "POST"
+                req.timeoutInterval = 60
+                req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+                req.stillStamp()
+                req.httpBody = data
+                let (d, _) = try await URLSession.shared.data(for: req)
+                let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+                if (o["ok"] as? Bool) == true {
+                    let n = o["名字"] as? String ?? name
+                    let b = (o["字节"] as? Int) ?? data.count
+                    attachNames.append(n + "　" + String(b) + " 字节")
+                } else if let e = o["错误"] as? String {
+                    progressText = e
+                }
+            } catch { /* 不编失败理由 */ }
+        }
+    }
+
+    private func saveDraft() {
+        let d = UserDefaults.standard
+        d.set(draftNo, forKey: "act_draft_no")
+        d.set(draftState, forKey: "act_draft_state")
+        d.set(draftTime, forKey: "act_draft_time")
+        d.set(draftName, forKey: "act_draft_name")
+        d.set(draftJob, forKey: "act_draft_job")
+        d.set(draftAct, forKey: "act_draft_act")
+    }
+
+    /// 退出再进还看得到做到哪了；开机只认存下来的回执，不下任何判决。
+    private func loadDraft() {
+        let d = UserDefaults.standard
+        draftNo = d.string(forKey: "act_draft_no") ?? ""
+        draftState = d.string(forKey: "act_draft_state") ?? ""
+        draftTime = d.string(forKey: "act_draft_time") ?? ""
+        draftName = d.string(forKey: "act_draft_name") ?? "新动作"
+        draftJob = d.string(forKey: "act_draft_job") ?? ""
+        draftAct = d.string(forKey: "act_draft_act") ?? ""
+        if !draftNo.isEmpty { refreshDraft() }
     }
 
     // MARK: - 发

@@ -2,6 +2,15 @@ import SwiftUI
 import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
+import Combine
+
+/// ★ 2026-11-13：台子上真挂着的一个豆包号位（不是写死的「豆包1」）。
+fileprivate struct 号位项: Identifiable {
+    var id: String { slot }
+    let slot: String
+    let 名字: String
+    let 登着没: Bool
+}
 
 // MARK: - 「相机」那一格：系统相机，拍完直接转 JPEG（不把 HEIC 交出去）
 struct StillCameraPicker: UIViewControllerRepresentable {
@@ -59,6 +68,16 @@ struct TalkPage: View {
     @State private var pulse = 0
     /// ★ 2026-10-30：语音模式（左边那颗切换）—— 对齐安卓聊天页
     @State private var voiceMode = false
+    // ★ 2026-11-13：按住输入框直接起录（不再只是「切到语音模式」）
+    @StateObject private var holdVoice = VoiceIn()
+    @State private var holdActive = false
+    /// ★ 手指是不是还按着 —— 跟「界面有没有切成录音条」分开。
+    ///   语音授权是异步的，慢的时候手指已经松了才起录，靠这个把它收住。
+    @State private var holdDown = false
+    @State private var holdCancel = false
+    @State private var holdStartAt = Date.distantPast
+    @State private var holdHist: [CGFloat] = Array(repeating: 0.05, count: 24)
+    @State private var holdTip = ""
     /// ★ 2026-10-31：左边那颗「猫列表」（安卓聊天页有侧栏，iOS 只有一只）
     @State private var showCats = false
     @State private var cats: [ActLab.Char] = []
@@ -106,9 +125,17 @@ struct TalkPage: View {
     @State private var draftJob = ""
     @State private var draftAct = ""
     @State private var loginText = "豆包1"
+    /// ★ 2026-11-13（他定的）：「就是要能选登录的豆包号还有我们的 wan 路线」。
+    ///   台子上号位清单、模型清单、wan 通道都是真的，这两排不再是点不动的字。
+    @State private var 做法 = "doubao"            // doubao / wan
+    @State private var 选中号 = ""                // 空＝让机器自己挑
+    @State private var 模型说 = "豆包 · Seedance 2.0 mini"
+    @State private var 号位: [号位项] = []
     @State private var machineErr = ""
     @State private var progressText = ""
     @State private var attachNames: [String] = []
+    /// ★ 2026-11-13：写动作之前先选的附件，先收着，回执一出来就补交
+    @State private var pendingAttach: [(String, Data)] = []
     @State private var showCamera = false
     @State private var showFile = false
     @State private var showPhotoPicker = false
@@ -264,6 +291,12 @@ struct TalkPage: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Tw.gray400)
                     }
+                    // ★ 2026-11-13：录音的轻提示单独一行，不占动作制作那行进度文字
+                    if !holdTip.isEmpty {
+                        Text(holdTip)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Tw.gray400)
+                    }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 16)
@@ -320,7 +353,8 @@ struct TalkPage: View {
             // ★ 输入框上方那一排小选项：一直都在，不加显示条件
             HStack(spacing: 6) {
                 smallChip("💬 对话 ⌄", false)
-                Button { showMake = true } label: { smallChip("✦ 动作制作", true) }
+                // ★ 2026-11-13：默认不高亮，只有真的在做动作才红
+                Button { showMake = true } label: { smallChip("✦ 动作制作", showMake) }
                 Spacer(minLength: 0)
             }
 
@@ -333,17 +367,35 @@ struct TalkPage: View {
                 }
                 .frame(width: 24)
 
-                if voiceMode {
-                    // 老的整条录音键：按住说、上滑取消、<0.6 秒提示太短、24 根真音波
-                    TalkHoldBar(onSaid: { t in text = t; send() })
-                        .frame(height: 30)
-                } else {
-                    TalkField(text: $text, focusPulse: pulse, autoFocus: false,
-                              onSubmit: send,
-                              onBeginEdit: { PiPController.shared?.quiesceForTyping() },
-                              onEndEdit: { PiPController.shared?.resumeAfterTyping() })
-                        .frame(height: 22)
-                        .padding(.horizontal, 2)
+                // ★ 手势挂在这块始终存在的容器上：录音时只是换掉里面的画面，手势不会断。
+                //   不挂在整条胶囊上，免得把左边的相机、右边的语音圆钮和 ＋ 也盖住。
+                ZStack {
+                    if voiceMode {
+                        // 老的整条录音键：按住说、上滑取消、24 根真音波
+                        TalkHoldBar(onSaid: { t in text = t; send() })
+                            .frame(height: 30)
+                    } else if holdActive {
+                        holdBar.frame(height: 30)
+                    } else {
+                        TalkField(text: $text, focusPulse: pulse, autoFocus: false,
+                                  onSubmit: send,
+                                  onBeginEdit: { PiPController.shared?.quiesceForTyping() },
+                                  onEndEdit: { PiPController.shared?.resumeAfterTyping() })
+                            .frame(height: 22)
+                            .padding(.horizontal, 2)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 30)
+                .simultaneousGesture(holdLongPress)
+                .simultaneousGesture(holdDrag)
+                // ★ 授权弹窗慢慢回来时手指早松了 ⇒ 立刻收掉，别在背后继续录。
+                //   只在「有没有在录」变化时触发，不是每帧刷。
+                .onChange(of: holdVoice.listening) {
+                    if holdVoice.listening && !holdDown {
+                        holdVoice.stop()
+                        holdActive = false
+                        holdHist = Array(repeating: 0.05, count: 24)
+                    }
                 }
 
                 // 右：语音圆钮（点一下＝切到老的语音模式）
@@ -385,13 +437,8 @@ struct TalkPage: View {
                         .stroke(Tw.gray200, lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
             )
-            // ★ 长按输入栏＝直接说话。iOS 这端先切到现成的整条录音键，
-            //   不接管 UITextField 的手势（不然打字和光标会坏）；真机验过再对齐安卓。
-            .onLongPressGesture(minimumDuration: 0.4) {
-                voiceMode = true
-                focus.resign()
-            }
-
+            // ★ 2026-11-13：长按直接说话的手势在上面那块输入区上，这里不再叠一层
+            //   （叠在整条胶囊上会把相机／语音圆钮／＋ 都吃掉，正是「按也按不了」）。
             if showAttach { attachGrid }
         }
         .sheet(isPresented: $showCamera) {
@@ -977,6 +1024,96 @@ struct TalkPage: View {
             )
     }
 
+    // MARK: - 长按输入框＝按住直接说（对齐安卓，2026-11-13）
+
+    /// 按住超过 0.35 秒就起录；短按仍然是打字，不抢键盘。
+    private var holdLongPress: some Gesture {
+        LongPressGesture(minimumDuration: 0.35, maximumDistance: 200)
+            .onEnded { _ in
+                guard !voiceMode, !holdDown else { return }
+                holdDown = true
+                holdActive = true
+                holdStartAt = Date()
+                holdCancel = false
+                holdTip = ""
+                focus.resign()
+                holdVoice.start()
+            }
+    }
+
+    /// 手指还在时记「上滑取消」，松手就收尾。
+    private var holdDrag: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { g in
+                guard holdDown, !voiceMode else { return }
+                holdCancel = g.translation.height < -64
+            }
+            .onEnded { g in
+                guard holdDown, !voiceMode else { return }
+                holdDown = false
+                holdActive = false
+                let tooShort = Date().timeIntervalSince(holdStartAt) < 0.6
+                let cancelled = holdCancel || g.translation.height < -64
+                let 机器话 = holdVoice.err        // ★ stop() 会清状态，先取走原话
+                let said = holdVoice.stop()
+                holdCancel = false
+                holdHist = Array(repeating: 0.05, count: 24)
+                // ★ 只说机器上真有的话：太短 / 机器原话，不编「没听清」这类理由。
+                if tooShort { 轻提示("说话时间太短") }
+                else if let e = 机器话, !e.isEmpty { 轻提示(e) }
+                else if !cancelled && !said.isEmpty { text = said; send() }
+            }
+    }
+
+    /// 一行小灰字，两秒后自己收掉；不碰动作制作那边的进度文字。
+    private func 轻提示(_ s: String) {
+        holdTip = s
+        // 明确写 @MainActor，别让改界面这句话卡在并发检查上（CI 一次编译很贵）。
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            if holdTip == s { holdTip = "" }
+        }
+    }
+
+    /// 录音态：**只有机器真在录**才画音波、才写「松手发送」。
+    /// 麦克风／语音识别没给，就照实把机器原话摆出来，不摆一条假录音条骗人
+    /// （安卓那边同款坑当天已修，这里一并对齐）。
+    private var holdBar: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(holdVoice.listening && holdCancel
+                      ? Tw.red600.opacity(0.08) : Tw.gray50)
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(holdVoice.listening && holdCancel
+                            ? Tw.red600.opacity(0.5) : Tw.gray200, lineWidth: 1))
+            if holdVoice.listening {
+                HStack(alignment: .center, spacing: 1.6) {
+                    ForEach(0..<24, id: \.self) { i in
+                        Capsule()
+                            .fill(holdCancel ? Tw.red600.opacity(0.55) : Tw.gray900.opacity(0.75))
+                            .frame(width: 1.8, height: max(2, 26 * (0.06 + holdHist[i])))
+                    }
+                }
+            }
+            Text(holdVoice.listening
+                 ? (holdCancel ? "松手取消" : "松手发送")
+                 : (holdVoice.err ?? "正在等麦克风允许…"))
+                .font(.system(size: 11))
+                .foregroundStyle(holdVoice.listening
+                                 ? (holdCancel ? Tw.red600 : Tw.gray400)
+                                 : Tw.gray500)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 12)
+        }
+        .onReceive(Timer.publish(every: 0.06, on: .main, in: .common).autoconnect()) { _ in
+            guard holdActive, holdVoice.listening else { return }
+            holdHist.removeLast()
+            holdHist.insert(max(0.05, CGFloat(holdVoice.level)), at: 0)
+        }
+    }
+
     /// ＋ 点开的三格：相机 / 相册 / 文件，三格都能真选、真传、真落盘。
     private var attachGrid: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -997,7 +1134,7 @@ struct TalkPage: View {
                 }
             }
             Text(draftNo.isEmpty
-                 ? "先写下这个动作，附件会跟着那张回执一起收好"
+                 ? "现在就能选；选好的先收着，写好动作一起交上去"
                  : "附件跟着这张回执一起收好")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Tw.gray400)
@@ -1031,9 +1168,29 @@ struct TalkPage: View {
                     .foregroundStyle(Tw.gray500)
             }
             HStack(spacing: 6) {
-                smallChip("模型/豆包账号　" + loginText, false)
+                Menu {
+                    Button("不花钱的豆包（写新动作也能做）") { 做法 = "doubao"; 存选择() }
+                    Button("要花钱的 wan（1.20 元 / 条，只做已有 9 个动作）") { 做法 = "wan"; 存选择() }
+                } label: {
+                    smallChip("做法　" + (做法 == "wan" ? "要花钱的 wan" : "不花钱的豆包") + " ⌄",
+                              做法 == "wan")
+                }
                 smallChip("5.00 秒 · 固定", false)
             }
+            HStack(spacing: 6) {
+                Menu {
+                    Button("让机器自己挑（默认）") { 选中号 = ""; 存选择() }
+                    ForEach(号位) { x in
+                        Button(x.名字 + (x.登着没 ? " · 登着" : " · 没登录")) {
+                            选中号 = x.slot
+                            存选择()
+                        }
+                    }
+                } label: { smallChip("豆包号　" + 号位显示() + " ⌄", false) }
+            }
+            Text("模型　" + 模型说)
+                .font(.system(size: 11))
+                .foregroundStyle(Tw.gray400)
             TextEditor(text: $makeText)
                 .frame(height: 62)
                 .padding(6)
@@ -1067,7 +1224,8 @@ struct TalkPage: View {
     private var makeConfirmCard: some View {
         draftCard(title: draftName.isEmpty ? "新动作" : draftName,
                   rows: [("时长", "5.00 秒"), ("时间轴", "固定，你写的字不改"),
-                         ("用哪个做", loginText)],
+                         ("用哪个做", (做法 == "wan" ? "要花钱的 wan" : "不花钱的豆包")
+                          + " · " + 号位显示())],
                   note: nil, button: "开始制作", action: submitToServer)
     }
 
@@ -1188,7 +1346,8 @@ struct TalkPage: View {
                 draftName = d["显示名"] as? String ?? draftName
                 draftState = d["状态"] as? String ?? ""
                 draftTime = d["时间"] as? String ?? ""
-                applyStart(try await postJSON("/api/act/draft/start", ["单号": no]))
+                flushPending()
+                applyStart(try await postJSON(startPath(), startBody(no)))
             } catch {
                 machineErr = "没连上台子，等会儿再试"
             }
@@ -1215,7 +1374,7 @@ struct TalkPage: View {
         let no = draftNo
         Task { @MainActor in
             defer { makeBusy = false }
-            do { applyStart(try await postJSON("/api/act/draft/start", ["单号": no])) }
+            do { applyStart(try await postJSON(startPath(), startBody(no))) }
             catch { machineErr = "没连上台子，等会儿再试" }
         }
     }
@@ -1235,7 +1394,8 @@ struct TalkPage: View {
                 if let say = o["进度说"] as? String, !say.isEmpty {
                     progressText = say
                 } else if let g = o["进度"] as? [String: Any],
-                          let st = (g["阶段"] as? String) ?? (g["stage"] as? String),
+                          let st = (g["阶段"] as? String) ?? (g["stage"] as? String)
+                                   ?? (g["状态"] as? String),
                           !st.isEmpty {
                     progressText = "做到哪了　" + st
                 }
@@ -1249,13 +1409,65 @@ struct TalkPage: View {
         }
     }
 
+    private func getJSON(_ path: String) async throws -> [String: Any] {
+        var req = URLRequest(url: URL(string: ActLab.base + path)!)
+        req.timeoutInterval = 15
+        req.stillStamp()
+        let (data, _) = try await URLSession.shared.data(for: req)
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    /// ★ 2026-11-13：拉台子上真挂着的号位与真模型名（只读，不登、不改状态）。
     private func checkLogin() async {
         do {
-            let s = try await ActLab.loginState()
-            loginText = "豆包1 · " + (s.loggedIn ? "已登录" : "没登录")
+            let a = try await getJSON("/api/login/accounts")
+            let arr = a["账号"] as? [[String: Any]] ?? []
+            号位 = arr.compactMap { x in
+                guard let s = x["slot"] as? String, !s.isEmpty else { return nil }
+                return 号位项(slot: s,
+                              名字: x["名字"] as? String ?? ("豆包" + s),
+                              登着没: x["登着没"] as? Bool ?? false)
+            }
+            loginText = 号位.isEmpty ? "没问到登着的号" : "\(号位.count) 个豆包号"
         } catch {
-            loginText = "豆包1 · 没问到"
+            loginText = "没问到"
         }
+        do {
+            let m = try await getJSON("/api/gen/models")
+            if let arr = m["模型"] as? [[String: Any]] {
+                for x in arr where (x["接没接通"] as? Bool) == true {
+                    if let n = x["名字"] as? String, !n.isEmpty { 模型说 = n; break }
+                }
+            }
+        } catch { /* 不编 */ }
+    }
+
+    private func 号位显示() -> String {
+        if 选中号.isEmpty { return "机器自己挑" }
+        if let x = 号位.first(where: { $0.slot == 选中号 }) { return x.名字 }
+        return "豆包" + 选中号 + " 号"
+    }
+
+    private func startPath() -> String {
+        做法 == "wan" ? "/api/act/draft/wan" : "/api/act/draft/start"
+    }
+
+    private func startBody(_ no: String) -> [String: Any] {
+        if 做法 == "wan" { return ["单号": no] }
+        if 选中号.isEmpty { return ["单号": no] }
+        return ["单号": no, "账号": 选中号]
+    }
+
+    private func 存选择() {
+        let d = UserDefaults.standard
+        d.set(做法, forKey: "act_draft_way")
+        d.set(选中号, forKey: "act_draft_slot")
+    }
+
+    private func 读选择() {
+        let d = UserDefaults.standard
+        做法 = d.string(forKey: "act_draft_way") ?? "doubao"
+        选中号 = d.string(forKey: "act_draft_slot") ?? ""
     }
 
     private func newOne() {
@@ -1272,13 +1484,8 @@ struct TalkPage: View {
 
     // ---------- 三格附件：真选、真传、真落盘 ----------
 
+    /// ★ 2026-11-13：三格点下去就真的开相机／相册／文件，不再拦一道「先去写动作」。
     private func pickAttach(_ s: String) {
-        if draftNo.isEmpty {
-            showAttach = false
-            showMake = true
-            progressText = "先写下这个动作，附件会跟着那张回执一起收好"
-            return
-        }
         progressText = ""
         showAttach = false
         if s == "相机" { showCamera = true }
@@ -1287,7 +1494,11 @@ struct TalkPage: View {
     }
 
     private func uploadAttach(_ name: String, _ data: Data) {
-        guard !draftNo.isEmpty else { return }
+        guard !draftNo.isEmpty else {
+            pendingAttach.append((name, data))
+            progressText = "先收着了 \(name)，写好动作一起交上去"
+            return
+        }
         let no = draftNo
         Task { @MainActor in
             do {
@@ -1313,6 +1524,14 @@ struct TalkPage: View {
         }
     }
 
+    /// ★ 2026-11-13：写动作之前先选的附件，回执一出来就补交，一件不落。
+    private func flushPending() {
+        guard !draftNo.isEmpty, !pendingAttach.isEmpty else { return }
+        let list = pendingAttach
+        pendingAttach = []
+        for (n, d) in list { uploadAttach(n, d) }
+    }
+
     private func saveDraft() {
         let d = UserDefaults.standard
         d.set(draftNo, forKey: "act_draft_no")
@@ -1321,6 +1540,7 @@ struct TalkPage: View {
         d.set(draftName, forKey: "act_draft_name")
         d.set(draftJob, forKey: "act_draft_job")
         d.set(draftAct, forKey: "act_draft_act")
+        存选择()
     }
 
     /// 退出再进还看得到做到哪了；开机只认存下来的回执，不下任何判决。
@@ -1332,6 +1552,7 @@ struct TalkPage: View {
         draftName = d.string(forKey: "act_draft_name") ?? "新动作"
         draftJob = d.string(forKey: "act_draft_job") ?? ""
         draftAct = d.string(forKey: "act_draft_act") ?? ""
+        读选择()
         if !draftNo.isEmpty { refreshDraft() }
     }
 

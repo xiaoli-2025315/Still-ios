@@ -66,7 +66,8 @@ final class 相册缩略: ObservableObject {
 struct 内嵌相册: View {
     @StateObject private var 库 = 相册缩略()
     @State private var 选中: Set<Int> = []
-    var 收好: ([UIImage]) -> Void
+    /// ★ 交出去的是 JPEG 字节（跟台子上附件口要的东西一致），不是 UIImage
+    var 收好: ([Data]) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -119,7 +120,9 @@ struct 内嵌相册: View {
                 Spacer(minLength: 0)
                 Button {
                     guard !选中.isEmpty else { return }
-                    收好(选中.sorted().map { 库.图[$0] })
+                    收好(选中.sorted().compactMap {
+                        库.图[$0].jpegData(compressionQuality: 0.88)
+                    })
                     选中 = []
                 } label: {
                     Text("收好")

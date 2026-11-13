@@ -704,13 +704,19 @@ jobs:
         #   红了才会把日志挂到 nightly release 上，我才看得到台子到底回了什么。
         if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
         working-directory: ${{ steps.loc.outputs.dir }}
+        # ★ 2026-11-13：台子网关偶发「连接挂起不返回」，正常传完只要 8 秒。
+        #   不给这个上限，一轮就得白等 15 分钟才判失败，把后面的直链发布也拖住。
+        timeout-minutes: 3
         env:
           PUSH_KEY: ${{ secrets.IOS_PUSH_KEY }}
         run: |
           bash Tools/ci_sync.sh
 
       - name: 发布免登录直链（已签名包）
-        if: ${{ env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
+        # ★ 2026-11-13：同步失败不该连累这一条（上面注释里早就写过这个坑）。
+        #   always() 让它在同步卡住／失败后照样把签好的包发到免登录直链，
+        #   编译机连不上台子时，还能从这条直链把包取回来手动补传。
+        if: ${{ always() && env.IOS_SIGNING_CERT != '' && steps.signarchive.outcome == 'success' }}
         working-directory: ${{ steps.loc.outputs.dir }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

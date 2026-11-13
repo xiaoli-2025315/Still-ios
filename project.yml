@@ -23,8 +23,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.184.0"
-    CURRENT_PROJECT_VERSION: "184"
+    MARKETING_VERSION: "1.185.0"
+    CURRENT_PROJECT_VERSION: "185"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -117,7 +117,7 @@ targets:
         #   必须是眼前真要发生的那件事，所以改成中性的说法，两种入口都盖得住。
         NSMicrophoneUsageDescription: "让它听着你说的话，把话变成文字。相机录像时也会收音。"
         NSSpeechRecognitionUsageDescription: "把你说的话转成文字，才能让它听懂。语音只在这台手机上转换。"
-        NSPhotoLibraryUsageDescription: "选一张它的照片来登记角色，或者挑一段动作视频交给台子抠像。"
+        NSPhotoLibraryUsageDescription: "选一张它的照片来登记角色、挑一段动作视频交给台子抠像，或者在聊天里直接显示相册缩略图给你挑。"
         NSPhotoLibraryAddUsageDescription: "把拍下来的照片、录下来的视频、还有派它出门那张二维码存进相册。"
     dependencies:
       # 注意：target 名 ≠ 类型名。Sources/Widget/StillWidget.swift 里有个 struct 也叫 StillWidget，

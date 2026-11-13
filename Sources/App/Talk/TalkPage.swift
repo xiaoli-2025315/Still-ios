@@ -70,6 +70,8 @@ struct TalkPage: View {
     @State private var voiceMode = false
     // ★ 2026-11-13：按住输入框直接起录（不再只是「切到语音模式」）
     @StateObject private var holdVoice = VoiceIn()
+    /// ★ 2026-11-14：输入栏改成浮层后，键盘上来的高度自己接，不用 safeAreaInset 挤页面。
+    @State private var 键盘高: CGFloat = 0
     @State private var holdActive = false
     /// ★ 手指是不是还按着 —— 跟「界面有没有切成录音条」分开。
     ///   语音授权是异步的，慢的时候手指已经松了才起录，靠这个把它收住。
@@ -168,19 +170,14 @@ struct TalkPage: View {
         //   猫列表不再用系统那种「从底部升起的卡片」，换成贴左边进出的抽屉 + 遮罩，
         //   跟安卓 ChatV2Activity 的 Gravity.START 一个样子。
         ZStack(alignment: .leading) {
+            // ★★ 2026-11-14：聊天内容一直铺到屏幕最底，不再被输入栏挤上去。
             VStack(spacing: 0) {
                 header
                 dialog
             }
             .background(Tw.gray50.ignoresSafeArea())
-            // ★★★★ 2026-11-09（他定）：**只在这一页**浮一只，形式跟安卓浮窗一样。
-            //   挂在 safeAreaInset 之前 ⇒ 它的活动范围就是气泡那一块，压不到下面输入条；
-            //   退出聊天页这一层跟着销毁，不会跑到别的页、更不会跨 App。
-            //   ★ 主页那个展示框仍是上一轮改好的「只展示、不许碰」，两者互不牵连。
+            // 浮在这一页的小宠物，退出聊天页这一层跟着销毁
             .overlay { TalkFloatPet() }
-            // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
-            //   不用自己算键盘高度，也不会被挡住。
-            .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
             .onAppear { boot(); loadDraft() }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -188,17 +185,49 @@ struct TalkPage: View {
                 Color.black.opacity(0.28)
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation { showCats = false } }
+                    .zIndex(9)
                 sideBar
                     .frame(width: min(UIScreen.main.bounds.width * 0.82, CGFloat(320)))
                     .transition(.move(edge: .leading))
+                    .zIndex(10)
             }
-            // ★ 动作制作面板：从底部弹出来，压住上半部聊天；右上 × 退出，回普通聊天。
+
+            // 点浮层以外就收起：透明层，不加全屏灰遮罩，不是 Modal
+            if showAttach || showMake {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { showAttach = false; showMake = false }
+                    .zIndex(3)
+            }
+
             if showMake {
                 makePanel
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 100)
                     .transition(.move(edge: .bottom))
                     .zIndex(5)
             }
+
+            // ★★ 输入栏自己也浮起来：独立图层、白胶囊＋毛玻璃＋明显投影，
+            //   盖在聊天内容上，底部不刷白、页面不位移。加号面板是它上面的另一层。
+            GeometryReader { geo in
+                ZStack(alignment: .bottom) {
+                    if showAttach {
+                        attachPanel
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 100)
+                            .transition(.opacity)
+                            .zIndex(6)
+                    }
+                    floatingDock
+                        .zIndex(7)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .offset(y: -(键盘高 > 0
+                             ? max(0, 键盘高 - geo.safeAreaInsets.bottom) : 0))
+            }
+            .zIndex(7)
         }
         .animation(.easeOut(duration: 0.22), value: showCats)
         .sheet(isPresented: $showNewGroup) { newGroupSheet }
@@ -300,7 +329,9 @@ struct TalkPage: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                // ★ 2026-11-14：输入栏是浮层 ⇒ 滚动区里留一块空白，
+                //   让最后一条能滚到胶囊上方，不是把整页顶上去。
+                .padding(.bottom, 100)
             }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
@@ -348,13 +379,17 @@ struct TalkPage: View {
     //
     // 形态照安卓 `TalkBar`：白底圆角 + 右边一块红的「说」。
 
-    private var inputBar: some View {
+    /// ★ 2026-11-14：这一整块是独立浮层，不是插在页面底部的一节。
+    private var floatingDock: some View {
         VStack(spacing: 6) {
-            // ★ 输入框上方那一排小选项：一直都在，不加显示条件
+            // ★ 只保留输入框上方这排「💬 对话｜✦ 动作制作」；
+            //   图里那排「拍题答疑／AI 创作」不要。跟输入栏同层，也浮着。
             HStack(spacing: 6) {
                 smallChip("💬 对话 ⌄", false)
+                    .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
                 // ★ 2026-11-13：默认不高亮，只有真的在做动作才红
                 Button { showMake = true } label: { smallChip("✦ 动作制作", showMake) }
+                    .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
                 Spacer(minLength: 0)
             }
 
@@ -431,15 +466,21 @@ struct TalkPage: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(Tw.white)
-                    .overlay(RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .stroke(Tw.gray200, lineWidth: 1))
-                    .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
+                ZStack {
+                    // 毛玻璃 + 半透明白：看得出它盖在底下那层上，不是糊成一片
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(Tw.white.opacity(0.94))
+                }
+                .overlay(RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .stroke(Tw.gray200, lineWidth: 1))
             )
+            .shadow(color: Color.black.opacity(0.20), radius: 20, y: 10)
+            .shadow(color: Color.black.opacity(0.10), radius: 4, y: 2)
             // ★ 2026-11-13：长按直接说话的手势在上面那块输入区上，这里不再叠一层
             //   （叠在整条胶囊上会把相机／语音圆钮／＋ 都吃掉，正是「按也按不了」）。
-            if showAttach { attachGrid }
+            //   加号面板已经搬到独立浮层，不再塞在这一节里把页面顶上去。
         }
         .sheet(isPresented: $showCamera) {
             StillCameraPicker { data in uploadAttach("拍照.jpg", data) }
@@ -465,7 +506,18 @@ struct TalkPage: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 8)
-        .background(Tw.gray50.ignoresSafeArea(edges: .bottom))
+        // ★ 底部绝不刷白渐变：这一层背景透明，只有白胶囊自己浮着。
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIResponder.keyboardWillChangeFrameNotification)) { n in
+            guard let v = n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
+            else { return }
+            let f = v.cgRectValue
+            键盘高 = max(0, UIScreen.main.bounds.height - f.minY)
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIResponder.keyboardWillHideNotification)) { _ in
+            键盘高 = 0
+        }
     }
 
     // MARK: - 起
@@ -1024,6 +1076,25 @@ struct TalkPage: View {
             )
     }
 
+    /// ★ 2026-11-14：下拉浮层里的一行，大标题 ＋ 一行灰小字，选中打勾。
+    private func 下拉项(_ 标题: String, _ 小字: String, _ 选中: Bool) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(标题)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Tw.gray900)
+                Text(小字)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Tw.gray400)
+            }
+            if 选中 {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Tw.red600)
+            }
+        }
+    }
+
     // MARK: - 长按输入框＝按住直接说（对齐安卓，2026-11-13）
 
     /// 按住超过 0.35 秒就起录；短按仍然是打字，不抢键盘。
@@ -1115,30 +1186,52 @@ struct TalkPage: View {
     }
 
     /// ＋ 点开的三格：相机 / 相册 / 文件，三格都能真选、真传、真落盘。
-    private var attachGrid: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    /// ★ 2026-11-14：加号面板＝独立悬浮浮层，4 个图标 ＋ 内嵌相册缩略图，不跳系统相册。
+    private var attachPanel: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("添加")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Tw.gray900)
+                Spacer(minLength: 0)
+                Button("收起 ×") { showAttach = false }
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray400)
+            }
             HStack(spacing: 8) {
-                ForEach(["相机", "相册", "文件"], id: \.self) { s in
+                ForEach(["相机", "相册", "文件", "打电话"], id: \.self) { s in
                     Button { pickAttach(s) } label: {
                         VStack(spacing: 5) {
                             Image(systemName: s == "相机" ? "camera"
-                                  : (s == "相册" ? "photo" : "paperclip"))
+                                  : (s == "相册" ? "photo"
+                                     : (s == "文件" ? "paperclip" : "phone")))
                                 .font(.system(size: 19))
                                 .foregroundStyle(Tw.gray900)
                             Text(s).font(.system(size: 11)).foregroundStyle(Tw.gray500)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 11).fill(Tw.white))
+                        .background(RoundedRectangle(cornerRadius: 11).fill(Tw.gray50))
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            Text(draftNo.isEmpty
-                 ? "现在就能选；选好的先收着，写好动作一起交上去"
-                 : "附件跟着这张回执一起收好")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Tw.gray400)
+            // 缩略图直接摆在自己面板里，点一下就选中
+            内嵌相册 { arr in
+                for (i, d) in arr.enumerated() {
+                    uploadAttach("照片\(i + 1).jpg", d)
+                }
+                showAttach = false
+            }
+            .frame(maxHeight: 290)
         }
+        .padding(13)
+        .background(
+            RoundedRectangle(cornerRadius: 16).fill(Tw.white)
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .stroke(Tw.gray200, lineWidth: 1))
+        )
+        .shadow(color: Color.black.opacity(0.20), radius: 24, y: 10)
     }
 
     /// 底部动作制作面板（Agent 模式）
@@ -1167,10 +1260,17 @@ struct TalkPage: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(Tw.gray500)
             }
+            // ★ 2026-11-14：三个下拉都是锚定浮层，每行「大标题＋灰小字」，选中回填、自动收起。
             HStack(spacing: 6) {
                 Menu {
-                    Button("不花钱的豆包（写新动作也能做）") { 做法 = "doubao"; 存选择() }
-                    Button("要花钱的 wan（1.20 元 / 条，只做已有 9 个动作）") { 做法 = "wan"; 存选择() }
+                    Button {
+                        做法 = "doubao"; 存选择()
+                    } label: { 下拉项("不花钱的豆包", "写新动作也能做 · 用登着的号",
+                                 做法 == "doubao") }
+                    Button {
+                        做法 = "wan"; 存选择()
+                    } label: { 下拉项("要花钱的 wan", "1.20 元 / 条 · 只做已有 9 个动作",
+                                 做法 == "wan") }
                 } label: {
                     smallChip("做法　" + (做法 == "wan" ? "要花钱的 wan" : "不花钱的豆包") + " ⌄",
                               做法 == "wan")
@@ -1179,18 +1279,34 @@ struct TalkPage: View {
             }
             HStack(spacing: 6) {
                 Menu {
-                    Button("让机器自己挑（默认）") { 选中号 = ""; 存选择() }
+                    Button {
+                        选中号 = ""; 存选择()
+                    } label: { 下拉项("让机器自己挑", "默认 · 挑一个登着的", 选中号.isEmpty) }
                     ForEach(号位) { x in
-                        Button(x.名字 + (x.登着没 ? " · 登着" : " · 没登录")) {
+                        Button {
+                            guard x.登着没 else { return }
                             选中号 = x.slot
                             存选择()
+                        } label: {
+                            下拉项(x.名字,
+                                   x.登着没 ? "登着 · 手机上登的豆包" : "没登录 · 这一个选不了",
+                                   选中号 == x.slot)
                         }
+                        .disabled(!x.登着没)
                     }
+                    Text("没问到别的号位 · 只列机器上真有的")
                 } label: { smallChip("豆包号　" + 号位显示() + " ⌄", false) }
             }
-            Text("模型　" + 模型说)
-                .font(.system(size: 11))
-                .foregroundStyle(Tw.gray400)
+            Menu {
+                Button {
+                    存选择()
+                } label: { 下拉项(模型说, "用你登着的豆包号做 · 已接通", true) }
+                Text("现在只接通这一个 · 别的还没加")
+            } label: {
+                Text("模型　" + 模型说 + "　⌄")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.gray400)
+            }
             TextEditor(text: $makeText)
                 .frame(height: 62)
                 .padding(6)
@@ -1485,12 +1601,14 @@ struct TalkPage: View {
     // ---------- 三格附件：真选、真传、真落盘 ----------
 
     /// ★ 2026-11-13：三格点下去就真的开相机／相册／文件，不再拦一道「先去写动作」。
+    /// ★ 2026-11-14：相册改成「就在这儿选」，不跳系统相册；
+    ///   打电话机器上没这功能，照实回一句，不做按了没反应的假按钮。
     private func pickAttach(_ s: String) {
         progressText = ""
-        showAttach = false
-        if s == "相机" { showCamera = true }
-        else if s == "相册" { showPhotoPicker = true }
-        else { showFile = true }
+        if s == "相机" { showAttach = false; showCamera = true }
+        else if s == "文件" { showAttach = false; showFile = true }
+        else if s == "相册" { /* 缩略图就在下面那块，不跳页 */ }
+        else { progressText = "这个功能还没接 —— 机器上没有通话" }
     }
 
     private func uploadAttach(_ name: String, _ data: Data) {

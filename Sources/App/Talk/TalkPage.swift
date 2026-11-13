@@ -1217,12 +1217,12 @@ struct TalkPage: View {
                 }
             }
             // 缩略图直接摆在自己面板里，点一下就选中
-            内嵌相册 { arr in
+            内嵌相册(收好: { arr in
                 for (i, d) in arr.enumerated() {
                     uploadAttach("照片\(i + 1).jpg", d)
                 }
                 showAttach = false
-            }
+            })
             .frame(maxHeight: 290)
         }
         .padding(13)

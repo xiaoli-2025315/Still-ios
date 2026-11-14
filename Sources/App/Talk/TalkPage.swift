@@ -70,8 +70,7 @@ struct TalkPage: View {
     @State private var voiceMode = false
     // ★ 2026-11-13：按住输入框直接起录（不再只是「切到语音模式」）
     @StateObject private var holdVoice = VoiceIn()
-    /// ★ 2026-11-14：输入栏改成浮层后，键盘上来的高度自己接，不用 safeAreaInset 挤页面。
-    @State private var 键盘高: CGFloat = 0
+    // ★ 2026-11-14 12:13：键盘交回系统（safeAreaInset），不再自己记高度。
     @State private var holdActive = false
     /// ★ 手指是不是还按着 —— 跟「界面有没有切成录音条」分开。
     ///   语音授权是异步的，慢的时候手指已经松了才起录，靠这个把它收住。
@@ -170,16 +169,21 @@ struct TalkPage: View {
         //   猫列表不再用系统那种「从底部升起的卡片」，换成贴左边进出的抽屉 + 遮罩，
         //   跟安卓 ChatV2Activity 的 Gravity.START 一个样子。
         ZStack(alignment: .leading) {
-            // ★★ 2026-11-14：聊天内容一直铺到屏幕最底，不再被输入栏挤上去。
+            // ★★ 2026-11-14 12:13（他说「做不出浮窗就别做了，把浮窗的设计改回去」）：
+            //   浮层整套撤掉 —— 输入区回到页面流里，用系统的 safeAreaInset 正常贴底。
+            //   聊天内容自动让位、不再被盖住；键盘也交回系统处理，不用自己接高度。
             VStack(spacing: 0) {
                 header
                 dialog
             }
-            // ★ 2026-11-14（他报「聊天画布和底部输入框糊成一整块纯白」）：
-            //   上方聊天画布＝纯白；区分交给下面那块输入区自己的底色，别把画布刷灰。
+            // 画布纯白（他 11-14 定的，不动）；写法对回 1.184.0，只是底色从近白改纯白
             .background(Tw.white.ignoresSafeArea())
-            // 浮在这一页的小宠物，退出聊天页这一层跟着销毁
+            // 浮在这一页的小宠物，退出聊天页这一层跟着销毁（11-10 就有的功能，不动）
             .overlay { TalkFloatPet() }
+            // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
+            //   不用自己算键盘高度，也不会被挡住。两个面板也在这一节里，
+            //   显示时占高度把聊天区挤上去，不盖聊天内容。
+            .safeAreaInset(edge: .bottom, spacing: 0) { inputDock }
             .onAppear { boot(); loadDraft() }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -193,43 +197,6 @@ struct TalkPage: View {
                     .transition(.move(edge: .leading))
                     .zIndex(10)
             }
-
-            // 点浮层以外就收起：透明层，不加全屏灰遮罩，不是 Modal
-            if showAttach || showMake {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .ignoresSafeArea()
-                    .onTapGesture { showAttach = false; showMake = false }
-                    .zIndex(3)
-            }
-
-            if showMake {
-                makePanel
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 100)
-                    .transition(.move(edge: .bottom))
-                    .zIndex(5)
-            }
-
-            // ★★ 输入栏自己也浮起来：独立图层、白胶囊＋毛玻璃＋明显投影，
-            //   盖在聊天内容上，底部不刷白、页面不位移。加号面板是它上面的另一层。
-            GeometryReader { geo in
-                ZStack(alignment: .bottom) {
-                    if showAttach {
-                        attachPanel
-                            .padding(.horizontal, 10)
-                            .padding(.bottom, 100)
-                            .transition(.opacity)
-                            .zIndex(6)
-                    }
-                    floatingDock
-                        .zIndex(7)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .offset(y: -(键盘高 > 0
-                             ? max(0, 键盘高 - geo.safeAreaInsets.bottom) : 0))
-            }
-            .zIndex(7)
         }
         .animation(.easeOut(duration: 0.22), value: showCats)
         .sheet(isPresented: $showNewGroup) { newGroupSheet }
@@ -331,9 +298,8 @@ struct TalkPage: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 16)
-                // ★ 2026-11-14：输入栏是浮层 ⇒ 滚动区里留一块空白，
-                //   让最后一条能滚到胶囊上方，不是把整页顶上去。
-                .padding(.bottom, 100)
+                // ★ 2026-11-14 12:13：输入区回到页面流，滚动区不用再给浮层留一大块空白。
+                .padding(.bottom, 12)
             }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
@@ -383,18 +349,24 @@ struct TalkPage: View {
     //
     // 形态照安卓 `TalkBar`：白底圆角 + 右边一块红的「说」。
 
-    /// ★ 2026-11-14：这一整块是独立浮层，不是插在页面底部的一节。
-    private var floatingDock: some View {
-        // ★ 2026-11-14 09:50：上面那排小选项和输入条之间的透明间隔，拉开了才看得出是两样东西。
-        VStack(spacing: 10) {
+    /// ★ 2026-11-14 12:13：这一整块就是页面底部正常的一节（safeAreaInset 里），不是浮层。
+    private var inputDock: some View {
+        // ★ 2026-11-14 12:13：浮层撤掉，这一整块就是页面底部正常的一块。
+        //   面板在最上面，显示时占高度、把聊天区挤上去，不盖聊天内容。
+        VStack(spacing: 12) {
+            if showAttach { attachPanel }
+            if showMake { makePanel }
+
+            // ★ 2026-11-14 11:17：小选项和输入条之间的留白拉开（豆包约是我们两倍）。
+            VStack(spacing: 18) {
             // ★ 只保留输入框上方这排「💬 对话｜✦ 动作制作」；
-            //   图里那排「拍题答疑／AI 创作」不要。跟输入栏同层，也浮着。
+            //   图里那排「拍题答疑／AI 创作」不要。跟输入栏同在底部这一节里。
             HStack(spacing: 6) {
                 smallChip("💬 对话 ⌄", false)
-                    .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
+                    .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
                 // ★ 2026-11-13：默认不高亮，只有真的在做动作才红
                 Button { showMake = true } label: { smallChip("✦ 动作制作", showMake) }
-                    .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
+                    .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
                 Spacer(minLength: 0)
             }
 
@@ -403,7 +375,7 @@ struct TalkPage: View {
                 Button { showAttach.toggle() } label: {
                     Image(systemName: "camera")
                         .font(.system(size: 16))
-                        .foregroundStyle(Tw.gray500)
+                        .foregroundStyle(Tw.gray900)
                 }
                 .frame(width: 24)
 
@@ -445,18 +417,27 @@ struct TalkPage: View {
                 } label: {
                     Image(systemName: voiceMode ? "keyboard" : "waveform")
                         .font(.system(size: 14))
-                        .foregroundStyle(Tw.gray500)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Tw.gray50))
+                        .foregroundStyle(Tw.gray900)
+                        .frame(width: 28, height: 28)
+                        // ★ 11:17：白底深描边圆钮，不再是浅灰实心块
+                        .background(
+                            Circle().fill(Tw.white)
+                                .overlay(Circle().stroke(Tw.gray900, lineWidth: 1.5))
+                        )
                 }
 
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button { showAttach.toggle() } label: {
                         Image(systemName: showAttach ? "xmark" : "plus")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Tw.gray500)
+                            .foregroundStyle(Tw.gray900)
                     }
-                    .frame(width: 26)
+                    .frame(width: 28, height: 28)
+                    // ★ 11:17：＋ 同样换成描边圆钮（原来只是无框细线）
+                    .background(
+                        Circle().fill(Tw.white)
+                            .overlay(Circle().stroke(Tw.gray900, lineWidth: 1.5))
+                    )
                 } else {
                     Button(action: send) {
                         Image(systemName: "arrow.up")
@@ -470,19 +451,23 @@ struct TalkPage: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            // ★ 2026-11-14 09:50：只改输入条自己 —— 内部实白，外沿一圈清晰浅灰边框。
-            //   去掉毛玻璃 / 半透明白叠加层（在纯白画布上会发灰），底部整块也不加底色。
+            // ★ 2026-11-14 11:17（两张实机截图对比后）：边框本身够清楚，糊掉边界的是
+            //   两层大 shadow（radius 20 / y 10），把四周白底染成一片灰。撤掉它们，
+            //   改成「只贴下沿一条 2px 浅灰影」；圆角 999 → 20，跟安卓同口径。
             .background(
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(Tw.white)
-                    .overlay(RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .stroke(Tw.gray300, lineWidth: 1.5))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Tw.gray200)
+                        .offset(y: 2)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Tw.white)
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Tw.gray300, lineWidth: 1.5))
+                }
             )
-            .shadow(color: Color.black.opacity(0.20), radius: 20, y: 10)
-            .shadow(color: Color.black.opacity(0.10), radius: 4, y: 2)
             // ★ 2026-11-13：长按直接说话的手势在上面那块输入区上，这里不再叠一层
             //   （叠在整条胶囊上会把相机／语音圆钮／＋ 都吃掉，正是「按也按不了」）。
-            //   加号面板已经搬到独立浮层，不再塞在这一节里把页面顶上去。
+            }
         }
         .sheet(isPresented: $showCamera) {
             StillCameraPicker { data in uploadAttach("拍照.jpg", data) }
@@ -505,27 +490,14 @@ struct TalkPage: View {
         .onChange(of: showMake) { on in
             if on { Task { await checkLogin() } }
         }
-        // ★ 2026-11-14 09:50（他明确说「不要底部整块卡片，只改输入条本身」）：
-        //   这一层全透明，撤掉上一版的浅灰底 / 顶线 / 上圆角大卡片。
-        //   左右 12 安全距离不变；上下留白让输入条外侧和纯白聊天画布之间有明显间隔。
-        //   输入条自己靠「清晰浅灰边框 + 白底 + 投影」独立出来；上面那排小选项是独立小胶囊，
-        //   不和输入条打包成一张大卡片。仍是独立浮层、盖在聊天内容上、不把页面挤上去。
+        // ★ 2026-11-14 12:13：左右 12 安全距离不变；上下留白让输入条外侧和纯白画布之间有间隔。
+        //   输入条自己靠「清晰浅灰边框 + 白底 + 下沿轻影」独立出来；小选项是独立小胶囊，
+        //   不打包成大卡片。键盘由 safeAreaInset 交回系统处理，不再自己接通知。
         .padding(.horizontal, 12)
-        .padding(.top, 14)
+        .padding(.top, 16)
         .padding(.bottom, 12)
-        // 这一层占满整宽，输入条左右的 12 安全距离才稳（跟上一版那张灰卡片无关）
+        // 这一层占满整宽，输入条左右的 12 安全距离才稳
         .frame(maxWidth: .infinity)
-        .onReceive(NotificationCenter.default.publisher(
-            for: UIResponder.keyboardWillChangeFrameNotification)) { n in
-            guard let v = n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
-            else { return }
-            let f = v.cgRectValue
-            键盘高 = max(0, UIScreen.main.bounds.height - f.minY)
-        }
-        .onReceive(NotificationCenter.default.publisher(
-            for: UIResponder.keyboardWillHideNotification)) { _ in
-            键盘高 = 0
-        }
     }
 
     // MARK: - 起
@@ -1195,7 +1167,7 @@ struct TalkPage: View {
     }
 
     /// ＋ 点开的三格：相机 / 相册 / 文件，三格都能真选、真传、真落盘。
-    /// ★ 2026-11-14：加号面板＝独立悬浮浮层，4 个图标 ＋ 内嵌相册缩略图，不跳系统相册。
+    /// ★ 2026-11-14 12:13：加号面板回到页面流里；4 个图标 ＋ 内嵌相册缩略图照旧，不跳系统相册。
     private var attachPanel: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
@@ -1240,7 +1212,7 @@ struct TalkPage: View {
                 .overlay(RoundedRectangle(cornerRadius: 16)
                     .stroke(Tw.gray200, lineWidth: 1))
         )
-        .shadow(color: Color.black.opacity(0.20), radius: 24, y: 10)
+        // ★ 12:13：不再是浮层，撤掉那层大投影（会把四周白底染灰）；留圆角 + 细边框。
     }
 
     /// 底部动作制作面板（Agent 模式）
@@ -1269,7 +1241,7 @@ struct TalkPage: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(Tw.gray500)
             }
-            // ★ 2026-11-14：三个下拉都是锚定浮层，每行「大标题＋灰小字」，选中回填、自动收起。
+            // ★ 2026-11-14 12:13：三个下拉都是系统菜单（普通弹窗），每行「大标题＋灰小字」，选中回填、自动收起。
             HStack(spacing: 6) {
                 Menu {
                     Button {

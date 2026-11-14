@@ -4,25 +4,6 @@ import PhotosUI
 import UniformTypeIdentifiers
 import Combine
 
-/// ★ 2026-11-14：底部输入区那块板子 —— 只有上方两个角是圆的，下沿贴着屏幕底。
-///   用最基础的 Path 画，不依赖任何新系统 API。
-fileprivate struct 上圆角板: Shape {
-    var r: CGFloat = 18
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
-        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY),
-                       control: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r),
-                       control: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.closeSubpath()
-        return p
-    }
-}
-
 /// ★ 2026-11-13：台子上真挂着的一个豆包号位（不是写死的「豆包1」）。
 fileprivate struct 号位项: Identifiable {
     var id: String { slot }
@@ -404,7 +385,8 @@ struct TalkPage: View {
 
     /// ★ 2026-11-14：这一整块是独立浮层，不是插在页面底部的一节。
     private var floatingDock: some View {
-        VStack(spacing: 6) {
+        // ★ 2026-11-14 09:50：上面那排小选项和输入条之间的透明间隔，拉开了才看得出是两样东西。
+        VStack(spacing: 10) {
             // ★ 只保留输入框上方这排「💬 对话｜✦ 动作制作」；
             //   图里那排「拍题答疑／AI 创作」不要。跟输入栏同层，也浮着。
             HStack(spacing: 6) {
@@ -488,16 +470,13 @@ struct TalkPage: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            // ★ 2026-11-14 09:50：只改输入条自己 —— 内部实白，外沿一圈清晰浅灰边框。
+            //   去掉毛玻璃 / 半透明白叠加层（在纯白画布上会发灰），底部整块也不加底色。
             .background(
-                ZStack {
-                    // 毛玻璃 + 半透明白：看得出它盖在底下那层上，不是糊成一片
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(Tw.white.opacity(0.94))
-                }
-                .overlay(RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .stroke(Tw.gray200, lineWidth: 1))
+                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .fill(Tw.white)
+                    .overlay(RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .stroke(Tw.gray300, lineWidth: 1.5))
             )
             .shadow(color: Color.black.opacity(0.20), radius: 20, y: 10)
             .shadow(color: Color.black.opacity(0.10), radius: 4, y: 2)
@@ -526,23 +505,16 @@ struct TalkPage: View {
         .onChange(of: showMake) { on in
             if on { Task { await checkLogin() } }
         }
+        // ★ 2026-11-14 09:50（他明确说「不要底部整块卡片，只改输入条本身」）：
+        //   这一层全透明，撤掉上一版的浅灰底 / 顶线 / 上圆角大卡片。
+        //   左右 12 安全距离不变；上下留白让输入条外侧和纯白聊天画布之间有明显间隔。
+        //   输入条自己靠「清晰浅灰边框 + 白底 + 投影」独立出来；上面那排小选项是独立小胶囊，
+        //   不和输入条打包成一张大卡片。仍是独立浮层、盖在聊天内容上、不把页面挤上去。
         .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        // 让浅灰底通栏铺满整宽（否则这块只会缩在内容那一小截里，反而更怪）
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        // 这一层占满整宽，输入条左右的 12 安全距离才稳（跟上一版那张灰卡片无关）
         .frame(maxWidth: .infinity)
-        // ★ 2026-11-14（他报「聊天画布和底部输入框糊成一整块纯白」）：
-        //   这块输入区自己有底了 —— 浅灰底 + 顶上一条细分割线 + 上方两个角轻微圆角。
-        //   上方画布保持纯白，一眼看得出是单独一块组件；只加背景绘制，不加任何新控件。
-        //   仍是独立浮层、盖在聊天内容上、不把页面挤上去。
-        .background(
-            ZStack(alignment: .top) {
-                Tw.gray100
-                Rectangle().fill(Tw.gray200).frame(height: 1)
-            }
-            .clipShape(上圆角板(r: 18))
-        )
-        // ★ 底部不刷整片白：只有这一块浅灰板自己和里面那条白胶囊浮着。
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillChangeFrameNotification)) { n in
             guard let v = n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
@@ -1107,7 +1079,8 @@ struct TalkPage: View {
             .padding(.vertical, 5)
             .background(
                 Capsule().fill(on ? Tw.red600.opacity(0.08) : Tw.white)
-                    .overlay(Capsule().stroke(on ? Tw.red600.opacity(0.35) : Tw.gray200,
+                    // ★ 2026-11-14 09:50：撤掉大卡片后，这两个小胶囊在纯白上也要看得见边界。
+                    .overlay(Capsule().stroke(on ? Tw.red600.opacity(0.35) : Tw.gray300,
                                               lineWidth: 1))
             )
     }

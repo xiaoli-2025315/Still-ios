@@ -4,6 +4,25 @@ import PhotosUI
 import UniformTypeIdentifiers
 import Combine
 
+/// ★ 2026-11-14：底部输入区那块板子 —— 只有上方两个角是圆的，下沿贴着屏幕底。
+///   用最基础的 Path 画，不依赖任何新系统 API。
+fileprivate struct 上圆角板: Shape {
+    var r: CGFloat = 18
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY),
+                       control: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r),
+                       control: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
 /// ★ 2026-11-13：台子上真挂着的一个豆包号位（不是写死的「豆包1」）。
 fileprivate struct 号位项: Identifiable {
     var id: String { slot }
@@ -175,7 +194,9 @@ struct TalkPage: View {
                 header
                 dialog
             }
-            .background(Tw.gray50.ignoresSafeArea())
+            // ★ 2026-11-14（他报「聊天画布和底部输入框糊成一整块纯白」）：
+            //   上方聊天画布＝纯白；区分交给下面那块输入区自己的底色，别把画布刷灰。
+            .background(Tw.white.ignoresSafeArea())
             // 浮在这一页的小宠物，退出聊天页这一层跟着销毁
             .overlay { TalkFloatPet() }
             .onAppear { boot(); loadDraft() }
@@ -357,7 +378,9 @@ struct TalkPage: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(l.mine ? Tw.red600 : Tw.white)
+                            // ★ 2026-11-14：画布改纯白了，对方气泡也得跟着换极浅灰，
+                            //   不然白气泡贴在白画布上等于没有边界。仍是 Tailwind 官方值。
+                            .fill(l.mine ? Tw.red600 : Tw.gray50)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -506,7 +529,20 @@ struct TalkPage: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 8)
-        // ★ 底部绝不刷白渐变：这一层背景透明，只有白胶囊自己浮着。
+        // 让浅灰底通栏铺满整宽（否则这块只会缩在内容那一小截里，反而更怪）
+        .frame(maxWidth: .infinity)
+        // ★ 2026-11-14（他报「聊天画布和底部输入框糊成一整块纯白」）：
+        //   这块输入区自己有底了 —— 浅灰底 + 顶上一条细分割线 + 上方两个角轻微圆角。
+        //   上方画布保持纯白，一眼看得出是单独一块组件；只加背景绘制，不加任何新控件。
+        //   仍是独立浮层、盖在聊天内容上、不把页面挤上去。
+        .background(
+            ZStack(alignment: .top) {
+                Tw.gray100
+                Rectangle().fill(Tw.gray200).frame(height: 1)
+            }
+            .clipShape(上圆角板(r: 18))
+        )
+        // ★ 底部不刷整片白：只有这一块浅灰板自己和里面那条白胶囊浮着。
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillChangeFrameNotification)) { n in
             guard let v = n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue

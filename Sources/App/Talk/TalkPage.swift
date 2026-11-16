@@ -128,8 +128,10 @@ struct TalkPage: View {
     @State private var loginText = "豆包1"
     /// ★ 2026-11-13（他定的）：「就是要能选登录的豆包号还有我们的 wan 路线」。
     ///   台子上号位清单、模型清单、wan 通道都是真的，这两排不再是点不动的字。
-    @State private var 做法 = "doubao"            // doubao / wan
-    @State private var 选中号 = ""                // 空＝让机器自己挑
+    @State private var 做法 = ""                 // "" ＝ 还没选 / doubao / wan
+    @State private var 选中号 = ""                 // 空 ＝ 还没挑号
+    /// ★ 2026-11-16：还没选就点「开始制作」时，在小框底下就地说一句，不弹到聊天里。
+    @State private var 选提示 = ""
     @State private var 模型说 = "豆包 · Seedance 2.0 mini"
     @State private var 号位: [号位项] = []
     @State private var machineErr = ""
@@ -1064,9 +1066,12 @@ struct TalkPage: View {
                 Text(标题)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Tw.gray900)
-                Text(小字)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Tw.gray400)
+                // ★ 2026-11-16（他定的）：没小字就真的不占那一行。
+                if !小字.isEmpty {
+                    Text(小字)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Tw.gray400)
+                }
             }
             if 选中 {
                 Image(systemName: "checkmark")
@@ -1241,42 +1246,33 @@ struct TalkPage: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(Tw.gray500)
             }
-            // ★ 2026-11-14 12:13：三个下拉都是系统菜单（普通弹窗），每行「大标题＋灰小字」，选中回填、自动收起。
+            // ★ 2026-11-16（他定的）：跟登记页「用哪个来做」一个方式 —— 一个小框，点了弹下拉条。
+            //   框里只写你选的那一样（豆包几号 / wan3.0），没挑之前写「选择制作方式」；
+            //   下拉里不写解释小字，没登录的号**根本不列出来**（不是列出来点不动）。
             HStack(spacing: 6) {
                 Menu {
-                    Button {
-                        做法 = "doubao"; 存选择()
-                    } label: { 下拉项("不花钱的豆包", "写新动作也能做 · 用登着的号",
-                                 做法 == "doubao") }
-                    Button {
-                        做法 = "wan"; 存选择()
-                    } label: { 下拉项("要花钱的 wan", "1.20 元 / 条 · 只做已有 9 个动作",
-                                 做法 == "wan") }
-                } label: {
-                    smallChip("做法　" + (做法 == "wan" ? "要花钱的 wan" : "不花钱的豆包") + " ⌄",
-                              做法 == "wan")
-                }
-                smallChip("5.00 秒 · 固定", false)
-            }
-            HStack(spacing: 6) {
-                Menu {
-                    Button {
-                        选中号 = ""; 存选择()
-                    } label: { 下拉项("让机器自己挑", "默认 · 挑一个登着的", 选中号.isEmpty) }
-                    ForEach(号位) { x in
+                    ForEach(号位.filter { $0.登着没 }) { x in
                         Button {
-                            guard x.登着没 else { return }
-                            选中号 = x.slot
-                            存选择()
+                            做法 = "doubao"; 选中号 = x.slot; 存选择(); 选提示 = ""
                         } label: {
-                            下拉项(x.名字,
-                                   x.登着没 ? "登着 · 手机上登的豆包" : "没登录 · 这一个选不了",
-                                   选中号 == x.slot)
+                            下拉项(x.名字, "", 做法 == "doubao" && 选中号 == x.slot)
                         }
-                        .disabled(!x.登着没)
                     }
-                    Text("没问到别的号位 · 只列机器上真有的")
-                } label: { smallChip("豆包号　" + 号位显示() + " ⌄", false) }
+                    if !号位.contains(where: { $0.登着没 }) {
+                        Text("还没有登着的豆包号")
+                    }
+                    Button {
+                        做法 = "wan"; 选中号 = ""; 存选择(); 选提示 = ""
+                    } label: { 下拉项("wan3.0", "", 做法 == "wan") }
+                } label: {
+                    smallChip(当前选择说 + " ⌄", 做法 == "wan")
+                }
+            }
+            if !选提示.isEmpty {
+                Text(选提示)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Tw.red600)
+                    .padding(.top, 4)
             }
             Menu {
                 Button {
@@ -1320,9 +1316,8 @@ struct TalkPage: View {
 
     private var makeConfirmCard: some View {
         draftCard(title: draftName.isEmpty ? "新动作" : draftName,
-                  rows: [("时长", "5.00 秒"), ("时间轴", "固定，你写的字不改"),
-                         ("用哪个做", (做法 == "wan" ? "要花钱的 wan" : "不花钱的豆包")
-                          + " · " + 号位显示())],
+                  rows: [("时间轴", "固定，你写的字不改"),
+                         ("用哪个做", 已选 ? 当前选择说 : "还没选")],
                   note: nil, button: "开始制作", action: submitToServer)
     }
 
@@ -1398,6 +1393,9 @@ struct TalkPage: View {
         let s = makeText.trimmingCharacters(in: .whitespacesAndNewlines)
         if useTemplate && pickedTpl.isEmpty { return }
         if !useTemplate && s.isEmpty { return }
+        // ★ 2026-11-16（他定的）：没挑过就是没挑过，不拿「机器自己挑」糊过去。
+        选提示 = ""
+        if !已选 { 选提示 = "先在上面那个框里选一下用哪个来做"; return }
         draftName = useTemplate ? pickedName : "新动作"
         machineErr = ""
         progressText = ""
@@ -1539,10 +1537,26 @@ struct TalkPage: View {
         } catch { /* 不编 */ }
     }
 
-    private func 号位显示() -> String {
-        if 选中号.isEmpty { return "机器自己挑" }
+    /// 小框里就写你选的那一样：豆包几号、或者 wan3.0；还没挑就写「选择制作方式」。
+    private var 当前选择说: String {
+        if 做法 == "wan" { return "wan3.0" }
+        if 做法 == "doubao" && !选中号.isEmpty {
+            let n = 号位名字
+            return n.isEmpty ? "豆包" + 选中号 : n
+        }
+        return "选择制作方式"
+    }
+
+    /// 真挑过没有。没挑过就不许往下走，也不许拿「机器自己挑」糊过去。
+    private var 已选: Bool {
+        做法 == "wan" || (做法 == "doubao" && !选中号.isEmpty)
+    }
+
+    /// 选中的那个号叫什么（没选就给空）。
+    private var 号位名字: String {
+        if 选中号.isEmpty { return "" }
         if let x = 号位.first(where: { $0.slot == 选中号 }) { return x.名字 }
-        return "豆包" + 选中号 + " 号"
+        return ""
     }
 
     private func startPath() -> String {
@@ -1563,8 +1577,12 @@ struct TalkPage: View {
 
     private func 读选择() {
         let d = UserDefaults.standard
-        做法 = d.string(forKey: "act_draft_way") ?? "doubao"
-        选中号 = d.string(forKey: "act_draft_slot") ?? ""
+        let w = d.string(forKey: "act_draft_way") ?? ""
+        let s = d.string(forKey: "act_draft_slot") ?? ""
+        // ★ 2026-11-16（他定的）：不再有「让机器自己挑」——没真挑过号就是还没选。
+        if w == "wan" { 做法 = "wan"; 选中号 = "" }
+        else if w == "doubao" && !s.isEmpty { 做法 = "doubao"; 选中号 = s }
+        else { 做法 = ""; 选中号 = "" }
     }
 
     private func newOne() {

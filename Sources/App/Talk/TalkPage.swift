@@ -1017,8 +1017,27 @@ struct TalkPage: View {
         // 冷启动把上次那个群找回来；单聊就是空标题。
         CatBrain.loadGroup()
         groupTitle = CatBrain.group?.title ?? ""
-        // ★ v48：整段记录都摆出来（以前只有最后一句）。
-        //   老数据只有 last 那一句 —— 记录是空的就退回它，别让人以为记录被清了。
+        铺记录()
+        // ★ 2026-11-18（第三档·永久全存）：顺手去台子把这只的历史接回来。
+        //   单独一个 Task，绝不让它把页面拖住；连不上就算了，接回来是空的也不重画。
+        //   拉的过程中换了宠物，就把这批丢掉 —— 别把 A 的话塞进 B 的记录里。
+        let 这只 = CatBrain.currentCharId
+        Task {
+            let 条 = await CatBrain.pullLog(char: 这只)
+            guard !条.isEmpty else { return }
+            await MainActor.run {
+                guard 这只 == CatBrain.currentCharId else { return }
+                if ChatLog.merge(条) > 0 { 铺记录() }
+            }
+        }
+        // ★ 2026-10-31（他要求）：进聊天**不要**自动拉起键盘，点了输入框才起。
+    }
+
+    /// 把 ChatLog 里存的记录铺成界面上的一行行。
+    /// ★ v48：整段记录都摆出来（以前只有最后一句）。
+    ///   老数据只有 last 那一句 —— 记录是空的就退回它，别让人以为记录被清了。
+    /// ★ 2026-11-18：从台子接回历史之后要重铺一次，所以单独抽出来，boot 和它共用。
+    private func 铺记录() {
         let rows = ChatLog.all()
         if rows.isEmpty, let t = CatTalk.last() {
             lines = [Line(mine: true, text: t.mine), Line(mine: false, text: t.reply)]
@@ -1027,7 +1046,6 @@ struct TalkPage: View {
                 [Line(mine: true, text: $0.you), Line(mine: false, text: $0.cat)]
             }
         }
-        // ★ 2026-10-31（他要求）：进聊天**不要**自动拉起键盘，点了输入框才起。
     }
 
     private func close() {

@@ -485,6 +485,48 @@ enum CatBrain {
         return "还剩 \(a.stringValue) 元\n今天花了 \(b.stringValue) 元\n本月花了 \(c.stringValue) 元"
     }
 
+    /// ★ 2026-11-18（第三档·永久全存）：从台子把这只说过的话拉回来。
+    ///
+    /// 台子从今天起把每一轮原文永久存着（`/api/cat/log`，只读、不花钱、不扣算力）。
+    /// 这里只负责取；连不上、格式不对、没登票，一律返回空 ——
+    /// **绝不让「翻不到记录」变成「把本地记录清空」**。
+    ///
+    /// 台子存的是「一句一条」，这里按「人那句 + 它那句」配成一轮，时间取人那句的。
+    static func pullLog(char: String, limit: Int = 300) async
+        -> [(at: Date, you: String, cat: String)] {
+        guard !char.isEmpty else { return [] }
+        var comps = URLComponents(string: "https://still-ui-design.app.workbuddy.host/api/cat/log")
+        comps?.queryItems = [URLQueryItem(name: "char", value: char),
+                             URLQueryItem(name: "limit", value: String(limit))]
+        guard let url = comps?.url else { return [] }
+        var req = URLRequest(url: url)
+        req.stillStamp()
+        req.httpMethod = "GET"
+        req.timeoutInterval = 10
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["ok"] as? Bool == true,
+              let 条 = json["条"] as? [[String: Any]] else { return [] }
+        var out: [(at: Date, you: String, cat: String)] = []
+        var 待配: (Date, String)? = nil
+        for it in 条 {
+            let t = (it["t"] as? NSNumber)?.doubleValue ?? 0
+            let x = it["x"] as? String ?? ""
+            let at = Date(timeIntervalSince1970: t)
+            if (it["w"] as? String) == "cat" {
+                out.append((at: 待配?.0 ?? at, you: 待配?.1 ?? "", cat: x))
+                待配 = nil
+            } else {
+                if let p = 待配 { out.append((at: p.0, you: p.1, cat: "")) }
+                待配 = (at, x)
+            }
+        }
+        if let p = 待配 { out.append((at: p.0, you: p.1, cat: "")) }
+        return out
+    }
+
     /// 本地那套：规则匹配（你好 / 吃饭 / 想你 / 名字…）+ 兜底随机一句猫味的话。
     /// message：你对它说的话；catName：它现在叫什么（用于「我叫 XX」这类回话）
     static func reply(to message: String, catName: String) -> String {

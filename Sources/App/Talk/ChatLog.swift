@@ -15,6 +15,9 @@ enum ChatLog {
     }
 
     private static let key = "still.chat.log"
+    /// ★ 2026-11-18：本地「清空」的时刻。台子上不删（那是永久档案），
+    ///   只是从这一刻往前的不再往回拉 —— 否则清完一进页面又全回来，成了假清空。
+    private static let clearedKey = "still.chat.cleared"
     private static let max = 300
 
     private static var defaults: UserDefaults? {
@@ -38,7 +41,47 @@ enum ChatLog {
         d.set(data, forKey: key)
     }
 
+    /// 这台手机「清到」哪一刻。nil 表示从来没清过，台子的历史照常往回拉。
+    static var 清到: Date? {
+        guard let d = defaults,
+              let t = d.object(forKey: clearedKey) as? Double, t > 0 else { return nil }
+        return Date(timeIntervalSince1970: t)
+    }
+
     static func clear() {
         defaults?.removeObject(forKey: key)
+        defaults?.set(Date().timeIntervalSince1970, forKey: clearedKey)
+    }
+
+    /// ★ 2026-11-18（第三档·永久全存）：把台子上那份永不淘汰的档案并进本地。
+    ///
+    /// 台子的钟和手机的钟不是同一个，同一条两边差几百毫秒，所以**不能**拿时间精确比对
+    /// —— 那样每次进页面都会多出一份重复的。这里按
+    /// 「你说的一样 + 它回的一样 + 时间相差不到 5 秒」判成同一条。
+    /// 宁可少并（漏掉的下一轮还会再来），绝不重复显示。
+    ///
+    /// 本地仍然只留最近 300 轮；台子那边才是永久档案，手机不用背几万条。
+    /// 返回真正并进去几条；0 表示本地本来就有、台子也没有更新的。
+    @discardableResult
+    static func merge(_ 外来: [(at: Date, you: String, cat: String)]) -> Int {
+        guard !外来.isEmpty else { return 0 }
+        var rows = all()
+        var 新增 = 0
+        let 底线 = 清到          // 清空之前的一律不要，否则「清空」形同虚设
+        for r in 外来 {
+            if let c = 底线, r.at <= c { continue }
+            let 有 = rows.contains {
+                abs($0.at.timeIntervalSince(r.at)) < 5 && $0.you == r.you && $0.cat == r.cat
+            }
+            if 有 { continue }
+            rows.append(Row(you: r.you, cat: r.cat, at: r.at))
+            新增 += 1
+        }
+        guard 新增 > 0 else { return 0 }
+        rows.sort { $0.at < $1.at }
+        if rows.count > max { rows.removeFirst(rows.count - max) }
+        guard let d = defaults, let data = try? JSONEncoder().encode(rows) else { return 0 }
+        d.set(data, forKey: key)
+        return 新增
     }
 }

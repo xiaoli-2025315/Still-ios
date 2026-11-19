@@ -66,14 +66,26 @@ split -b "$CHUNK" "$IPA" .chunks/p
 idx=0
 for f in .chunks/p*; do
   off=$((idx * CHUNK))
-  resp=$(curl -sS --max-time 180 --retry 4 --retry-all-errors --retry-delay 2 \
-         -w '\nHTTP:%{http_code}' -X POST --data-binary @"$f" \
-         -H "Content-Type: application/octet-stream" \
-         -H "X-Share-Code: $SHARE" \
-         "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$off&size=$SIZE" 2>&1)
-  code=$(printf '%s' "$resp" | tail -1 | sed 's/HTTP://')
-  if ! printf '%s' "$resp" | grep -q '"ok": true'; then
-    echo "  片 $idx off=$off http=$code 失败: $(printf '%s' "$resp" | head -c 200)"
+  # ★ 2026-11-19：单片失败就歇 15 秒整片重传，最多 8 次。
+  #   换端口部署后 CI 出口到台子的连接会在某几片持续断（空响应 http=），
+  #   curl 自带的 --retry 对这种"连上但没回包"救不回来 ⇒ 外层退避重试。
+  ok=0
+  for try in 1 2 3 4 5 6 7 8; do
+    resp=$(curl -sS --max-time 180 --retry 2 --retry-all-errors --retry-delay 1 \
+           -w '\nHTTP:%{http_code}' -X POST --data-binary @"$f" \
+           -H "Content-Type: application/octet-stream" \
+           -H "X-Share-Code: $SHARE" \
+           "$BASE/api/ios/up?k=$PUSH_KEY&name=$NAME&off=$off&size=$SIZE" 2>&1)
+    code=$(printf '%s' "$resp" | tail -1 | sed 's/HTTP://')
+    if printf '%s' "$resp" | grep -q '"ok": true'; then
+      ok=1
+      break
+    fi
+    echo "  片 $idx off=$off 第 $try 次失败 http=$code: $(printf '%s' "$resp" | head -c 120)"
+    sleep 15
+  done
+  if [ "$ok" != "1" ]; then
+    echo "  片 $idx off=$off 重试 8 次仍失败，放弃"
     exit 1
   fi
   echo "  片 $idx off=$off http=$code ok"

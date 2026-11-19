@@ -166,6 +166,27 @@ struct TalkPage: View {
 
     // MARK: - 顶栏
 
+    // ★ 2026-11-19（稿 v10）：顶栏中间那颗「会动的圆形宠物窗」取哪只 / 播哪段。
+    //   单聊 = 当前这只 sit；群聊 = 最近说话那只 groom。全部取真数据，不编造。
+    private var orbCharId: String {
+        if let g = CatBrain.group {
+            if let nm = CatTalk.lastSpeakerName, let id = g.names.first(where: { $0.value == nm })?.key {
+                return id
+            }
+            return g.members.first ?? CatBrain.currentCharId
+        }
+        return CatBrain.currentCharId
+    }
+    private var orbAct: String { CatBrain.group == nil ? "sit" : "groom" }
+    private var orbStatus: String {
+        if let g = CatBrain.group {
+            let n = g.members.count
+            if let nm = CatTalk.lastSpeakerName, !nm.isEmpty { return "最近 \(nm) · \(n) 个成员" }
+            return "\(n) 个成员"
+        }
+        return "在这儿"
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             // ★ 2026-10-31：左边那颗「换一只」—— 安卓聊天页左边是猫列表
@@ -181,6 +202,37 @@ struct TalkPage: View {
             }
             .buttonStyle(PressStyle(scale: 0.9))
 
+            // ★ 2026-11-19（稿 v10）：顶栏中间「圆窗 + 名字 + 状态」竖排。
+            //   圆窗 62pt 圆形、白边、浅蓝底，里面 GifView 播台子真动作 GIF（跟安卓 MovieView 对齐）。
+            Spacer(minLength: 0)
+            VStack(spacing: 3) {
+                Group {
+                    if let u = GifView.makeURL(orbCharId, orbAct, width: 130) {
+                        GifView(url: u)
+                    } else {
+                        Image(systemName: "cat.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(Tw.gray400)
+                    }
+                }
+                .frame(width: 58, height: 58)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                .background(Circle().fill(Tw.orbBlue))
+                .shadow(color: Color.black.opacity(0.10), radius: 6, y: 3)
+
+                Text(groupTitle.isEmpty ? (CatBrain.group == nil ? "它" : "群聊") : groupTitle)
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(Tw.gray900)
+                    .lineLimit(1)
+                Text(busy ? "正在回…" : orbStatus)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Tw.gray400)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+
+            // ★ 关闭这一页（真功能，保留）。
             Button {
                 close()
             } label: {
@@ -191,16 +243,6 @@ struct TalkPage: View {
                     .background(Circle().fill(Tw.gray100))
             }
             .buttonStyle(PressStyle(scale: 0.9))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(groupTitle.isEmpty ? "跟它还说话" : groupTitle)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Tw.gray900)
-                Text(busy ? "它在想…" : (groupTitle.isEmpty ? "说一句，它就应一句" : "几只猫一起听着"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Tw.gray400)
-            }
-            Spacer(minLength: 0)
 
             // ★ 2026-11-10：群聊右上角的「设置」—— 拉人 / 改群名 / 踢人。
             //   常驻，不加显示条件：没在群里时点开会照实说「先在左边点一个群」。
@@ -431,18 +473,13 @@ struct TalkPage: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            // ★ 2026-11-14 11:17（两张实机截图对比后）：边框本身够清楚，糊掉边界的是
-            //   两层大 shadow（radius 20 / y 10），把四周白底染成一片灰。撤掉它们，
-            //   改成「只贴下沿一条 2px 浅灰影」；圆角 999 → 20，跟安卓同口径。
+            // 稿 v10：输入条是「全胶囊」（--r-pill），不是中等圆角矩形 —— 结构性形态差异。
+            // 仍保留「只贴下沿一条 2px 浅灰影」的自绘做法，不加会糊边界的大 shadow。
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Tw.gray200)
-                        .offset(y: 2)
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Tw.white)
-                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Tw.gray300, lineWidth: 1.5))
+                    Capsule().fill(Tw.gray200).offset(y: 2)
+                    Capsule().fill(Tw.white)
+                        .overlay(Capsule().stroke(Tw.gray300, lineWidth: 1.5))
                 }
             )
             // ★ 2026-11-13：长按直接说话的手势在上面那块输入区上，这里不再叠一层

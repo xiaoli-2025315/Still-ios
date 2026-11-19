@@ -102,7 +102,7 @@ struct ActLibPage: View {
                     if let e = opErr {
                         Text(e)
                             .font(.system(size: 11.5))
-                            .foregroundStyle(Tw.red600)
+                            .foregroundStyle(Tw.error)
                             .padding(.horizontal, 20)
                             .padding(.bottom, 10)
                     }
@@ -548,19 +548,19 @@ struct ActLibPage: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(e)
                 .font(.system(size: 12))
-                .foregroundStyle(Tw.red600)
+                .foregroundStyle(Tw.error)
                 .fixedSize(horizontal: false, vertical: true)
             Button("再试一次") {
                 Task { await model.load() }
             }
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Tw.red600)
+            .foregroundStyle(Tw.error)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Tw.red600.opacity(0.06))
+                .fill(Tw.error.opacity(0.06))
         )
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
@@ -630,7 +630,7 @@ struct ActPreviewPage: View {
                 } else {
                     Text("这一帧读不出来")
                         .font(.system(size: 12))
-                        .foregroundStyle(Tw.red600)
+                        .foregroundStyle(Tw.error)
                 }
 
                 Spacer(minLength: 0)
@@ -861,7 +861,7 @@ struct NewRoleSheet: View {
                     HStack(spacing: 10) {
                         Text(walletText)
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(walletShort ? Tw.red600 : Tw.gray500)
+                            .foregroundStyle(walletShort ? Tw.error : Tw.gray500)
                         Spacer()
                         Button {
                             openPay()

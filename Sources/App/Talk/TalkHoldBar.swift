@@ -23,13 +23,13 @@ struct TalkHoldBar: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(voice.listening ? (cancel ? Tw.gray100 : Tw.gray50) : Tw.gray50)
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(cancel ? Tw.red600.opacity(0.5) : Tw.gray200, lineWidth: 1))
+                    .stroke(cancel ? Tw.error.opacity(0.5) : Tw.gray200, lineWidth: 1))
 
             if voice.listening {
                 HStack(alignment: .center, spacing: 1.6) {
                     ForEach(0..<24, id: \.self) { i in
                         Capsule()
-                            .fill(cancel ? Tw.red600.opacity(0.55) : Tw.gray900.opacity(0.75))
+                            .fill(cancel ? Tw.error.opacity(0.55) : Tw.gray900.opacity(0.75))
                             .frame(width: 1.8,
                                    height: max(2, 26 * (0.06 + hist[i])))
                     }
@@ -37,7 +37,7 @@ struct TalkHoldBar: View {
                 .animation(.linear(duration: 0.06), value: hist)
                 Text(cancel ? "松手取消" : "松手发送")
                     .font(.system(size: 11))
-                    .foregroundStyle(cancel ? Tw.red600 : Tw.gray400)
+                    .foregroundStyle(cancel ? Tw.error : Tw.gray400)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.trailing, 12)
             } else {

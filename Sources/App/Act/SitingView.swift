@@ -63,7 +63,7 @@ struct SitingView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(titleText)
                     .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(isFailed ? Tw.red600 : Tw.gray900)
+                    .foregroundStyle(isFailed ? Tw.error : Tw.gray900)
                 if !subText.isEmpty {
                     Text(subText).font(.system(size: 12)).foregroundStyle(Tw.gray400)
                 }
@@ -84,7 +84,7 @@ struct SitingView: View {
                         .foregroundStyle(Tw.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
-                        .background(Capsule().fill(Tw.gray900))
+                        .background(Capsule().fill(Tw.accent))
                 }
                 .buttonStyle(PressStyle(scale: 0.97))
                 .padding(.horizontal, 24)
@@ -148,7 +148,7 @@ struct SitingView: View {
             VStack(spacing: 6) {
                 Text(insideMain)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isFailed ? Tw.red600 : Tw.gray900)
+                    .foregroundStyle(isFailed ? Tw.error : Tw.gray900)
                     .multilineTextAlignment(.center)
                 if !insideSub.isEmpty {
                     Text(insideSub)

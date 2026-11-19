@@ -28,10 +28,10 @@ struct TalkSheet: View {
     /// 抢了几轮还没起来，才把原因亮出来（正常情况不显示，别碍眼）
     @State private var trouble = false
 
-    private let red600 = Color(hex: 0xDC2626)     // Tailwind red-600
-    private let gray900 = Color(hex: 0x111827)    // gray-900
-    private let gray400 = Color(hex: 0x9CA3AF)    // gray-400
-    private let gray500 = Color(hex: 0x6B7280)    // gray-500
+    private let red600 = Color(hex: 0x1473C8)     // Tailwind red-600
+    private let gray900 = Color(hex: 0x11191C)    // gray-900
+    private let gray400 = Color(hex: 0x9AA1A6)    // gray-400
+    private let gray500 = Color(hex: 0x697176)    // gray-500
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -100,10 +100,10 @@ struct TalkSheet: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(hex: 0xFFFBF4))
+                .fill(Color(hex: 0xFCFCFC))
                 .overlay(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color(hex: 0xB98A5E).opacity(0.2), lineWidth: 1)
+                        .stroke(Color(hex: 0xEEEEF0), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.10), radius: 14, y: 4)
         )

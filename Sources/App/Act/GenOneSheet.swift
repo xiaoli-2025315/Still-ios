@@ -71,14 +71,14 @@ struct GenOneSheet: View {
 
                 if maintOn {
                     Text("台子正在更新（\(maintWhy.isEmpty ? "几分钟就好" : maintWhy)）—— 等它更新完再下单")
-                        .font(.system(size: 12)).foregroundStyle(Tw.red600)
+                        .font(.system(size: 12)).foregroundStyle(Tw.error)
                 }
                 if channel.hasPrefix("doubao:") && !canStart {
                     Text("这个豆包号已失效 —— 回登记页重登，或换 wan3.0")
-                        .font(.system(size: 12)).foregroundStyle(Tw.red600)
+                        .font(.system(size: 12)).foregroundStyle(Tw.error)
                 }
                 if let e = err {
-                    Text(e).font(.system(size: 12)).foregroundStyle(Tw.red600)
+                    Text(e).font(.system(size: 12)).foregroundStyle(Tw.error)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 

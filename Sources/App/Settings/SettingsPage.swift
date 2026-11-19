@@ -222,7 +222,7 @@ struct SettingsPage: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .padding(12)
-                    .background(Color(hex: 0xF2ECE3))
+                    .background(Color(hex: 0xEDF7FD))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
 
                 Button {

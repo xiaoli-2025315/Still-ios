@@ -257,7 +257,7 @@ struct DoubaoLoginPage: View {
             if let e = model.err {
                 Text(e)
                     .font(.system(size: 11))
-                    .foregroundStyle(Tw.red600)
+                    .foregroundStyle(Tw.error)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !model.probeText.isEmpty {

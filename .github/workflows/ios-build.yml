@@ -706,7 +706,10 @@ jobs:
         working-directory: ${{ steps.loc.outputs.dir }}
         # ★ 2026-11-13：台子网关偶发「连接挂起不返回」，正常传完只要 8 秒。
         #   不给这个上限，一轮就得白等 15 分钟才判失败，把后面的直链发布也拖住。
-        timeout-minutes: 3
+        # ★ 2026-11-19：ci_sync.sh 加了 8 次×15 秒的单片退避（抗连接中断），
+        #   最坏情况光退避就 120 秒，加上上传本身的验证，3 分钟会误杀。
+        #   放宽到 10 分钟：正常仍 8 秒跑完，只有真卡住才等到上限。
+        timeout-minutes: 10
         env:
           PUSH_KEY: ${{ secrets.IOS_PUSH_KEY }}
         run: |

@@ -79,7 +79,7 @@ struct RoleHomeView: View {
                     if !err.isEmpty {
                         Text(err)
                             .font(.system(size: 11.5))
-                            .foregroundStyle(Tw.red600)
+                            .foregroundStyle(Tw.error)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if !isHome {
@@ -378,7 +378,7 @@ struct RoleHomeView: View {
                             .fill(失败中 ? Color(red: 1.0, green: 0.96, blue: 0.95) : Tw.gray50)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(失败中 ? Tw.red600.opacity(0.5) : Tw.gray200, lineWidth: 1)
+                                    .stroke(失败中 ? Tw.error.opacity(0.5) : Tw.gray200, lineWidth: 1)
                             )
 
                         if ok {
@@ -390,10 +390,10 @@ struct RoleHomeView: View {
                             VStack(spacing: 6) {
                                 Text("没做成")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Tw.red600)
+                                    .foregroundStyle(Tw.error)
                                 Text(why.isEmpty ? "这一条没做成" : why)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(Tw.red600)
+                                    .foregroundStyle(Tw.error)
                                     .multilineTextAlignment(.center)
                                     .lineLimit(3)
                                     .padding(.horizontal, 8)

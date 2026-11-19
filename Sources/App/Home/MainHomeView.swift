@@ -12,24 +12,35 @@ import UIKit
 //   现在先把壳子和三屏对齐；v41 起「角色」那一层搬过来了（Act/ 目录），
 //   陪伴 / 酒馆那两层还差。
 
-// MARK: - 色板（Tailwind 官方默认值，一个都没自己调）
+// MARK: - 色板（2026-11-19 换肤 v10 稿：浅灰浅蓝令牌。只改值，名字/引用不动）
 
 enum Tw {
-    static let gray50   = Color(hex: 0xF9FAFB)
-    static let gray100  = Color(hex: 0xF3F4F6)
-    static let gray200  = Color(hex: 0xE5E7EB)
-    static let gray300  = Color(hex: 0xD1D5DB)
-    static let gray400  = Color(hex: 0x9CA3AF)
-    static let gray500  = Color(hex: 0x6B7280)
-    static let gray600  = Color(hex: 0x4B5563)
-    static let gray700  = Color(hex: 0x374151)
-    static let gray900  = Color(hex: 0x111827)
-    static let red600   = Color(hex: 0xDC2626)
-    // 2026-10-24：礼物那张卡用的浅红底 + 浅红边（Tailwind red-50 / red-200）
-    static let red50    = Color(hex: 0xFEF2F2)
-    static let red200   = Color(hex: 0xFECACA)
-    static let green500 = Color(hex: 0x22C55E)
+    // 稿 canvas/text/muted/faint/line/sky/blue/blueDark
+    static let gray50   = Color(hex: 0xFCFCFC)  // 画布底 --canvas
+    static let gray100  = Color(hex: 0xEDF7FD)  // 浅蓝底 --sky
+    static let gray200  = Color(hex: 0xEEEEF0)  // 描边 --line
+    static let gray300  = Color(hex: 0xC8E7FF)  // 强调浅蓝 --blue
+    static let gray400  = Color(hex: 0x9AA1A6)  // 淡字 --faint
+    static let gray500  = Color(hex: 0x697176)  // 次字 --muted
+    static let gray600  = Color(hex: 0x697176)
+    static let gray700  = Color(hex: 0x11191C)
+    static let gray900  = Color(hex: 0x11191C)  // 主字 --text
+    // 主色：深蓝 --blueDark。原 red600 承担的主按钮/发送/气泡全部随它变蓝
+    static let red600   = Color(hex: 0x1473C8)
+    // 浅蓝底/边（礼物卡等原浅红处，随主色系走）
+    static let red50    = Color(hex: 0xEDF7FD)
+    static let red200   = Color(hex: 0xC8E7FF)
+    static let green500 = Color(hex: 0x37A169)
     static let white    = Color.white
+
+    // ★ 换肤新增语义令牌：错误/危险仍保留红（稿 --danger），主色/浅蓝单独命名
+    static let error      = Color(hex: 0xAA4A45)
+    static let accent     = Color(hex: 0x1473C8)
+    static let accentSoft = Color(hex: 0xC8E7FF)
+    // 圆角令牌（稿：气泡22/卡18/按钮14）
+    static let rBubble: CGFloat = 22
+    static let rCard: CGFloat   = 18
+    static let rButton: CGFloat = 14
 }
 
 // MARK: - 台子上的数据
@@ -889,7 +900,7 @@ struct HerPane: View {
                         .foregroundStyle(Tw.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
-                        .background(Capsule().fill(Tw.gray900))
+                        .background(Capsule().fill(Tw.accent))
                 }
                 .buttonStyle(PressStyle(scale: 0.97))
                 .padding(.bottom, 10)
@@ -1134,7 +1145,7 @@ struct CommPane: View {
                     .foregroundStyle(Tw.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Tw.gray900))
+                    .background(Capsule().fill(Tw.accent))
             }
             .buttonStyle(PressStyle(scale: 0.94))
         }
@@ -1191,7 +1202,7 @@ struct RankPane: View {
                             .foregroundStyle(Tw.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
-                            .background(Capsule().fill(Tw.gray900))
+                            .background(Capsule().fill(Tw.accent))
                     }
                     .buttonStyle(PressStyle(scale: 0.94))
                 }

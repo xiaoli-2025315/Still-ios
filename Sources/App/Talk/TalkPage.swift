@@ -4,14 +4,6 @@ import PhotosUI
 import UniformTypeIdentifiers
 import Combine
 
-/// ★ 2026-11-13：台子上真挂着的一个豆包号位（不是写死的「豆包1」）。
-fileprivate struct 号位项: Identifiable {
-    var id: String { slot }
-    let slot: String
-    let 名字: String
-    let 登着没: Bool
-}
-
 // MARK: - 「相机」那一格：系统相机，拍完直接转 JPEG（不把 HEIC 交出去）
 struct StillCameraPicker: UIViewControllerRepresentable {
     var onImage: (Data) -> Void
@@ -113,55 +105,15 @@ struct TalkPage: View {
     @State private var setBusy = false
     @State private var setErr = ""
 
-    // ★★★ 2026-11-12（照 v0.6 图稿）：输入框上方常驻小选项 ＋ 动作制作面板。
+    // ★ 2026-11-19：聊天里的「对话 / 动作制作」两个入口和整套动作制作功能已移除；
+    //   聊天仍可发消息、语音、选附件，动作请到独立的动作库／角色页制作。
     //   只加不删：老的「语音／键盘 → 整条按住说」那条路原样留着。
-    @State private var showMake = false
-    @State private var useTemplate = false
-    @State private var makeText = ""
-    @State private var pickedTpl = ""          // 词库里真有的 id
-    @State private var pickedName = ""
     @State private var showAttach = false
-    @State private var makeBusy = false
-    @State private var pendingCard = false
-    @State private var draftNo = ""
-    @State private var draftState = ""
-    @State private var draftTime = ""
-    @State private var draftName = ""
-    // ★ 2026-11-12：开工前查登录、真开工回执、机器原话、附件清单
-    @State private var draftJob = ""
-    @State private var draftAct = ""
-    @State private var loginText = "豆包1"
-    /// ★ 2026-11-13（他定的）：「就是要能选登录的豆包号还有我们的 wan 路线」。
-    ///   台子上号位清单、模型清单、wan 通道都是真的，这两排不再是点不动的字。
-    @State private var 做法 = ""                 // "" ＝ 还没选 / doubao / wan
-    @State private var 选中号 = ""                 // 空 ＝ 还没挑号
-    /// ★ 2026-11-16：还没选就点「开始制作」时，在小框底下就地说一句，不弹到聊天里。
-    @State private var 选提示 = ""
-    @State private var 模型说 = "豆包 · Seedance 2.0 mini"
-    @State private var 号位: [号位项] = []
-    @State private var machineErr = ""
     @State private var progressText = ""
-    @State private var attachNames: [String] = []
-    /// ★ 2026-11-13：写动作之前先选的附件，先收着，回执一出来就补交
-    @State private var pendingAttach: [(String, Data)] = []
     @State private var showCamera = false
     @State private var showFile = false
     @State private var showPhotoPicker = false
     @State private var pickedPhoto: PhotosPickerItem? = nil
-
-    private struct Tpl: Identifiable {
-        var id: String { key }
-        let key: String
-        let name: String
-    }
-    /// 中文名来自台子 act_queue.py 的现行 9 条清单，左边是词库里的真 id。
-    private let 已有动作: [Tpl] = [
-        Tpl(key: "sit", name: "端坐"), Tpl(key: "hunt1", name: "捕猎"),
-        Tpl(key: "hunt2", name: "抓咬"), Tpl(key: "sleep", name: "熟睡"),
-        Tpl(key: "struggle", name: "挣扎"), Tpl(key: "walk_r", name: "行走"),
-        Tpl(key: "groom", name: "舔毛"), Tpl(key: "inhale", name: "吸入"),
-        Tpl(key: "exhale", name: "呼出")
-    ]
 
     struct Line: Identifiable {
         let id = UUID()
@@ -193,7 +145,7 @@ struct TalkPage: View {
             //   不用自己算键盘高度，也不会被挡住。两个面板也在这一节里，
             //   显示时占高度把聊天区挤上去，不盖聊天内容。
             .safeAreaInset(edge: .bottom, spacing: 0) { inputDock }
-            .onAppear { boot(); loadDraft() }
+            .onAppear { boot() }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if showCats {
@@ -289,16 +241,7 @@ struct TalkPage: View {
                     ForEach(lines) { l in
                         bubble(l).id(l.id)
                     }
-                    // ★ 提交后面板收起，确认卡／回执卡就是聊天记录里的一条。
-                    if pendingCard { makeConfirmCard }
-                    if !draftNo.isEmpty { makeReceiptCard }
-                    if !machineErr.isEmpty { machineCard }
-                    if !progressText.isEmpty {
-                        Text(progressText)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Tw.gray400)
-                    }
-                    // ★ 2026-11-13：录音的轻提示单独一行，不占动作制作那行进度文字
+                    // ★ 2026-11-13：录音的轻提示单独一行
                     if !holdTip.isEmpty {
                         Text(holdTip)
                             .font(.system(size: 11))
@@ -335,7 +278,7 @@ struct TalkPage: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(Capsule().fill(Tw.gray900))
+                            .background(Capsule().fill(Tw.accent))
                     }
                     .padding(.bottom, 10)
                     .transition(.opacity)
@@ -355,17 +298,16 @@ struct TalkPage: View {
                 }
                 Text(l.text)
                     .font(.system(size: 14))
-                    .foregroundStyle(l.mine ? Tw.white : Tw.gray900)
+                    // 稿 v10：我方浅蓝底深字、对方浅灰描边深字，圆角22
+                    .foregroundStyle(Tw.gray900)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            // ★ 2026-11-14：画布改纯白了，对方气泡也得跟着换极浅灰，
-                            //   不然白气泡贴在白画布上等于没有边界。仍是 Tailwind 官方值。
-                            .fill(l.mine ? Tw.red600 : Tw.gray50)
+                        RoundedRectangle(cornerRadius: Tw.rBubble, style: .continuous)
+                            .fill(l.mine ? Tw.accentSoft : Tw.gray200.opacity(0.55))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: Tw.rBubble, style: .continuous)
                             .stroke(l.mine ? Color.clear : Tw.gray200, lineWidth: 1)
                     )
                     .textSelection(.enabled)
@@ -405,21 +347,9 @@ struct TalkPage: View {
         //   面板在最上面，显示时占高度、把聊天区挤上去，不盖聊天内容。
         VStack(spacing: 12) {
             if showAttach { attachPanel }
-            if showMake { makePanel }
 
-            // ★ 2026-11-14 11:17：小选项和输入条之间的留白拉开（豆包约是我们两倍）。
+            // ★ 2026-11-14 11:17：输入条和上面的留白拉开（豆包约是我们两倍）。
             VStack(spacing: 18) {
-            // ★ 只保留输入框上方这排「💬 对话｜✦ 动作制作」；
-            //   图里那排「拍题答疑／AI 创作」不要。跟输入栏同在底部这一节里。
-            HStack(spacing: 6) {
-                smallChip("💬 对话 ⌄", false)
-                    .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
-                // ★ 2026-11-13：默认不高亮，只有真的在做动作才红
-                Button { showMake = true } label: { smallChip("✦ 动作制作", showMake) }
-                    .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
-                Spacer(minLength: 0)
-            }
-
             HStack(spacing: 8) {
                 // 左：相机（拍照）
                 Button { showAttach.toggle() } label: {
@@ -537,9 +467,6 @@ struct TalkPage: View {
                 }
             }
         }
-        .onChange(of: showMake) { on in
-            if on { Task { await checkLogin() } }
-        }
         // ★ 2026-11-14 12:13：左右 12 安全距离不变；上下留白让输入条外侧和纯白画布之间有间隔。
         //   输入条自己靠「清晰浅灰边框 + 白底 + 下沿轻影」独立出来；小选项是独立小胶囊，
         //   不打包成大卡片。键盘由 safeAreaInset 交回系统处理，不再自己接通知。
@@ -656,7 +583,7 @@ struct TalkPage: View {
                 } else if !groupListErr.isEmpty {
                     Text(groupListErr)
                         .font(.system(size: 12.5))
-                        .foregroundStyle(Tw.red600)
+                        .foregroundStyle(Tw.error)
                         .padding(.vertical, 14)
                 } else if groups.isEmpty {
                     Text("还没有群 —— 点下面「＋ 新建群聊」凑一桌")
@@ -734,7 +661,7 @@ struct TalkPage: View {
                 if let e = groupErr {
                     Text(e)
                         .font(.system(size: 13))
-                        .foregroundStyle(Tw.red600)
+                        .foregroundStyle(Tw.error)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                 } else if creating {
@@ -960,7 +887,7 @@ struct TalkPage: View {
                 }
                 if !setErr.isEmpty {
                     Section {
-                        Text(setErr).font(.system(size: 12.5)).foregroundStyle(Tw.red600)
+                        Text(setErr).font(.system(size: 12.5)).foregroundStyle(Tw.error)
                     }
                 }
             }
@@ -1107,46 +1034,6 @@ struct TalkPage: View {
         dismiss()
     }
 
-    // ==================================================================
-    // ★★★ 2026-11-12（照 v0.6 图稿）：聊天里做一个新动作
-    // ==================================================================
-
-    private func smallChip(_ s: String, _ on: Bool) -> some View {
-        Text(s)
-            .font(.system(size: 11, weight: on ? .semibold : .regular))
-            .foregroundStyle(on ? Tw.red600 : Tw.gray500)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule().fill(on ? Tw.red600.opacity(0.08) : Tw.white)
-                    // ★ 2026-11-14 09:50：撤掉大卡片后，这两个小胶囊在纯白上也要看得见边界。
-                    .overlay(Capsule().stroke(on ? Tw.red600.opacity(0.35) : Tw.gray300,
-                                              lineWidth: 1))
-            )
-    }
-
-    /// ★ 2026-11-14：下拉浮层里的一行，大标题 ＋ 一行灰小字，选中打勾。
-    private func 下拉项(_ 标题: String, _ 小字: String, _ 选中: Bool) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(标题)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Tw.gray900)
-                // ★ 2026-11-16（他定的）：没小字就真的不占那一行。
-                if !小字.isEmpty {
-                    Text(小字)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Tw.gray400)
-                }
-            }
-            if 选中 {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Tw.red600)
-            }
-        }
-    }
-
     // MARK: - 长按输入框＝按住直接说（对齐安卓，2026-11-13）
 
     /// 按住超过 0.35 秒就起录；短按仍然是打字，不抢键盘。
@@ -1188,7 +1075,7 @@ struct TalkPage: View {
             }
     }
 
-    /// 一行小灰字，两秒后自己收掉；不碰动作制作那边的进度文字。
+    /// 一行小灰字，两秒后自己收掉。
     private func 轻提示(_ s: String) {
         holdTip = s
         // 明确写 @MainActor，别让改界面这句话卡在并发检查上（CI 一次编译很贵）。
@@ -1205,15 +1092,15 @@ struct TalkPage: View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(holdVoice.listening && holdCancel
-                      ? Tw.red600.opacity(0.08) : Tw.gray50)
+                      ? Tw.error.opacity(0.08) : Tw.gray50)
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(holdVoice.listening && holdCancel
-                            ? Tw.red600.opacity(0.5) : Tw.gray200, lineWidth: 1))
+                            ? Tw.error.opacity(0.5) : Tw.gray200, lineWidth: 1))
             if holdVoice.listening {
                 HStack(alignment: .center, spacing: 1.6) {
                     ForEach(0..<24, id: \.self) { i in
                         Capsule()
-                            .fill(holdCancel ? Tw.red600.opacity(0.55) : Tw.gray900.opacity(0.75))
+                            .fill(holdCancel ? Tw.error.opacity(0.55) : Tw.gray900.opacity(0.75))
                             .frame(width: 1.8, height: max(2, 26 * (0.06 + holdHist[i])))
                     }
                 }
@@ -1223,7 +1110,7 @@ struct TalkPage: View {
                  : (holdVoice.err ?? "正在等麦克风允许…"))
                 .font(.system(size: 11))
                 .foregroundStyle(holdVoice.listening
-                                 ? (holdCancel ? Tw.red600 : Tw.gray400)
+                                 ? (holdCancel ? Tw.error : Tw.gray400)
                                  : Tw.gray500)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -1286,383 +1173,6 @@ struct TalkPage: View {
         // ★ 12:13：不再是浮层，撤掉那层大投影（会把四周白底染灰）；留圆角 + 细边框。
     }
 
-    /// 底部动作制作面板（Agent 模式）
-    private var makePanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Button { useTemplate = false } label: { smallChip("自定义动作", !useTemplate) }
-                Button { useTemplate = true } label: { smallChip("已有动作", useTemplate) }
-                Spacer(minLength: 0)
-                Button { showMake = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 15))
-                        .foregroundStyle(Tw.gray500)
-                }
-            }
-            if useTemplate {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 6) {
-                    ForEach(已有动作) { t in
-                        Button {
-                            pickedTpl = t.key
-                            pickedName = t.name
-                        } label: { smallChip(t.name, pickedTpl == t.key) }
-                    }
-                }
-            } else {
-                Text("写下这个动作在做什么，一行一句。写完由纯代码套进固定骨架，不改写你的字。")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Tw.gray500)
-            }
-            // ★ 2026-11-16（他定的）：跟登记页「用哪个来做」一个方式 —— 一个小框，点了弹下拉条。
-            //   框里只写你选的那一样（豆包几号 / wan3.0），没挑之前写「选择制作方式」；
-            //   下拉里不写解释小字，没登录的号**根本不列出来**（不是列出来点不动）。
-            HStack(spacing: 6) {
-                Menu {
-                    ForEach(号位.filter { $0.登着没 }) { x in
-                        Button {
-                            做法 = "doubao"; 选中号 = x.slot; 存选择(); 选提示 = ""
-                        } label: {
-                            下拉项(x.名字, "", 做法 == "doubao" && 选中号 == x.slot)
-                        }
-                    }
-                    if !号位.contains(where: { $0.登着没 }) {
-                        Text("还没有登着的豆包号")
-                    }
-                    Button {
-                        做法 = "wan"; 选中号 = ""; 存选择(); 选提示 = ""
-                    } label: { 下拉项("wan3.0", "", 做法 == "wan") }
-                } label: {
-                    smallChip(当前选择说 + " ⌄", 做法 == "wan")
-                }
-            }
-            if !选提示.isEmpty {
-                Text(选提示)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Tw.red600)
-                    .padding(.top, 4)
-            }
-            Menu {
-                Button {
-                    存选择()
-                } label: { 下拉项(模型说, "用你登着的豆包号做 · 已接通", true) }
-                Text("现在只接通这一个 · 别的还没加")
-            } label: {
-                Text("模型　" + 模型说 + "　⌄")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Tw.gray400)
-            }
-            TextEditor(text: $makeText)
-                .frame(height: 62)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 9).fill(Tw.gray50))
-                .overlay(alignment: .topLeading) {
-                    if makeText.isEmpty {
-                        Text("描述你想创作的动作或选择动作模板")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Tw.gray400)
-                            .padding(.top, 13)
-                            .padding(.leading, 12)
-                    }
-                }
-            Button { submitDraft() } label: {
-                Text("写好了")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Tw.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Tw.red600))
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16).fill(Tw.white)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Tw.gray200, lineWidth: 1))
-        )
-        .padding(10)
-    }
-
-    private var makeConfirmCard: some View {
-        draftCard(title: draftName.isEmpty ? "新动作" : draftName,
-                  rows: [("时间轴", "固定，你写的字不改"),
-                         ("用哪个做", 已选 ? 当前选择说 : "还没选")],
-                  note: nil, button: "开始制作", action: submitToServer)
-    }
-
-    private var makeReceiptCard: some View {
-        var rows: [(String, String)] = [("状态", draftState), ("单号", draftNo)]
-        if !draftJob.isEmpty { rows.append(("这一趟的单号", draftJob)) }
-        rows.append(("时间", draftTime))
-        for n in attachNames { rows.append(("附件", n)) }
-        return draftCard(title: "写好了 · " + draftName,
-                  rows: rows,
-                  note: "已经交给它去做了，退出再进还看得到做到哪了。",
-                  button: nil, action: {},
-                  extras: [("看看做到哪了", { refreshDraft() }),
-                           ("再做一个", { newOne() })])
-    }
-
-    /// 台子明说没接这单时，原话摆出来 + 一颗重试，不自己判失败。
-    private var machineCard: some View {
-        draftCard(title: "没接这单", rows: [], note: machineErr,
-                  button: "再试一次", action: { retryStart() })
-    }
-
-    private func draftCard(title: String, rows: [(String, String)], note: String?,
-                           button: String?, action: @escaping () -> Void,
-                           extras: [(String, () -> Void)] = []) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Tw.gray900)
-            ForEach(rows.indices, id: \.self) { i in
-                HStack {
-                    Text(rows[i].0).font(.system(size: 11.5)).foregroundStyle(Tw.gray500)
-                    Spacer(minLength: 0)
-                    Text(rows[i].1).font(.system(size: 11.5)).foregroundStyle(Tw.gray900)
-                }
-            }
-            if let n = note {
-                Text(n).font(.system(size: 11)).foregroundStyle(Tw.gray400)
-            }
-            if let b = button {
-                Button(action: action) {
-                    Text(b).font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Tw.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
-                        .background(RoundedRectangle(cornerRadius: 9).fill(Tw.red600))
-                }
-                .padding(.top, 6)
-            }
-            if !extras.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(extras.indices, id: \.self) { i in
-                        Button(action: extras[i].1) {
-                            Text(extras[i].0)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Tw.gray900)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(RoundedRectangle(cornerRadius: 9).fill(Tw.gray50))
-                        }
-                    }
-                }
-                .padding(.top, 6)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12).fill(Tw.white)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Tw.gray200, lineWidth: 1))
-        )
-    }
-
-    private func submitDraft() {
-        let s = makeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if useTemplate && pickedTpl.isEmpty { return }
-        if !useTemplate && s.isEmpty { return }
-        // ★ 2026-11-16（他定的）：没挑过就是没挑过，不拿「机器自己挑」糊过去。
-        选提示 = ""
-        if !已选 { 选提示 = "先在上面那个框里选一下用哪个来做"; return }
-        draftName = useTemplate ? pickedName : "新动作"
-        machineErr = ""
-        progressText = ""
-        pendingCard = true
-        showMake = false
-    }
-
-    // ---------- 写稿 → 点开始制作 → 真开工（免费豆包链）→ 回执落盘 ----------
-
-    private func postJSON(_ path: String, _ body: [String: Any]) async throws -> [String: Any] {
-        var req = URLRequest(url: URL(string: ActLab.base + path)!)
-        req.httpMethod = "POST"
-        req.timeoutInterval = 30
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.stillStamp()
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, _) = try await URLSession.shared.data(for: req)
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-    }
-
-    /// ★ 他点「开始制作」才真的开工。已经有单在跑时任何一次进入都不许再下单。
-    private func submitToServer() {
-        guard !makeBusy else { return }
-        guard draftNo.isEmpty else { refreshDraft(); return }
-        makeBusy = true
-        let body: [String: Any] = [
-            "char": CatBrain.currentCharId,
-            "描述": makeText.trimmingCharacters(in: .whitespacesAndNewlines),
-            "模板": useTemplate ? pickedTpl : ""
-        ]
-        Task { @MainActor in
-            defer { makeBusy = false }
-            do {
-                let d = try await postJSON("/api/act/draft", body)
-                guard (d["ok"] as? Bool) == true else {
-                    machineErr = d["错误"] as? String ?? "没连上台子"
-                    return
-                }
-                let no = d["单号"] as? String ?? ""
-                guard !no.isEmpty else { return }
-                draftNo = no
-                draftAct = d["动作名"] as? String ?? ""
-                draftName = d["显示名"] as? String ?? draftName
-                draftState = d["状态"] as? String ?? ""
-                draftTime = d["时间"] as? String ?? ""
-                flushPending()
-                applyStart(try await postJSON(startPath(), startBody(no)))
-            } catch {
-                machineErr = "没连上台子，等会儿再试"
-            }
-        }
-    }
-
-    private func applyStart(_ s: [String: Any]) {
-        if (s["ok"] as? Bool) == true {
-            draftState = s["状态"] as? String ?? draftState
-            draftTime = s["时间"] as? String ?? draftTime
-            draftJob = s["job"] as? String ?? ""
-            pendingCard = false
-            machineErr = ""
-            saveDraft()
-        } else {
-            // ★ 只认机器明说的失败，原话原样摆出来，不替它编理由。
-            machineErr = s["错误"] as? String ?? "生成那边没接这单"
-        }
-    }
-
-    private func retryStart() {
-        guard !draftNo.isEmpty, !makeBusy else { return }
-        makeBusy = true
-        let no = draftNo
-        Task { @MainActor in
-            defer { makeBusy = false }
-            do { applyStart(try await postJSON(startPath(), startBody(no))) }
-            catch { machineErr = "没连上台子，等会儿再试" }
-        }
-    }
-
-    /// 退出再进 / 点按钮：只问台子「做到哪了」，只显示机器真写的字。
-    private func refreshDraft() {
-        guard !draftNo.isEmpty else { return }
-        let no = draftNo
-        Task { @MainActor in
-            do {
-                let o = try await postJSON("/api/act/draft/state", ["单号": no])
-                guard (o["ok"] as? Bool) == true else { return }
-                if let s = o["状态"] as? String, !s.isEmpty { draftState = s }
-                if let j = o["job"] as? String, !j.isEmpty { draftJob = j }
-                if let a = o["动作名"] as? String, !a.isEmpty { draftAct = a }
-                saveDraft()
-                if let say = o["进度说"] as? String, !say.isEmpty {
-                    progressText = say
-                } else if let g = o["进度"] as? [String: Any],
-                          let st = (g["阶段"] as? String) ?? (g["stage"] as? String)
-                                   ?? (g["状态"] as? String),
-                          !st.isEmpty {
-                    progressText = "做到哪了　" + st
-                }
-                if let a = o["附件"] as? [[String: Any]], !a.isEmpty {
-                    attachNames = a.compactMap { x in
-                        guard let n = x["名字"] as? String else { return nil }
-                        return n + "　" + String((x["字节"] as? Int) ?? 0) + " 字节"
-                    }
-                }
-            } catch { /* 不编失败理由 */ }
-        }
-    }
-
-    private func getJSON(_ path: String) async throws -> [String: Any] {
-        var req = URLRequest(url: URL(string: ActLab.base + path)!)
-        req.timeoutInterval = 15
-        req.stillStamp()
-        let (data, _) = try await URLSession.shared.data(for: req)
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-    }
-
-    /// ★ 2026-11-13：拉台子上真挂着的号位与真模型名（只读，不登、不改状态）。
-    private func checkLogin() async {
-        do {
-            let a = try await getJSON("/api/login/accounts")
-            let arr = a["账号"] as? [[String: Any]] ?? []
-            号位 = arr.compactMap { x in
-                guard let s = x["slot"] as? String, !s.isEmpty else { return nil }
-                return 号位项(slot: s,
-                              名字: x["名字"] as? String ?? ("豆包" + s),
-                              登着没: x["登着没"] as? Bool ?? false)
-            }
-            loginText = 号位.isEmpty ? "没问到登着的号" : "\(号位.count) 个豆包号"
-        } catch {
-            loginText = "没问到"
-        }
-        do {
-            let m = try await getJSON("/api/gen/models")
-            if let arr = m["模型"] as? [[String: Any]] {
-                for x in arr where (x["接没接通"] as? Bool) == true {
-                    if let n = x["名字"] as? String, !n.isEmpty { 模型说 = n; break }
-                }
-            }
-        } catch { /* 不编 */ }
-    }
-
-    /// 小框里就写你选的那一样：豆包几号、或者 wan3.0；还没挑就写「选择制作方式」。
-    private var 当前选择说: String {
-        if 做法 == "wan" { return "wan3.0" }
-        if 做法 == "doubao" && !选中号.isEmpty {
-            let n = 号位名字
-            return n.isEmpty ? "豆包" + 选中号 : n
-        }
-        return "选择制作方式"
-    }
-
-    /// 真挑过没有。没挑过就不许往下走，也不许拿「机器自己挑」糊过去。
-    private var 已选: Bool {
-        做法 == "wan" || (做法 == "doubao" && !选中号.isEmpty)
-    }
-
-    /// 选中的那个号叫什么（没选就给空）。
-    private var 号位名字: String {
-        if 选中号.isEmpty { return "" }
-        if let x = 号位.first(where: { $0.slot == 选中号 }) { return x.名字 }
-        return ""
-    }
-
-    private func startPath() -> String {
-        做法 == "wan" ? "/api/act/draft/wan" : "/api/act/draft/start"
-    }
-
-    private func startBody(_ no: String) -> [String: Any] {
-        if 做法 == "wan" { return ["单号": no] }
-        if 选中号.isEmpty { return ["单号": no] }
-        return ["单号": no, "账号": 选中号]
-    }
-
-    private func 存选择() {
-        let d = UserDefaults.standard
-        d.set(做法, forKey: "act_draft_way")
-        d.set(选中号, forKey: "act_draft_slot")
-    }
-
-    private func 读选择() {
-        let d = UserDefaults.standard
-        let w = d.string(forKey: "act_draft_way") ?? ""
-        let s = d.string(forKey: "act_draft_slot") ?? ""
-        // ★ 2026-11-16（他定的）：不再有「让机器自己挑」——没真挑过号就是还没选。
-        if w == "wan" { 做法 = "wan"; 选中号 = "" }
-        else if w == "doubao" && !s.isEmpty { 做法 = "doubao"; 选中号 = s }
-        else { 做法 = ""; 选中号 = "" }
-    }
-
-    private func newOne() {
-        draftNo = ""; draftState = ""; draftTime = ""; draftJob = ""; draftAct = ""
-        draftName = "新动作"; machineErr = ""; progressText = ""; attachNames = []
-        makeText = ""; useTemplate = false; pickedTpl = ""; pickedName = ""
-        let d = UserDefaults.standard
-        for k in ["act_draft_no", "act_draft_state", "act_draft_time",
-                  "act_draft_name", "act_draft_job", "act_draft_act"] {
-            d.removeObject(forKey: k)
-        }
-        showMake = true
-    }
-
     // ---------- 三格附件：真选、真传、真落盘 ----------
 
     /// ★ 2026-11-13：三格点下去就真的开相机／相册／文件，不再拦一道「先去写动作」。
@@ -1676,67 +1186,10 @@ struct TalkPage: View {
         else { progressText = "这个功能还没接 —— 机器上没有通话" }
     }
 
+    /// 附件仍可选、可看；聊天里已不再能制作动作，如实告诉用户去哪做。
     private func uploadAttach(_ name: String, _ data: Data) {
-        guard !draftNo.isEmpty else {
-            pendingAttach.append((name, data))
-            progressText = "先收着了 \(name)，写好动作一起交上去"
-            return
-        }
-        let no = draftNo
-        Task { @MainActor in
-            do {
-                var comp = URLComponents(string: ActLab.base + "/api/act/draft/file")!
-                comp.queryItems = [URLQueryItem(name: "单号", value: no),
-                                   URLQueryItem(name: "名字", value: name)]
-                var req = URLRequest(url: comp.url!)
-                req.httpMethod = "POST"
-                req.timeoutInterval = 60
-                req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-                req.stillStamp()
-                req.httpBody = data
-                let (d, _) = try await URLSession.shared.data(for: req)
-                let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
-                if (o["ok"] as? Bool) == true {
-                    let n = o["名字"] as? String ?? name
-                    let b = (o["字节"] as? Int) ?? data.count
-                    attachNames.append(n + "　" + String(b) + " 字节")
-                } else if let e = o["错误"] as? String {
-                    progressText = e
-                }
-            } catch { /* 不编失败理由 */ }
-        }
-    }
-
-    /// ★ 2026-11-13：写动作之前先选的附件，回执一出来就补交，一件不落。
-    private func flushPending() {
-        guard !draftNo.isEmpty, !pendingAttach.isEmpty else { return }
-        let list = pendingAttach
-        pendingAttach = []
-        for (n, d) in list { uploadAttach(n, d) }
-    }
-
-    private func saveDraft() {
-        let d = UserDefaults.standard
-        d.set(draftNo, forKey: "act_draft_no")
-        d.set(draftState, forKey: "act_draft_state")
-        d.set(draftTime, forKey: "act_draft_time")
-        d.set(draftName, forKey: "act_draft_name")
-        d.set(draftJob, forKey: "act_draft_job")
-        d.set(draftAct, forKey: "act_draft_act")
-        存选择()
-    }
-
-    /// 退出再进还看得到做到哪了；开机只认存下来的回执，不下任何判决。
-    private func loadDraft() {
-        let d = UserDefaults.standard
-        draftNo = d.string(forKey: "act_draft_no") ?? ""
-        draftState = d.string(forKey: "act_draft_state") ?? ""
-        draftTime = d.string(forKey: "act_draft_time") ?? ""
-        draftName = d.string(forKey: "act_draft_name") ?? "新动作"
-        draftJob = d.string(forKey: "act_draft_job") ?? ""
-        draftAct = d.string(forKey: "act_draft_act") ?? ""
-        读选择()
-        if !draftNo.isEmpty { refreshDraft() }
+        _ = data
+        progressText = "收到 \(name)，聊天里已不能制作动作，请到角色页或动作库做"
     }
 
     // MARK: - 发

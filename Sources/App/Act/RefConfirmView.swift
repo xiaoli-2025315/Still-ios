@@ -265,14 +265,14 @@ struct RefConfirmView: View {
             if maintOn {
                 Text("台子正在更新（\(maintWhy.isEmpty ? "几分钟就好" : maintWhy)）—— 等它更新完再下单")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Tw.red600)
+                    .foregroundStyle(Tw.error)
                     .multilineTextAlignment(.center)
                     .padding(.top, 6)
             }
             if channel.hasPrefix("doubao:") && !canStart {
                 Text("这个豆包号已失效（豆包那边把登录作废了）—— 点下拉里的「已失效（点了去登录）」重登，或换 wan3.0")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Tw.red600)
+                    .foregroundStyle(Tw.error)
                     .multilineTextAlignment(.center)
                     .padding(.top, 6)
             }
@@ -285,7 +285,7 @@ struct RefConfirmView: View {
                         .foregroundStyle(Tw.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
-                        .background(Capsule().fill(Tw.gray900))
+                        .background(Capsule().fill(Tw.accent))
                 }
                 .buttonStyle(PressStyle(scale: 0.97))
                 .padding(.horizontal, 24)
@@ -313,7 +313,7 @@ struct RefConfirmView: View {
             if !ref不能做.isEmpty {
                 Text(ref不能做)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Tw.red600)
+                    .foregroundStyle(Tw.error)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
                     .padding(.top, 8)
@@ -331,7 +331,7 @@ struct RefConfirmView: View {
             if !refErr.isEmpty {
                 Text(refErr)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Tw.red600)
+                    .foregroundStyle(Tw.error)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
                     .padding(.top, 8)

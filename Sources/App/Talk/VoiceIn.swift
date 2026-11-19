@@ -154,7 +154,7 @@ struct PawTalkButton: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(voice.listening ? (willCancel ? Tw.gray400 : Tw.red600) : Tw.gray100)
+                .fill(voice.listening ? (willCancel ? Tw.gray400 : Tw.error) : Tw.gray100)
                 .frame(width: 42, height: 42)
 
             if voice.listening {

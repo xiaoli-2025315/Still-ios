@@ -140,21 +140,21 @@ enum Cfg {
         .look:    2.5...4.1
     ]
 
-    // MARK: 配色（沿用设计系统）
+    // MARK: 配色（2026-11-19 换肤 v10：浅灰浅蓝。只改 UI 语义色，猫毛色原样不动）
     enum Palette {
-        static let bg       = Color(hex: 0xFAF6F0)
-        static let accent   = Color(hex: 0xC97B4E)  // 赤陶
-        static let honey    = Color(hex: 0xE0A458)
-        static let sage     = Color(hex: 0x8FA38A)
-        static let twilight = Color(hex: 0x2F4060)
-        static let ink      = Color(hex: 0x6B5D50)
-        static let faint    = Color(hex: 0xA08878)
+        static let bg       = Color(hex: 0xFCFCFC)  // 画布底
+        static let accent   = Color(hex: 0x1473C8)  // 深蓝主色
+        static let honey    = Color(hex: 0xC8E7FF)  // 强调浅蓝
+        static let sage     = Color(hex: 0x37A169)  // 绿
+        static let twilight = Color(hex: 0x1473C8)
+        static let ink      = Color(hex: 0x11191C)  // 主字
+        static let faint    = Color(hex: 0x697176)  // 次字
 
-        // 毛毡猫
+        // 毛毡猫 —— 宠物渲染色，换肤不碰
         static let fur      = Color(hex: 0xE3D3C3)
         static let furDeep  = Color(hex: 0xC9B7A4)
         static let inner    = Color(hex: 0xE8B4A0)
-        static let line     = Color(hex: 0x6B5D50)
+        static let line     = Color(hex: 0xEEEEF0)  // 描边
     }
 }
 

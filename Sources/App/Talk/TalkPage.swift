@@ -64,6 +64,11 @@ struct TalkPage: View {
     @State private var text = ""
     @State private var lines: [Line] = []
     @State private var busy = false
+    /// ★ 2026-11-19：发送队列——生成中再发的先进队，一条回完才发下一条。
+    @State private var 待发: [String] = []
+    /// ★ 2026-11-19：翻历史时不强制弹回底部，浮一颗「最新消息」按钮。
+    @State private var atBottom = true
+    @State private var hasNew = false
     /// 外面推这个数 = 再抢一次焦点
     @State private var pulse = 0
     /// ★ 2026-10-30：语音模式（左边那颗切换）—— 对齐安卓聊天页
@@ -164,6 +169,8 @@ struct TalkPage: View {
         var text: String
         var cost: String? = nil     // 回复下面那行小字，拿不到花费就不显示
         var speaker: String? = nil  // 群聊里回话的那只猫
+        var failed = false          // ★ 2026-11-20：台子明说没接这单，才显示「重试」
+        var retryText = ""          // 重试要重发的原话（同一句，不再摆新气泡）
     }
 
     var body: some View {
@@ -297,7 +304,10 @@ struct TalkPage: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Tw.gray400)
                     }
+                    // ★ 2026-11-19：这个锚点露出来 = 用户在最底部；滚走就不跟底。
                     Color.clear.frame(height: 1).id("bottom")
+                        .onAppear { atBottom = true; hasNew = false }
+                        .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, 16)
                 // ★ 2026-11-14 12:13：输入区回到页面流，滚动区不用再给浮层留一大块空白。
@@ -306,7 +316,30 @@ struct TalkPage: View {
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: lines.count) {
-                withAnimation(.easeOut(duration: 0.18)) { sp.scrollTo("bottom", anchor: .bottom) }
+                if atBottom {
+                    withAnimation(.easeOut(duration: 0.18)) { sp.scrollTo("bottom", anchor: .bottom) }
+                } else {
+                    hasNew = true       // 只浮按钮，不抢用户正在看的历史
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if hasNew {
+                    Button {
+                        atBottom = true
+                        hasNew = false
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            sp.scrollTo("bottom", anchor: .bottom)
+                        }
+                    } label: {
+                        Text("↓ 最新消息")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(Capsule().fill(Tw.gray900))
+                    }
+                    .padding(.bottom, 10)
+                    .transition(.opacity)
+                }
             }
         }
     }
@@ -341,6 +374,21 @@ struct TalkPage: View {
                     Text(c)
                         .font(.system(size: 10.5))
                         .foregroundStyle(Tw.gray400)
+                }
+                // ★ 2026-11-20：台子明说没接这单，才给「重试」（抄 OpenFuse）。
+                //   点了把同一句填回这行重发，忙的时候不许叠。
+                if !l.mine && l.failed {
+                    Button {
+                        guard !busy, 待发.isEmpty, !l.retryText.isEmpty else { return }
+                        真发(l.retryText, 复用: l.id)
+                    } label: {
+                        Text("↻ 重试")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Tw.gray900)
+                    }
+                    .buttonStyle(PressStyle(scale: 0.94))
+                    .disabled(busy || !待发.isEmpty)
+                    .padding(.top, 2)
                 }
             }
             if !l.mine { Spacer(minLength: 40) }
@@ -1695,15 +1743,37 @@ struct TalkPage: View {
 
     private func send() {
         let m = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !m.isEmpty, !busy else { return }
-
+        guard !m.isEmpty else { return }
         text = ""
-        busy = true
+        // 用户气泡统一在这里摆一次（排队/直发都摆），真发() 不再重复摆。
         lines.append(Line(mine: true, text: m))
-        // 先摆一条空回复，流式收到字就往这条里填（主聊天页边收边显示）。
-        let waiting = Line(mine: false, text: "（它在想…）")
-        lines.append(waiting)
-        let rid = waiting.id
+        // ★ 2026-11-19：生成中不再吞掉——进队，等这条真回完再发下一条。
+        //   「失败绝不隐式重发」：失败那条已摆在气泡里，不重发；只推后面排队的。
+        if busy {
+            待发.append(m)
+            pulse += 1
+            return
+        }
+        真发(m)
+    }
+
+    /// 真发一条（用户气泡已由 send() 摆好）。
+    /// ★ 2026-11-20：复用 rid 非空＝重试——填回原来那行，不再摆新气泡、不重复记本地。
+    private func 真发(_ m: String, 复用 rid0: UUID? = nil) {
+        busy = true
+        let rid: UUID
+        if let 旧 = rid0, let i = lines.firstIndex(where: { $0.id == 旧 }) {
+            // 重试：清掉上一轮的失败标记和错误文字，原地重来。
+            rid = 旧
+            lines[i].text = "（它在想…）"
+            lines[i].failed = false
+            lines[i].cost = nil
+        } else {
+            // 先摆一条空回复，流式收到字就往这条里填（主聊天页边收边显示）。
+            let waiting = Line(mine: false, text: "（它在想…）")
+            lines.append(waiting)
+            rid = waiting.id
+        }
         pulse += 1                     // 发完还留在输入态，想接着说就接着打
 
         Task { @MainActor in
@@ -1719,6 +1789,13 @@ struct TalkPage: View {
                        let i = lines.firstIndex(where: { $0.id == rid }) {
                         lines[i].cost = cost
                     }
+                },
+                onFail: { _ in
+                    // ★ 只认台子明说的失败。标在这行上，气泡底下才挂「重试」。
+                    if let i = lines.firstIndex(where: { $0.id == rid }) {
+                        lines[i].failed = true
+                        lines[i].retryText = m
+                    }
                 })
             // 用返回值做最后对齐：中文错误提示、或断网回落的本地猫话，都落进气泡。
             if let i = lines.firstIndex(where: { $0.id == rid }) {
@@ -1729,6 +1806,12 @@ struct TalkPage: View {
             }
             busy = false
             pulse += 1
+            // ★ 2026-11-19：这条真回完了（成也罢败也罢），才发下一条。
+            //   失败那条不重发、不跳过（已经在气泡里）；只推用户后来又发、还在队列里的。
+            if !待发.isEmpty {
+                let next = 待发.removeFirst()
+                真发(next)
+            }
         }
     }
 }

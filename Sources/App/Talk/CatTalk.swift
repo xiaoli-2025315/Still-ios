@@ -64,7 +64,8 @@ enum CatTalk {
     @discardableResult
     static func say(_ message: String,
                     onStream: (@MainActor (String) -> Void)? = nil,
-                    onFinish: (@MainActor (String?) -> Void)? = nil) async -> String {
+                    onFinish: (@MainActor (String?) -> Void)? = nil,
+                    onFail: (@MainActor (String) -> Void)? = nil) async -> String {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = PetName.current
 
@@ -97,6 +98,11 @@ enum CatTalk {
         }
         // 台子正常回话、或明确报错（中文提示直接显示），都算「有结果」；
         // 网络失败、或台子既没回话也没给错误，才回落本地猫话 —— 它永远不会不回你。
+        // ★ 2026-11-20：只有台子「明确报的错」才回给界面去摆重试（抄 OpenFuse Retry；
+        //   断网回落本地猫话不算失败，不摆重试 —— 绝不瞎判死，铁律9）。
+        if let fail = stage?.errorText, let onFail {
+            await onFail(fail)
+        }
         let fromStage = stage.flatMap {
             $0.errorText ?? ($0.reply.isEmpty ? nil : $0.reply)
         }

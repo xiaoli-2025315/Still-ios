@@ -21,6 +21,7 @@ struct SettingsPage: View {
     @State private var showBrain = false
     @State private var showDispatch = false
     @State private var showTapSheet = false
+    @State private var showMemory = false      // ★ 2026-11-19：它记住的
     // ★ 关于 连点 5 下 = 截一张当前画面传回台子（排查用，见 ShotUploader）
     @State private var aboutTaps = 0
     @State private var aboutTapAt = Date.distantPast
@@ -35,6 +36,8 @@ struct SettingsPage: View {
                     row("豆包号", accountText)
                     divider()
                     row("大脑", brainText, tappable: true) { showBrain = true }
+                    divider()
+                    row("它记住的", "", tappable: true) { showMemory = true }
                     divider()
                     row("把这只派给别人", "", tappable: true) { showDispatch = true }
                     divider()
@@ -107,6 +110,10 @@ struct SettingsPage: View {
         .sheet(isPresented: $showBrain) {
             brainSheet
                 .presentationDetents([.medium, .large])
+        }
+        // 它记住的：看见/忘掉它记下的小事（数据来自台子 Hermes）
+        .sheet(isPresented: $showMemory) {
+            MemorySheet(charId: brainCharId).presentationDetents([.medium, .large])
         }
         // 把这只派给别人（分享码）—— 复用已有的 DispatchPage
         .sheet(isPresented: $showDispatch) {

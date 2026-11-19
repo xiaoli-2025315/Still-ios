@@ -527,6 +527,53 @@ enum CatBrain {
         return out
     }
 
+    // MARK: - 它记住的（2026-11-19）
+
+    /// 台子上 Hermes「说三回就记住」的线索，列出给用户看。只读、不花钱。
+    /// 连不上/没登票一律回空 —— 绝不拿空冒充「它什么都没记住」之外的话。
+    struct MemoryLine {
+        var 类别: String
+        var 文字: String
+        var 证据: Int
+    }
+    static func memories(char: String) async -> [MemoryLine] {
+        guard !char.isEmpty,
+              var comps = URLComponents(string: "https://still-ui-design.app.workbuddy.host/api/memory/list") else { return [] }
+        comps.queryItems = [URLQueryItem(name: "char", value: char)]
+        guard let url = comps.url else { return [] }
+        var req = URLRequest(url: url)
+        req.stillStamp(); req.httpMethod = "GET"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.timeoutInterval = 10
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["ok"] as? Bool == true,
+              let rows = json["线索"] as? [[String: Any]] else { return [] }
+        return rows.map {
+            MemoryLine(类别: $0["类别"] as? String ?? "",
+                       文字: $0["文字"] as? String ?? "",
+                       证据: ($0["证据"] as? NSNumber)?.intValue ?? 0)
+        }
+    }
+
+    /// 忘掉一条：四个键精确匹配（uid 由票定、char+类别+文字），删不到别人。
+    static func forget(char: String, 类别: String, 文字: String) async -> Bool {
+        guard !char.isEmpty,
+              var comps = URLComponents(string: "https://still-ui-design.app.workbuddy.host/api/memory/forget") else { return false }
+        comps.queryItems = [URLQueryItem(name: "char", value: char),
+                            URLQueryItem(name: "类别", value: 类别),
+                            URLQueryItem(name: "文字", value: 文字)]
+        guard let url = comps.url else { return false }
+        var req = URLRequest(url: url)
+        req.stillStamp(); req.httpMethod = "GET"
+        req.timeoutInterval = 10
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return json["ok"] as? Bool == true
+    }
+
     /// 本地那套：规则匹配（你好 / 吃饭 / 想你 / 名字…）+ 兜底随机一句猫味的话。
     /// message：你对它说的话；catName：它现在叫什么（用于「我叫 XX」这类回话）
     static func reply(to message: String, catName: String) -> String {

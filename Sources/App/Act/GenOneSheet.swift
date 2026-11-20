@@ -101,7 +101,7 @@ struct GenOneSheet: View {
                     .foregroundStyle(Tw.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
-                    .background(Capsule().fill(canStart ? Tw.gray900 : Tw.gray300))
+                    .background(Capsule().fill(canStart ? Tw.accent : Tw.gray300))
                 }
                 .disabled(busy || !canStart)
                 .buttonStyle(PressStyle(scale: 0.97))

@@ -320,6 +320,9 @@ enum CatBrain {
             payload["名字表"] = g.names
             if let first = g.members.first { payload["char"] = first }
         }
+        // ★ OTCO 第0步：带上这只角色选的 Agent（群聊按回话那只 char 走）。
+        //   没选过＝默认，老链路不受影响。
+        payload["agentId"] = AgentStore.of(charId)
         return try? JSONSerialization.data(withJSONObject: payload)
     }
 

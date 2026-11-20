@@ -121,6 +121,11 @@ struct RefConfirmView: View {
                 }
             }
         }
+        // ★ 2026-11-19：「已失效（点了去登录）」点了要真弹出登录页 ——
+        //   之前只有 showLogin=true、没有承接，点了没反应。登录回来后重拉账号列表。
+        .sheet(isPresented: $showLogin, onDismiss: { Task { await 拉baoAccounts() } }) {
+            DoubaoLoginPage().presentationDetents([.large])
+        }
     }
 
     private var bodyInner: some View {
@@ -254,7 +259,7 @@ struct RefConfirmView: View {
                 .foregroundStyle(Tw.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(Capsule().fill(canStart ? Tw.gray900 : Tw.gray300))
+                .background(Capsule().fill(canStart ? Tw.accent : Tw.gray300))
             }
             .buttonStyle(PressStyle(scale: 0.97))
             .padding(.horizontal, 24)

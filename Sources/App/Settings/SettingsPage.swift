@@ -22,6 +22,11 @@ struct SettingsPage: View {
     @State private var showDispatch = false
     @State private var showTapSheet = false
     @State private var showMemory = false      // ★ 2026-11-19：它记住的
+    @State private var showDoubao = false      // ★ 2026-11-19：「豆包号」行点开去登录/换号
+    // ★ OTCO 第0步：每只角色单独选 Agent（按 brainCharId 生效，跟大脑那行同一只）
+    @State private var showAgent = false
+    @State private var agentItems: [AgentStore.Item] = []
+    @State private var agentNote = "读取中…"
     // ★ 关于 连点 5 下 = 截一张当前画面传回台子（排查用，见 ShotUploader）
     @State private var aboutTaps = 0
     @State private var aboutTapAt = Date.distantPast
@@ -33,9 +38,12 @@ struct SettingsPage: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    row("豆包号", accountText)
+                    row("豆包号", accountText, tappable: true) { showDoubao = true }
                     divider()
                     row("大脑", brainText, tappable: true) { showBrain = true }
+                    divider()
+                    // ★ OTCO：这只用哪个脑子想（大白话，不写 Agent 这种英文）
+                    row("用哪个脑子想", agentNote, tappable: true) { 打开脑子列表() }
                     divider()
                     row("它记住的", "", tappable: true) { showMemory = true }
                     divider()
@@ -104,6 +112,7 @@ struct SettingsPage: View {
         .onAppear {
             brainKey = CatBrain.key(for: brainCharId)
             refreshBrainNote()
+            refreshAgentNote()
             Task { walletText = await CatBrain.walletLine() }
         }
         // 连接大脑
@@ -114,6 +123,14 @@ struct SettingsPage: View {
         // 它记住的：看见/忘掉它记下的小事（数据来自台子 Hermes）
         .sheet(isPresented: $showMemory) {
             MemorySheet(charId: brainCharId).presentationDetents([.medium, .large])
+        }
+        // 豆包号：点这行去登录/换号 —— 复用已有的 DoubaoLoginPage
+        .sheet(isPresented: $showDoubao) {
+            DoubaoLoginPage().presentationDetents([.large])
+        }
+        // ★ OTCO：这只用哪个脑子想 —— 从台子拉真实列表，选中即改（选不了的不显示假项）
+        .sheet(isPresented: $showAgent) {
+            agentSheet.presentationDetents([.medium, .large])
         }
         // 把这只派给别人（分享码）—— 复用已有的 DispatchPage
         .sheet(isPresented: $showDispatch) {
@@ -128,6 +145,86 @@ struct SettingsPage: View {
             }
             Button("取消", role: .cancel) {}
         }
+    }
+
+    // MARK: - OTCO：这只用哪个脑子想（每只角色单独一份）
+
+    /// 行上显示的文字：当前选中的中文名；读不到就照实说，不编假数据。
+    private func refreshAgentNote() {
+        let cur = AgentStore.of(brainCharId)
+        if let hit = agentItems.first(where: { $0.id == cur }) {
+            agentNote = hit.name
+        } else {
+            agentNote = cur == AgentStore.default ? "默认的" : cur
+        }
+    }
+
+    /// 点行：先把台子上的真实列表拉下来，再弹面板。拉不到就提示重试。
+    private func 打开脑子列表() {
+        Task {
+            do {
+                let items = try await AgentStore.list()
+                await MainActor.run {
+                    agentItems = items
+                    refreshAgentNote()
+                    showAgent = true
+                }
+            } catch {
+                await MainActor.run { agentNote = "没读到，点这行再试" }
+            }
+        }
+    }
+
+    /// 单选项 + 说明。选中：本地记住 → 行上立刻更新 → 后台存台子。
+    private var agentSheet: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("「\(brainCharId == CatBrain.builtinId ? "自带的那只" : brainCharId)」用哪个脑子想")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Cfg.Palette.ink)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+            List {
+                ForEach(agentItems) { it in
+                    Button {
+                        AgentStore.set(it.id, for: brainCharId)
+                        refreshAgentNote()
+                        showAgent = false
+                        Task { await AgentStore.saveToCloud(it.id, for: brainCharId) }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(it.name)
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(Cfg.Palette.ink)
+                                if let d = it.intro, !d.isEmpty {
+                                    Text(d)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Cfg.Palette.faint)
+                                }
+                            }
+                            Spacer()
+                            if AgentStore.of(brainCharId) == it.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Cfg.Palette.ink)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Section {
+                    Button("用默认的") {
+                        AgentStore.set(AgentStore.default, for: brainCharId)
+                        refreshAgentNote()
+                        showAgent = false
+                        Task { await AgentStore.saveToCloud(AgentStore.default, for: brainCharId) }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+        }
+        .background(Cfg.Palette.bg)
     }
 
     // MARK: - 行
@@ -222,7 +319,7 @@ struct SettingsPage: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .padding(12)
-                    .background(Color(hex: 0xEDF7FD))
+                    .background(Tw.gray100)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
 
                 Button {
@@ -234,7 +331,7 @@ struct SettingsPage: View {
                         .font(.system(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Cfg.Palette.ink)
+                        .background(Tw.accent)
                         .foregroundStyle(.white)
                         .clipShape(Capsule())
                 }

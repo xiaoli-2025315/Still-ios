@@ -66,7 +66,7 @@ struct MemorySheet: View {
                     Text(note)
                         .font(.system(size: 12.5))
                         .padding(.horizontal, 16).padding(.vertical, 9)
-                        .background(Capsule().fill(Tw.gray900.opacity(0.88)))
+                        .background(Capsule().fill(Tw.accent.opacity(0.92)))
                         .foregroundStyle(.white)
                         .padding(.bottom, 16)
                         .transition(.opacity)

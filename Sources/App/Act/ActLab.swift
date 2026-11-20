@@ -59,6 +59,8 @@ enum ActLab {
         let dropped: Bool?
         /// ★ 台子算好的「能不能删」——样板是 false。**前端别自己判**，两处判法迟早会不一样。
         let canDrop: Bool?
+        /// ★ OTCO 第0步：台子返回的「这只角色选的 Agent」。不给默认值（见上面 dropped 的坑）。
+        let agentId: String?
 
         var title: String { name.isEmpty ? id : name }
         var doneCount: Int { done ?? 0 }
@@ -754,7 +756,7 @@ enum ActLab {
         if let c = r?.char { return c }
         // 台子回了 ok 但没给 char：拿名字现拼一只，界面至少能显示出来
         return Char(id: "", name: name, channel: channel, img: nil, done: 0,
-                    dropped: nil, canDrop: nil)
+                    dropped: nil, canDrop: nil, agentId: nil)
     }
 
     // MARK: - 底层

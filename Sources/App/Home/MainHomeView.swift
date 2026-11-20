@@ -12,42 +12,38 @@ import UIKit
 //   现在先把壳子和三屏对齐；v41 起「角色」那一层搬过来了（Act/ 目录），
 //   陪伴 / 酒馆那两层还差。
 
-// MARK: - 色板（2026-11-19 换肤 v10 稿：浅灰浅蓝令牌。只改值，名字/引用不动）
+// MARK: - 色板（Tailwind 官方默认值，一个都没自己调）
 
 enum Tw {
-    // 稿 canvas/text/muted/faint/line/sky/blue/blueDark
-    static let gray50   = Color(hex: 0xFCFCFC)  // 画布底 --canvas
-    static let gray100  = Color(hex: 0xEDF7FD)  // 浅蓝底 --sky
-    static let gray200  = Color(hex: 0xEEEEF0)  // 描边 --line
-    static let gray300  = Color(hex: 0xC8E7FF)  // 强调浅蓝 --blue
-    static let gray400  = Color(hex: 0x9AA1A6)  // 淡字 --faint
-    static let gray500  = Color(hex: 0x697176)  // 次字 --muted
-    static let gray600  = Color(hex: 0x697176)
-    static let gray700  = Color(hex: 0x11191C)
-    static let gray900  = Color(hex: 0x11191C)  // 主字 --text
-    // 主色：深蓝 --blueDark。原 red600 承担的主按钮/发送/气泡全部随它变蓝
-    static let red600   = Color(hex: 0x1473C8)
-    // 浅蓝底/边（礼物卡等原浅红处，随主色系走）
-    static let red50    = Color(hex: 0xEDF7FD)
-    static let red200   = Color(hex: 0xC8E7FF)
-    static let green500 = Color(hex: 0x37A169)
+    static let gray50   = Color(hex: 0xF9FAFB)
+    static let gray100  = Color(hex: 0xF3F4F6)
+    static let gray200  = Color(hex: 0xE5E7EB)
+    static let gray300  = Color(hex: 0xD1D5DB)
+    static let gray400  = Color(hex: 0x9CA3AF)
+    static let gray500  = Color(hex: 0x6B7280)
+    static let gray600  = Color(hex: 0x4B5563)
+    static let gray700  = Color(hex: 0x374151)
+    static let gray900  = Color(hex: 0x111827)
+    static let red600   = Color(hex: 0xDC2626)
+    // 2026-10-24：礼物那张卡用的浅红底 + 浅红边（Tailwind red-50 / red-200）
+    static let red50    = Color(hex: 0xFEF2F2)
+    static let red200   = Color(hex: 0xFECACA)
+    static let green500 = Color(hex: 0x22C55E)
     static let white    = Color.white
 
-    // ★ 换肤新增语义令牌：错误/危险仍保留红（稿 --danger），主色/浅蓝单独命名
-    static let error      = Color(hex: 0xAA4A45)
-    static let accent     = Color(hex: 0x1473C8)
-    static let accentSoft = Color(hex: 0xC8E7FF)
-    // 圆角令牌（稿：气泡22/卡18/按钮14）
-    static let rBubble: CGFloat = 22
-    static let rCard: CGFloat   = 18
-    static let rButton: CGFloat = 14
-    // 稿 v10 房间卡：浅蓝渐变 + 描边 + 一层轻投影（结构性重构，跟页面分层）
-    static let roomTop    = Color(hex: 0xF7FBFE)
-    static let roomBottom = Color(hex: 0xEEF6FB)
-    static let roomLine   = Color(hex: 0xE2EEF6)
-    static let cardShadow = Color(hex: 0x182838).opacity(0.07)
-    // 稿 v10 顶栏宠物圆窗的浅蓝底
-    static let orbBlue    = Color(hex: 0xE3F1F8)
+    // 老界面兼容令牌：值取 v191 暖色/中性色，仅为让其他页面共用 Tw 时能编译通过
+    static let error      = Color(hex: 0xDC2626)
+    static let accent     = Color(hex: 0x111827)
+    static let accentSoft = Color(hex: 0xF3F4F6)
+    static let orbBlue    = Color(hex: 0xF3F4F6)
+    static let cardShadow = Color(hex: 0x182838).opacity(0.06)
+    static let rBubble: CGFloat = 12
+    static let rCard: CGFloat   = 12
+    static let rButton: CGFloat = 12
+    static let roomTop    = Color(hex: 0xF9FAFB)
+    static let roomBottom = Color(hex: 0xF3F4F6)
+    static let roomLine   = Color(hex: 0xE5E7EB)
+    static let roomFloor  = Color(hex: 0xF3F4F6)
 }
 
 // MARK: - 台子上的数据
@@ -386,23 +382,18 @@ struct MainHomeView: View {
     //   所以这边也只要两格。
 
     private var bottomBar: some View {
-        // 稿 v10 底栏：浮起来的白色胶囊容器（左右留白 + 圆角pill + 轻投影）。
-        // 结构性重构：原来是通栏白底 + 顶边分割线，现在是一颗独立的药丸。
         HStack(spacing: 0) {
             tabItem(0, "它", "pawprint.fill")
             chatTabItem()
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(Tw.white)
-                .overlay(Capsule().stroke(Color(hex: 0xF8F8F8), lineWidth: 1))
-                .shadow(color: Tw.cardShadow, radius: 10, x: 0, y: 3)
-        )
-        .padding(.horizontal, 14)
-        .padding(.bottom, 10)
         .padding(.top, 6)
+        .background(
+            Tw.white
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Tw.gray200).frame(height: 0.5)
+                }
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 
     /// 第二格「聊天」：不切屏，直接开对话页（跟安卓 tab_comm → 去聊天页() 一致）。
@@ -411,16 +402,20 @@ struct MainHomeView: View {
             hit()
             talkOpen = true
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
+                Capsule()
+                    .fill(Color.clear)
+                    .frame(width: 16, height: 2.5)
                 Image(systemName: "bubble.left.fill")
-                    .font(.system(size: 18))
+                    .font(.system(size: 17))
                     .foregroundStyle(Tw.gray400)
                 Text("聊天")
                     .font(.system(size: 10))
                     .foregroundStyle(Tw.gray400)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.top, 3)
+            .padding(.bottom, 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -431,18 +426,21 @@ struct MainHomeView: View {
             hit()
             tab = i
         } label: {
-            // 稿 v10：选中整格浅蓝胶囊高亮（不再画顶部小横杠）
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
+                // 选中的那一条小横杠（安卓 tab_*_bar）
+                Capsule()
+                    .fill(i == tab ? Tw.gray900 : Color.clear)
+                    .frame(width: 16, height: 2.5)
                 Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .foregroundStyle(i == tab ? Tw.accent : Tw.gray400)
+                    .font(.system(size: 17))
+                    .foregroundStyle(i == tab ? Tw.gray900 : Tw.gray400)
                 Text(title)
-                    .font(.system(size: 10, weight: i == tab ? .semibold : .regular))
-                    .foregroundStyle(i == tab ? Tw.accent : Tw.gray400)
+                    .font(.system(size: 10, weight: i == tab ? .bold : .regular))
+                    .foregroundStyle(i == tab ? Tw.gray900 : Tw.gray400)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(i == tab ? Capsule().fill(Tw.gray100) : Capsule().fill(Color.clear))
+            .padding(.top, 3)
+            .padding(.bottom, 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle(scale: 0.93))
@@ -816,21 +814,12 @@ struct HerPane: View {
                 RoomStage(controller: pip)
                     .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    // 稿 v10 屏1「它在这儿」房间卡：浅蓝渐变 + 1px 描边 + 轻投影 + 圆角18。
-                    // 结构性重构：原来这一格是透明方卡、跟页面糊在一起；现在是一张独立浅蓝卡。
-                    .background(
-                        LinearGradient(colors: [Tw.roomTop, Tw.roomBottom],
-                                       startPoint: .top, endPoint: .bottom)
-                    )
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Tw.roomLine, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .shadow(color: Tw.cardShadow, radius: 12, x: 0, y: 4)
                     .background(
                         GeometryReader { g in
                             Color.clear.preference(key: StageWidthKey.self, value: g.size.width)
                         }
                     )
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .contentShape(Rectangle())
                     .onPreferenceChange(StageWidthKey.self) { w in
                         if w > 0 { stageW = w }
@@ -870,16 +859,18 @@ struct HerPane: View {
                     .padding(.horizontal, 4)
 
 
-                // 小标题（稿 v10 .sec-lbl：8.5px 加粗淡字 + letter-spacing）
+                // 小标题（安卓 .cap）
                 HStack(spacing: 8) {
-                    Text("它在这儿")
-                        .font(.system(size: 11, weight: .bold))
+                    Text("它")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Tw.gray900)
+                    Text("下面直接打字说，或者点一格")
+                        .font(.system(size: 11))
                         .foregroundStyle(Tw.gray400)
-                        .kerning(0.6)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.top, 2)
-                .padding(.bottom, 9)
+                .padding(.bottom, 11)
 
                 // ★ 方案 D（2026-10-24）：它自己买礼物送给你 —— 算力回收。
                 //   规矩：**不预告、不询问**，界面上只说「它给你带了东西」，点开才知道是什么。
@@ -912,7 +903,7 @@ struct HerPane: View {
                         .foregroundStyle(Tw.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
-                        .background(Capsule().fill(Tw.accent))
+                        .background(Capsule().fill(Tw.gray900))
                 }
                 .buttonStyle(PressStyle(scale: 0.97))
                 .padding(.bottom, 10)
@@ -953,7 +944,6 @@ struct HerPane: View {
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Tw.gray200, lineWidth: 1))
             )
-            .shadow(color: Tw.cardShadow, radius: 10, x: 0, y: 3)
         }
         .buttonStyle(PressStyle(scale: 0.97))
     }
@@ -1158,7 +1148,7 @@ struct CommPane: View {
                     .foregroundStyle(Tw.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Tw.accent))
+                    .background(Capsule().fill(Tw.gray900))
             }
             .buttonStyle(PressStyle(scale: 0.94))
         }
@@ -1215,7 +1205,7 @@ struct RankPane: View {
                             .foregroundStyle(Tw.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
-                            .background(Capsule().fill(Tw.accent))
+                            .background(Capsule().fill(Tw.gray900))
                     }
                     .buttonStyle(PressStyle(scale: 0.94))
                 }

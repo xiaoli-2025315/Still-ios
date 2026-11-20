@@ -43,7 +43,9 @@ enum AgentStore {
 
     /// 拉台子可用的 Agent 列表。失败抛出，界面提示重试，绝不显示假数据。
     static func list() async throws -> [Item] {
-        var req = URLRequest(url: URL(string: ActLab.base + "/api/agent/list")!)
+        // ★ 用 Cfg.baseURL 不用 ActLab.base：本文件在 Shared 里，也会被 Widget target
+        //   一起编译，而 Widget 不含 ActLab（主 App 专属），引用它会编译失败。
+        var req = URLRequest(url: URL(string: Cfg.baseURL + "/api/agent/list")!)
         req.stillStamp()      // ★ 登录制：贴票，跟别的接口一样
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -60,7 +62,7 @@ enum AgentStore {
     static func saveToCloud(_ agentId: String, for charId: String) async {
         let body = ["char": charId, "agentId": agentId]
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
-        var req = URLRequest(url: URL(string: ActLab.base + "/api/agent/set")!)
+        var req = URLRequest(url: URL(string: Cfg.baseURL + "/api/agent/set")!)
         req.httpMethod = "POST"
         req.stillStamp()
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

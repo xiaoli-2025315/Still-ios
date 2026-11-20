@@ -149,6 +149,9 @@ targets:
           # ★ v87：和上面同理 —— Credit.swift 要给台子的请求贴票（`req.stillStamp()`），
           #   登录那一套只在主 App 里。小组件不需要记账，排除掉。
           - "Credit.swift"
+          # ★ v194 OTCO：AgentStore.swift 也要给台子的请求贴票（`req.stillStamp()`），
+          #   登录那一套只在主 App 里。小组件用不上选脑子，排除掉，否则编译不过。
+          - "AgentStore.swift"
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
       # 组件里那张静态猫图。★ 显式写 buildPhase：png 是资源不是源码，

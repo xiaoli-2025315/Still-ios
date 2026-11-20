@@ -41,21 +41,37 @@ enum AgentStore {
         let agents: [Item]?
     }
 
-    /// 拉台子可用的 Agent 列表。失败抛出，界面提示重试，绝不显示假数据。
+    /// 可用的脑子列表。
+    /// ★★★ 2026-11-20 根治：内置两款写死在本地，点脑子永远弹得出来。
+    ///   以前整条列表靠联网读服务器，联网/贴票/解析任一环断就报「没读到脑子列表」——
+    ///   聊天用同样地址照样通，唯独这里不通，反复重装也修不好。内置的就固定两款，
+    ///   不该靠网络去「读」它。这里直接内置，跟服务端 agent_store.py 的两款 id/名字对齐。
+    ///   联网只作为「看服务器有没有新增自定义脑子」的锦上添花，失败也照用本地两款。
     static func list() async throws -> [Item] {
-        // ★ 用 Cfg.baseURL 不用 ActLab.base：本文件在 Shared 里，也会被 Widget target
-        //   一起编译，而 Widget 不含 ActLab（主 App 专属），引用它会编译失败。
+        let local = builtin
+        // 用 Cfg.baseURL（本文件在 Shared，也会被 Widget 编译，不能用 ActLab）。
         var req = URLRequest(url: URL(string: Cfg.baseURL + "/api/agent/list")!)
-        req.stillStamp()      // ★ 登录制：贴票，跟别的接口一样
+        req.stillStamp()
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-            throw NSError(domain: "agent", code: -1, userInfo: nil)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return local }
+            let decoded = try JSONDecoder().decode(ListResp.self, from: data)
+            if let remote = decoded.agents, !remote.isEmpty { return remote }
+        } catch {
+            return local   // 联网失败无所谓，本地内置两款照常给用户选
         }
-        let decoded = try JSONDecoder().decode(ListResp.self, from: data)
-        return decoded.agents ?? []
+        return local
+    }
+
+    /// 内置两款（与服务端 agent_store.py 完全对齐；不联网、永远在）。
+    static var builtin: [Item] {
+        [
+            Item(id: "hermes", name: "会惦记你（默认）", intro: "会慢慢记住你的小事，聊着聊着就惦记上了。"),
+            Item(id: "openfuse_gift", name: "会张罗、会送礼", intro: "更爱张罗事、说话更有劲，往后会主动给你送东西。"),
+        ]
     }
 
     /// 把某只角色的选择存上台子（台子按 uid+角色隔离）。

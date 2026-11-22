@@ -271,6 +271,17 @@ tr:last-child td{border-bottom:0}
 
 .rnode .avimg,.srow .avimg,.ac-avatar .avimg{width:100%;height:100%;object-fit:cover;object-position:47% 50%;display:block}
 .ac-avatar .avimg{width:84px;height:84px}
+/* ★ 2026-11-23 真机问题①：头像外圈画的是圆、里面那张动图是方的，四个角露出来
+   → 看着像"圆圈上贴了一张方框"。圆形裁切必须给到容器和图片本身。 */
+.rnode .av,.mem-top .me-av,.srow .av,.ac-avatar{overflow:hidden;border-radius:50%}
+.rnode .avimg,.srow .avimg,.ac-avatar .avimg,.mem-top .me-av .avimg{border-radius:50%}
+/* ★ 2026-11-23 真机问题②：上下"两块死块"。状态栏/导航条是原生的一层纯色，
+   而页面自己的柔光一直铺到画面边缘、比纯色略亮 —— 于是中间是活光、上下是死色，
+   看着像两张纸。这里把页面上下边缘压回同一个深色，跟系统栏连成一片。 */
+body.emb .stage::before{content:'';position:absolute;left:0;right:0;top:0;height:80px;z-index:2;
+  pointer-events:none;background:linear-gradient(180deg,#0E1018 0%,rgba(14,16,24,.74) 44%,rgba(14,16,24,0) 100%)}
+body.emb .stage::after{content:'';position:absolute;left:0;right:0;bottom:0;height:138px;z-index:2;
+  pointer-events:none;background:linear-gradient(0deg,#0E1018 0%,rgba(14,16,24,.58) 50%,rgba(14,16,24,0) 100%)}
 /* ===== 模板落地补丁：铺满 WebView 可视区，去掉模拟器圆角/边框/文档外壳 ===== */
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0E1018}
 .phone{width:100%!important;height:100%!important;border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important}

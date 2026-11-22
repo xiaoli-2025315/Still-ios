@@ -34,7 +34,7 @@ final class Mem3DBox {
     func inject(_ payload: String) {
         let js = "window.StillReload&&window.StillReload(\(payload));"
         pending = js
-        let work = {
+        let work: () -> Void = {
             guard let w = self.web else { return }
             w.evaluateJavaScript(js, completionHandler: nil)
         }
@@ -44,7 +44,7 @@ final class Mem3DBox {
 
     /// 单独执行一句 JS（懒读正文回填用）。
     func run(_ js: String) {
-        let work = { self.web?.evaluateJavaScript(js, completionHandler: nil) }
+        let work: () -> Void = { self.web?.evaluateJavaScript(js, completionHandler: nil) }
         if Thread.isMainThread { work() }
         else { DispatchQueue.main.async(execute: work) }
     }

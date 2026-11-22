@@ -21,6 +21,9 @@ struct SettingsPage: View {
     @State private var showBrain = false
     @State private var showDispatch = false
     @State private var showTapSheet = false
+    // ★ 2026-11-21：聊天输入框样式下拉（跟 TalkPage 同一个 key）
+    @AppStorage(ComposerStyle.key) private var composerStyle = 1
+    @State private var showComposerSheet = false
     @State private var showMemory = false      // ★ 2026-11-19：它记住的
     @State private var showDoubao = false      // ★ 2026-11-19：「豆包号」行点开去登录/换号
     // ★ OTCO 第0步：每只角色单独选 Agent（按 brainCharId 生效，跟大脑那行同一只）
@@ -51,6 +54,10 @@ struct SettingsPage: View {
                     divider()
                     row("按键声", SoundKit.tapNames[SoundKit.shared.tapKind],
                         tappable: true) { showTapSheet = true }
+                    divider()
+                    // ★ 2026-11-21（对齐安卓「设置 → 其他 → 聊天输入框」）：四种输入条样式
+                    row("聊天输入框", ComposerStyle.names[composerStyle],
+                        tappable: true) { showComposerSheet = true }
                     divider()
                     // 聊天钱包：异步问台子，取不到整行不画，不拿 0 冒充。
                     if let w = walletText {
@@ -142,6 +149,13 @@ struct SettingsPage: View {
                 Button(SoundKit.tapNames[i]) {
                     SoundKit.shared.setTapKind(i)      // 选完当场试听
                 }
+            }
+            Button("取消", role: .cancel) {}
+        }
+        // ★ 2026-11-21：聊天输入框样式（A/B/C/D），选中即写、下次进聊天生效
+        .confirmationDialog("聊天输入框样式", isPresented: $showComposerSheet, titleVisibility: .visible) {
+            ForEach(0..<ComposerStyle.names.count, id: \.self) { i in
+                Button(ComposerStyle.names[i]) { composerStyle = i }
             }
             Button("取消", role: .cancel) {}
         }

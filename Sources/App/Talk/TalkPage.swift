@@ -53,6 +53,9 @@ struct TalkPage: View {
 
     @ObservedObject private var focus = TalkFocus.shared
 
+    // ★ 2026-11-21：聊天输入框样式（设置里切，A/B/C/D 四档只换壳）— 跟设置页同一个 key
+    @AppStorage(ComposerStyle.key) private var composerStyle = 1
+
     @State private var text = ""
     @State private var lines: [Line] = []
     @State private var busy = false
@@ -96,6 +99,8 @@ struct TalkPage: View {
     @State private var groupListErr = ""
     @State private var loadingGroups = false
     @State private var showGroupSettings = false
+    // ★ 2026-11-21：单聊的圆角设置浮卡（大圆动态形象 + 模型/Agent）
+    @State private var showSingleSettings = false
     /// 群设置页自己留一份当前群，改完就地刷新（CatBrain.group 是静态值，视图不会自己重画）
     @State private var setNumber = ""
     @State private var setTitle = ""
@@ -162,6 +167,12 @@ struct TalkPage: View {
         .animation(.easeOut(duration: 0.22), value: showCats)
         .sheet(isPresented: $showNewGroup) { newGroupSheet }
         .sheet(isPresented: $showGroupSettings) { groupSettingsSheet }
+        // ★ 2026-11-21：单聊圆角设置浮卡（不是全屏，是一张四周留白的卡）
+        .sheet(isPresented: $showSingleSettings) {
+            singleSettingsCard
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - 顶栏
@@ -202,14 +213,16 @@ struct TalkPage: View {
             }
             .buttonStyle(PressStyle(scale: 0.9))
 
-            // ★ 2026-11-19（稿 v10）：顶栏中间「圆窗 + 名字 + 状态」竖排。
-            //   圆窗 62pt 圆形、白边、浅蓝底，里面 GifView 播台子真动作 GIF（跟安卓 MovieView 对齐）。
+            // ★ 2026-11-21（对齐安卓 3.92）：顶栏中间「圆窗 + 名字 + 状态」竖排。
+            //   圆窗改成 OrbPet —— 按 orbCharId（单聊对方 / 群聊最近说话那只）
+            //   播**那只自己的完整帧包**，不再用抽帧 GIF；跟主页/浮宠那只隔离。
             Spacer(minLength: 0)
             VStack(spacing: 3) {
                 Group {
-                    if let u = GifView.makeURL(orbCharId, orbAct, width: 130) {
-                        GifView(url: u)
+                    if OrbPet.hasFrame(orbCharId) {
+                        OrbPet(charId: orbCharId, actName: orbAct, width: 58)
                     } else {
+                        // 这只没做过动作、没帧包 —— 不编假画面，留个中性占位。
                         Image(systemName: "cat.fill")
                             .font(.system(size: 26))
                             .foregroundStyle(Tw.gray400)
@@ -244,11 +257,16 @@ struct TalkPage: View {
             }
             .buttonStyle(PressStyle(scale: 0.9))
 
-            // ★ 2026-11-10：群聊右上角的「设置」—— 拉人 / 改群名 / 踢人。
-            //   常驻，不加显示条件：没在群里时点开会照实说「先在左边点一个群」。
+            // ★ 2026-11-21（对齐安卓 3.90）：单聊右上角「设置」= 一张圆角浮卡
+            //   （大圆动态形象 + 模型 / Agent 下拉）；群聊仍是原来的群设置（拉人/改群名/踢人）。
+            //   常驻，不加显示条件。
             Button {
-                syncSettings()
-                showGroupSettings = true
+                if CatBrain.group == nil {
+                    showSingleSettings = true
+                } else {
+                    syncSettings()
+                    showGroupSettings = true
+                }
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .semibold))
@@ -283,12 +301,8 @@ struct TalkPage: View {
                     ForEach(lines) { l in
                         bubble(l).id(l.id)
                     }
-                    // ★ 2026-11-13：录音的轻提示单独一行
-                    if !holdTip.isEmpty {
-                        Text(holdTip)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Tw.gray400)
-                    }
+                    // ★ 2026-11-21：录音轻提示改成浮起样式，挪到输入条上方（见 inputDock），
+                    //   不再占聊天流里一行。这里留注释说明去向。
                     // ★ 2026-11-19：这个锚点露出来 = 用户在最底部；滚走就不跟底。
                     Color.clear.frame(height: 1).id("bottom")
                         .onAppear { atBottom = true; hasNew = false }
@@ -297,6 +311,16 @@ struct TalkPage: View {
                 .padding(.horizontal, 16)
                 // ★ 2026-11-14 12:13：输入区回到页面流，滚动区不用再给浮层留一大块空白。
                 .padding(.bottom, 12)
+                // ★ 2026-11-21（对齐安卓 3.83 边缘渐隐）：靠近上下边缘的气泡渐隐，
+                //   不是加遮带（那是被撤掉的旧做法），是内容自己在边缘淡出。
+                .mask(
+                    LinearGradient(gradient: Gradient(stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.06),
+                        .init(color: .black, location: 0.94),
+                        .init(color: .clear, location: 1),
+                    ]), startPoint: .top, endPoint: .bottom)
+                )
             }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
@@ -379,6 +403,17 @@ struct TalkPage: View {
         }
     }
 
+    // ★ 2026-11-21：单聊圆角设置浮卡的内容。建形象入口先关卡并照实提示去角色页
+    //   （动作库是全屏页、从这层 sheet 里直接推会叠层，没把握就不硬来）。
+    private var singleSettingsCard: some View {
+        SingleSettingsCard(charId: CatBrain.currentCharId,
+                           title: CatBrain.currentCharTitle,
+                           onCreate: {
+                               showSingleSettings = false
+                               轻提示("去主页的「角色」页做动作")
+                           })
+    }
+
     // MARK: - 底部输入条
     //
     // 形态照安卓 `TalkBar`：白底圆角 + 右边一块红的「说」。
@@ -390,16 +425,34 @@ struct TalkPage: View {
         VStack(spacing: 12) {
             if showAttach { attachPanel }
 
-            // ★ 2026-11-14 11:17：输入条和上面的留白拉开（豆包约是我们两倍）。
+            // ★ 2026-11-21（对齐安卓 3.84）：录音轻提示**浮起来、往上移**——
+            //   独立浮块（白底+描边+影子打背景），悬在输入条上方，不是聊天流里一行字。
+            if !holdTip.isEmpty {
+                Text(holdTip)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Tw.gray900)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Tw.white))
+                    .overlay(Capsule().stroke(Tw.gray200, lineWidth: 1))
+                    .shadow(color: Tw.cardShadow, radius: 6, y: 3)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.easeOut(duration: 0.18), value: holdTip)
+            }
+
+            // ★★★ 2026-11-21（对齐安卓 3.83）：输入条整体放大 —— 高度 30→44、
+            //   字号 14→16；发送键跟输入框同高（38）、自己浮在背景上。
+            //   ★ 影子打在统一背景上：去掉原来「Capsule + offset(y:2) 灰纸片」，
+            //     改用 SwiftUI .shadow，胶囊和发送键各自投影、彼此不叠影。
             VStack(spacing: 18) {
             HStack(spacing: 8) {
                 // 左：相机（拍照）
                 Button { showAttach.toggle() } label: {
                     Image(systemName: "camera")
-                        .font(.system(size: 16))
+                        .font(.system(size: 18))
                         .foregroundStyle(Tw.gray900)
                 }
-                .frame(width: 24)
+                .frame(width: 30)
 
                 // ★ 手势挂在这块始终存在的容器上：录音时只是换掉里面的画面，手势不会断。
                 //   不挂在整条胶囊上，免得把左边的相机、右边的语音圆钮和 ＋ 也盖住。
@@ -407,19 +460,20 @@ struct TalkPage: View {
                     if voiceMode {
                         // 老的整条录音键：按住说、上滑取消、24 根真音波
                         TalkHoldBar(onSaid: { t in text = t; send() })
-                            .frame(height: 30)
+                            .frame(height: 44)
                     } else if holdActive {
-                        holdBar.frame(height: 30)
+                        holdBar.frame(height: 44)
                     } else {
                         TalkField(text: $text, focusPulse: pulse, autoFocus: false,
+                                  fontSize: 16,
                                   onSubmit: send,
                                   onBeginEdit: { PiPController.shared?.quiesceForTyping() },
                                   onEndEdit: { PiPController.shared?.resumeAfterTyping() })
-                            .frame(height: 22)
+                            .frame(height: 28)
                             .padding(.horizontal, 2)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 30)
+                .frame(maxWidth: .infinity, minHeight: 38)
                 .simultaneousGesture(holdLongPress)
                 .simultaneousGesture(holdDrag)
                 // ★ 授权弹窗慢慢回来时手指早松了 ⇒ 立刻收掉，别在背后继续录。
@@ -438,9 +492,9 @@ struct TalkPage: View {
                     if voiceMode { focus.resign() }
                 } label: {
                     Image(systemName: voiceMode ? "keyboard" : "waveform")
-                        .font(.system(size: 14))
+                        .font(.system(size: 16))
                         .foregroundStyle(Tw.gray900)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 34, height: 34)
                         // ★ 11:17：白底深描边圆钮，不再是浅灰实心块
                         .background(
                             Circle().fill(Tw.white)
@@ -451,37 +505,50 @@ struct TalkPage: View {
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button { showAttach.toggle() } label: {
                         Image(systemName: showAttach ? "xmark" : "plus")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 17, weight: .medium))
                             .foregroundStyle(Tw.gray900)
                     }
-                    .frame(width: 28, height: 28)
+                    .frame(width: 34, height: 34)
                     // ★ 11:17：＋ 同样换成描边圆钮（原来只是无框细线）
                     .background(
                         Circle().fill(Tw.white)
                             .overlay(Circle().stroke(Tw.gray900, lineWidth: 1.5))
                     )
                 } else {
+                    // 发送键：与输入框同高（38）、红底、自己投影在背景上。
                     Button(action: send) {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Tw.white)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(busy ? Tw.red600.opacity(0.45) : Tw.red600))
+                            .frame(width: 38, height: 38)
+                            .background(Capsule().fill(busy ? Tw.red600.opacity(0.45) : Tw.red600))
                     }
                     .disabled(busy)
+                    .shadow(color: Tw.cardShadow, radius: 6, y: 3)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            // 稿 v10：输入条是「全胶囊」（--r-pill），不是中等圆角矩形 —— 结构性形态差异。
-            // 仍保留「只贴下沿一条 2px 浅灰影」的自绘做法，不加会糊边界的大 shadow。
+            // ★ 2026-11-21：统一背景上的浮起壳 —— 去掉原来
+            //   「Capsule + offset(y:2) 灰纸片」，影子打在背景上、不与内部组件叠影。
+            //   样式 A/B/C/D 只换壳（圆角/底色/描边），不动里面的输入/发送/语音。
+            // ★ 2026-11-21：滑到「取消」时**整块输入框变红**（不是只有字红）。
             .background(
-                ZStack {
-                    Capsule().fill(Tw.gray200).offset(y: 2)
-                    Capsule().fill(Tw.white)
-                        .overlay(Capsule().stroke(Tw.gray300, lineWidth: 1.5))
+                RoundedRectangle(cornerRadius: ComposerStyle.radius(composerStyle), style: .continuous)
+                    .fill(holdActive && holdCancel ? Color(hex: 0xFFDCD9) : ComposerStyle.fill(composerStyle))
+            )
+            .overlay(
+                Group {
+                    if holdActive && holdCancel {
+                        RoundedRectangle(cornerRadius: ComposerStyle.radius(composerStyle), style: .continuous)
+                            .stroke(Tw.red600, lineWidth: 1.5)
+                    } else if let sc = ComposerStyle.stroke(composerStyle) {
+                        RoundedRectangle(cornerRadius: ComposerStyle.radius(composerStyle), style: .continuous)
+                            .stroke(sc, lineWidth: 1)
+                    }
                 }
             )
+            .shadow(color: Tw.cardShadow, radius: 8, y: 3)
             // ★ 2026-11-13：长按直接说话的手势在上面那块输入区上，这里不再叠一层
             //   （叠在整条胶囊上会把相机／语音圆钮／＋ 都吃掉，正是「按也按不了」）。
             }
@@ -1073,6 +1140,11 @@ struct TalkPage: View {
 
     // MARK: - 长按输入框＝按住直接说（对齐安卓，2026-11-13）
 
+    /// ★ 2026-11-21（对齐安卓语音手感）：轻震一下。只做反馈，不出声、不改数据。
+    private func 轻震() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
     /// 按住超过 0.35 秒就起录；短按仍然是打字，不抢键盘。
     private var holdLongPress: some Gesture {
         LongPressGesture(minimumDuration: 0.35, maximumDistance: 200)
@@ -1085,6 +1157,7 @@ struct TalkPage: View {
                 holdTip = ""
                 focus.resign()
                 holdVoice.start()
+                轻震()          // 起录这一下，只震一次
             }
     }
 
@@ -1093,7 +1166,10 @@ struct TalkPage: View {
         DragGesture(minimumDistance: 0)
             .onChanged { g in
                 guard holdDown, !voiceMode else { return }
-                holdCancel = g.translation.height < -64
+                let 现在取消 = g.translation.height < -64
+                // ★ 2026-11-21：滑进取消、从取消滑回来，各震一下（只在状态翻转那一瞬）
+                if 现在取消 != holdCancel { 轻震() }
+                holdCancel = 现在取消
             }
             .onEnded { g in
                 guard holdDown, !voiceMode else { return }

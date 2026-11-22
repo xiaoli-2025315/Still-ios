@@ -382,18 +382,15 @@ struct MainHomeView: View {
     //   所以这边也只要两格。
 
     private var bottomBar: some View {
+        // ★ 2026-11-21（对齐安卓底栏「一整张纸」）：去掉顶上那条 0.5px 灰分割线，
+        //   整块白底浮在页面上，选中格反色（黑底白字），不再用灰轨道/小横杠。
         HStack(spacing: 0) {
             tabItem(0, "它", "pawprint.fill")
             chatTabItem()
         }
-        .padding(.top, 6)
-        .background(
-            Tw.white
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Tw.gray200).frame(height: 0.5)
-                }
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        .background(Tw.white.ignoresSafeArea(edges: .bottom))
     }
 
     /// 第二格「聊天」：不切屏，直接开对话页（跟安卓 tab_comm → 去聊天页() 一致）。
@@ -403,9 +400,6 @@ struct MainHomeView: View {
             talkOpen = true
         } label: {
             VStack(spacing: 3) {
-                Capsule()
-                    .fill(Color.clear)
-                    .frame(width: 16, height: 2.5)
                 Image(systemName: "bubble.left.fill")
                     .font(.system(size: 17))
                     .foregroundStyle(Tw.gray400)
@@ -414,8 +408,7 @@ struct MainHomeView: View {
                     .foregroundStyle(Tw.gray400)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 3)
-            .padding(.bottom, 2)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -426,21 +419,21 @@ struct MainHomeView: View {
             hit()
             tab = i
         } label: {
+            // ★ 2026-11-21（对齐安卓选中反色）：选中的格子整块黑底白字胶囊，
+            //   不再用「小横杠 + 变深」那种灰轨道语言。
             VStack(spacing: 3) {
-                // 选中的那一条小横杠（安卓 tab_*_bar）
-                Capsule()
-                    .fill(i == tab ? Tw.gray900 : Color.clear)
-                    .frame(width: 16, height: 2.5)
                 Image(systemName: icon)
                     .font(.system(size: 17))
-                    .foregroundStyle(i == tab ? Tw.gray900 : Tw.gray400)
+                    .foregroundStyle(i == tab ? Tw.white : Tw.gray400)
                 Text(title)
                     .font(.system(size: 10, weight: i == tab ? .bold : .regular))
-                    .foregroundStyle(i == tab ? Tw.gray900 : Tw.gray400)
+                    .foregroundStyle(i == tab ? Tw.white : Tw.gray400)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 3)
-            .padding(.bottom, 2)
+            .padding(.vertical, 6)
+            .background(
+                Capsule().fill(i == tab ? Tw.gray900 : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle(scale: 0.93))
@@ -860,6 +853,7 @@ struct HerPane: View {
 
 
                 // 小标题（安卓 .cap）
+                // ★ 2026-11-21（对齐安卓间距规整）：小标题 top16 / bottom8。
                 HStack(spacing: 8) {
                     Text("它")
                         .font(.system(size: 13, weight: .bold))
@@ -870,7 +864,8 @@ struct HerPane: View {
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.bottom, 11)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
 
                 // ★ 方案 D（2026-10-24）：它自己买礼物送给你 —— 算力回收。
                 //   规矩：**不预告、不询问**，界面上只说「它给你带了东西」，点开才知道是什么。
@@ -885,7 +880,8 @@ struct HerPane: View {
 
                 // ★ 2026-10-30：首页排布对齐安卓 —— 两张卡 + 一颗黑主键。
                 //   安卓那屏是：展示框 →「角色 / 陪伴」两卡 →「让它出现在屏幕上」→ 底栏。
-                HStack(spacing: 12) {
+                // ★ 2026-11-21（对齐安卓间距规整）：卡缝 12→4、卡后留白 12。
+                HStack(spacing: 4) {
                     homeCard("角色", "做动作 · 换一只", "cat.fill") { onRole() }
                     homeCard("陪伴", pip.active ? "收回小窗" : "睡在你桌面上", "pip.fill") {
                         pip.toggle()
@@ -908,7 +904,8 @@ struct HerPane: View {
                 .buttonStyle(PressStyle(scale: 0.97))
                 .padding(.bottom, 10)
             }
-            .padding(.horizontal, 20)
+            // ★ 2026-11-21（对齐安卓间距规整）：左右 20→16。
+            .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 18)
         }
@@ -938,10 +935,11 @@ struct HerPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
+            // ★ 2026-11-21（对齐安卓间距规整）：圆角 18→16。
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Tw.white)
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(Tw.gray200, lineWidth: 1))
             )
         }

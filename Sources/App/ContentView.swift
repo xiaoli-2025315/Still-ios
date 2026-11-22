@@ -8,16 +8,30 @@ import SwiftUI
 // 折腾过一整天「改了没效果」，最后发现是手机里一直装着旧包。
 
 enum AppVersion {
-    /// ★★★ 每次发版**必须**同步改这里。
-    ///   它曾经停在 "v30" 停了三个版本（v31/v32/v33 都忘了改）——
-    ///   直接后果：他装完不知道手机上到底是不是新版，
-    ///   排查「改了没效果」时连「装的是哪一版」都确定不了。
-    static let tag = "v195"
+    // ★★★ 2026-11-21（对齐安卓 3.87）：版本号一律从**安装包自己**读真值，
+    //   不再写死。写死那套曾经停在 "v30" 停了三个版本 —— 他装完不知道
+    //   手机上到底是不是新版，排查「改了没效果」时连版本都确定不了。
+    //   Bundle 里这两个值由 project.yml 的 MARKETING_VERSION / CURRENT_PROJECT_VERSION
+    //   在打包时写进 Info.plist，跟包永远一致；以后发版只改 project.yml 一处即可。
 
-    /// ★ v95（功能匹配）：比大小用的那个整数。跟 `project.yml` 的
-    ///   `CURRENT_PROJECT_VERSION` 同一个数 —— 检查更新要靠它判「是不是新版」。
-    ///   ★ 别用字符串比："v9" 会大于 "v94"，越更越显示有新版。
-    static let build = 195
+    /// 展示用短版本，例如 "1.196.0"。
+    static let short: String = {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+            ?? "1.0.0"
+    }()
+
+    /// 展示用完整标记，例如 "v1.196.0(196)"。
+    static let tag: String = "v\(short)(\(build))"
+
+    /// 比大小用的整数 —— 检查更新靠它判「是不是新版」。
+    /// ★ 别用字符串比："v9" 会大于 "v94"，越更越显示有新版。
+    static let build: Int = {
+        if let s = Bundle.main.infoDictionary?["CFBundleVersion"] as? String, let n = Int(s) {
+            return n
+        }
+        return 0
+    }()
 }
 
 // MARK: - 入口

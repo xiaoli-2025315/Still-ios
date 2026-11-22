@@ -29,6 +29,47 @@ final class PetEngine: ObservableObject {
     // 扑击：视图层监听这个，抖一下被扑的组件
     @Published private(set) var huntingRoomId: String?
 
+    // ★★ 2026-11-22：聊天触发动作——台子回话里带「动作」时，客户端放这儿，
+    //   PackCatView 监听它播对应帧包；播完由计时清掉，回到引擎自己的闲时循环。
+    //   没有这个动作名（包里没有）时 PackCatView 自动退回 sit，不会崩。
+    @Published var 外部动作名: String? = nil
+
+    /// 聊天回执拿到动作建议时调一次。播 durations 后自动清，避免一直定格。
+    func 请求外部动作(_ name: String?, 秒: Double = 4.0) {
+        guard let n = name, !n.isEmpty else { return }
+        外部动作名 = n
+        let gen = actGen
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(秒 * 1_000_000_000))
+            guard let self, self.actGen == gen, self.外部动作名 == n else { return }
+            self.外部动作名 = nil          // 清掉 → PackCatView 回 sit，引擎继续自己演
+        }
+    }
+
+    /// CatTalk 是 enum、没有 engine 引用，用通知把动作建议递到主页那只。
+    static let 外部动作通知 = Notification.Name("still.chat.action")
+    private var 动作监听: NSObjectProtocol?
+
+    /// 给 CatTalk 用：不着名字，广播出去，主页的 engine 收到就演。
+    /// ★ 同时写一份「共享动作」给圆窗/画中画读——三处同步，8 秒过期自动回默认。
+    private static var 共享动作名: String? = nil
+    private static var 共享动作截止: Date = .distantPast
+    static let 共享动作时长: TimeInterval = 8.0
+
+    static func 广播动作(_ name: String?) {
+        guard let n = name, !n.isEmpty else { return }
+        共享动作名 = n
+        共享动作截止 = Date().addingTimeInterval(共享动作时长)
+        NotificationCenter.default.post(name: 外部动作通知, object: nil,
+                                        userInfo: ["动作": n])
+    }
+
+    /// 圆窗/画中画读当前该演的动作；过期返回 nil（调用方回默认）。只读不消费。
+    static func 当前共享动作() -> String? {
+        guard let n = 共享动作名, !n.isEmpty, Date() < 共享动作截止 else { return nil }
+        return n
+    }
+
     // ── 内部 ─────────────────────────────────────────────────
     private var schedule: [Segment] = []
     private var curSeg: Segment?
@@ -84,6 +125,16 @@ final class PetEngine: ObservableObject {
 
         schedule = Schedule.ensure()
         syncToNow()
+        // ★ 2026-11-22：聊天动作建议（CatTalk 广播）→ 播对应帧包。
+        动作监听 = NotificationCenter.default.addObserver(
+            forName: PetEngine.外部动作通知, object: nil, queue: .main) { [weak self] note in
+            guard let n = note.userInfo?["动作"] as? String else { return }
+            Task { @MainActor in self?.请求外部动作(n) }
+        }
+    }
+
+    deinit {
+        if let 动作监听 { NotificationCenter.default.removeObserver(动作监听) }
     }
 
     func start() {

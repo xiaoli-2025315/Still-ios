@@ -50,7 +50,9 @@ struct CatLayerView: View {
         //   画中画用的是包里的帧，跟这只矢量猫无关（查过：CatView 只被主页框和灵动岛用到），
         //   所以这里换成"包里那只"不影响小窗。
         if let pk = CatPackStore.shared.current {
-            PackCatView(pack: pk, width: w)
+            // ★ 2026-11-22：聊天触发动作——引擎收到台子的动作建议时播那条帧包，
+            //   没有建议时照旧默认 sit（引擎自己的闲时循环仍走 act）。
+            PackCatView(pack: pk, width: w, actName: engine.外部动作名 ?? "sit")
         } else {
             vectorCat
         }

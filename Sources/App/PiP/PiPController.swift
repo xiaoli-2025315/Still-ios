@@ -42,6 +42,38 @@ final class PiPController: NSObject, ObservableObject {
 
     let cat = CatPlayer()
 
+    // ★ 2026-11-22 回消息同步画中画：收到聊天动作建议就跟主页/圆窗一起动。
+    //   ★★ 2026-11-22 修正：装了新猫后小窗走实时流、从**动作包**取帧，
+    //      包里就有新三段的 phone/laugh —— 直接演台子真名，不再是老 mp4 那套
+    //      （老 16 段 mp4 才没有 phone/laugh）。只有实时流关着时才回退到 mp4。
+    private var 动作监听: NSObjectProtocol?
+    override init() {
+        super.init()
+        动作监听 = NotificationCenter.default.addObserver(
+            forName: PetEngine.外部动作通知, object: nil, queue: .main) { [weak self] note in
+                guard let self, let n = note.userInfo?["动作"] as? String, !n.isEmpty else { return }
+                self.回消息演一下(n)
+            }
+    }
+    deinit {
+        if let o = 动作监听 { NotificationCenter.default.removeObserver(o) }
+    }
+
+    /// 画中画跟着回消息动：实时流直接演动作包里那一段（真玩手机/真大笑）；
+    /// 只有实时流关着的旧播片模式，才用老 mp4 同名段、没有就 sit_look 兜底。
+    private func 回消息演一下(_ 动作名: String) {
+        guard hasSurface else { return }   // 壳没挂就别动播放器（不抢用户正在听的歌）
+        if Cfg.liveFramePiP {
+            // 装了新猫 ⇒ pump 从动作包取真帧；包名不存在时 fallback(for:) 自会退回 sit。
+            pump.演台子动作(动作名, 秒: 6)
+            note = "它应了你一声"
+        } else {
+            let clip = (CatPlayer.url(for: 动作名) != nil) ? 动作名 : "sit_look"
+            cat.react(clip, seconds: 6)
+            note = "它应了你一声"
+        }
+    }
+
     /// App 里那间房和小窗里那间，是**同一块图层**的两种呈现，不是两份。
     ///
     /// `layer` 是 v34 的老房型（系统直接放 mp4）；

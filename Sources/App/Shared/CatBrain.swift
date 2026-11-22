@@ -167,6 +167,9 @@ enum CatBrain {
         /// 台子说「这次是哪只猫回的」。单聊没有，群聊才带；客户端只认这个值，
         /// 不自己选发言人、不轮流、不轮询。
         var who: String? = nil
+        /// ★ 2026-11-22：台子建议播哪条动作（点名/话题/心情触发）。
+        ///   没有就 nil，老行为一点不变。这是"建议"，播不播由 PetEngine 决定。
+        var 动作: String? = nil
     }
 
     // MARK: - 群聊（当前选中的那个群）
@@ -350,6 +353,8 @@ enum CatBrain {
         var r = StageReply(reply: fallbackReply)
         // 整包 / 流式 done 块里都带「谁」：这次是哪只猫回的。客户端只认它。
         r.who = json["谁"] as? String
+        // ★ 2026-11-22：台子回的「动作」建议；没这个键就是 nil，老包/老台子都不受影响。
+        r.动作 = json["动作"] as? String
         if json["ok"] as? Bool == true {
             if let t = json["reply"] as? String, !t.isEmpty { r.reply = t }
             r.costText = costText(json)

@@ -40,6 +40,23 @@ final class LiveFramePump {
     ///   AVSampleBufferDisplayLayer 没有 play/pause，只能自己停推进。
     var paused = false
 
+    // ★ 2026-11-22 回消息同步画中画：临时钉住一个「台子动作名」，直接从动作包取帧。
+    //   不走 clipSource/clipMap —— 那是老 mp4 段名（sit_look…）翻台子名的窄路，
+    //   里面没有 phone/laugh。聊天下发的是台子动作名，要的是动作包里真有的那一段。
+    //   字段只在 queue 线程读写（tickOwnCat 在 queue 上），方法从外面进来先切 queue。
+    private var 钉住动作 = ""
+    private var 钉住截止 = Date.distantPast
+
+    /// 回消息/点名时让小窗演这只猫的某个动作（动作包里的真名，如 phone/laugh/sit）。
+    /// 到点自动回轮播；不存在这个名字时 fallback 到 sit，绝不黑屏。
+    func 演台子动作(_ name: String, 秒: Double = 6) {
+        queue.async { [weak self] in
+            guard let self, !name.isEmpty else { return }
+            self.钉住动作 = name
+            self.钉住截止 = Date().addingTimeInterval(秒)
+        }
+    }
+
     /// 素材固定 30fps（12 段逐段解析过 mp4 的 mdhd/stts）。
     static let fps: Int32 = 30
 
@@ -231,6 +248,8 @@ final class LiveFramePump {
             self.actName = ""
             self.framePos = 0
             self.waiting = nil         // 换了猫，排队的旧段作废
+            self.钉住动作 = ""          // 换了猫，上一只的钉住动作也作废
+            self.钉住截止 = .distantPast
             self.pose = CatPose()      // 换了猫就回正中 —— 别让它一上来就站在上一只被拖到的位置
             self.lastSample = nil
             self.format = nil
@@ -328,10 +347,18 @@ final class LiveFramePump {
             if let sb = lastSample { enqueue(sb, on: layer) }
             return
         }
-        let clip = clipSource?() ?? ""
-
-        // ★ 2026-10-23：空房分支已删 —— 小窗里**永远有猫**（他的原话：「别收窗户，把空房间的概念去掉」）。
-        let want: String = Self.clipMap[clip] ?? "sit"
+        // ★ 2026-11-22 回消息同步：钉住动作（台子真名，直接取包里的帧）优先于轮播。
+        //   到点自动清掉，回到下面 clipSource→clipMap 的老轮播逻辑。
+        let 有效钉住 = Date() < 钉住截止
+        let want: String
+        if 有效钉住 && !钉住动作.isEmpty {
+            want = 钉住动作
+        } else {
+            if !钉住动作.isEmpty { 钉住动作 = "" }   // 过期，清掉回轮播
+            let clip = clipSource?() ?? ""
+            // ★ 2026-10-23：空房分支已删 —— 小窗里**永远有猫**（他的原话：「别收窗户，把空房间的概念去掉」）。
+            want = Self.clipMap[clip] ?? "sit"
+        }
 
         if want != actName {
             // ★★★ 2026-11-01：单次动作没播完，不许从中间掐断 —— 排队，播到末帧再换。

@@ -104,6 +104,8 @@ struct TalkPage: View {
     // ★ 2026-11-22：设置卡里点「创建动态形象」→ 带这只角色去动作库（对齐安卓）
     @State private var showActLib = false
     @State private var actLibTargetId = ""
+    // ★ 2026-11-22 回消息同步圆窗：共享动作名变化就刷新（8 秒后自动回默认）
+    @State private var orb共享动作: String = ""
     /// 群设置页自己留一份当前群，改完就地刷新（CatBrain.group 是静态值，视图不会自己重画）
     @State private var setNumber = ""
     @State private var setTitle = ""
@@ -154,6 +156,15 @@ struct TalkPage: View {
             //   显示时占高度把聊天区挤上去，不盖聊天内容。
             .safeAreaInset(edge: .bottom, spacing: 0) { inputDock }
             .onAppear { boot() }
+            // ★ 回消息同步圆窗：收到动作建议就演，8 秒后清掉回默认（读全局共享，三处一致）
+            .onReceive(NotificationCenter.default.publisher(for: PetEngine.外部动作通知)) { note in
+                if let n = note.userInfo?["动作"] as? String, !n.isEmpty {
+                    orb共享动作 = n
+                    DispatchQueue.main.asyncAfter(deadline: .now() + PetEngine.共享动作时长) {
+                        if orb共享动作 == n { orb共享动作 = "" }
+                    }
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if showCats {
@@ -196,7 +207,11 @@ struct TalkPage: View {
         }
         return CatBrain.currentCharId
     }
-    private var orbAct: String { CatBrain.group == nil ? "sit" : "groom" }
+    // ★ 回消息同步：单聊时共享动作有效就演它（比如「工作」），过期 orb共享动作="" 回默认。
+    private var orbAct: String {
+        if !orb共享动作.isEmpty && CatBrain.group == nil { return orb共享动作 }
+        return CatBrain.group == nil ? "sit" : "groom"
+    }
     private var orbStatus: String {
         if let g = CatBrain.group {
             let n = g.members.count

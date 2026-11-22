@@ -175,6 +175,8 @@ struct MainHomeView: View {
     @State private var showMe = false
     /// 顶部那条输入框开着没有
     @State private var talkOpen = false
+    /// ★ 2026-11-22：第三格「记忆」页开没开
+    @State private var 记忆开 = false
     /// 点过几个按钮 —— 自检用：按了没反应时，先看这个数字动没动
     @State private var taps = 0
     /// 角色（动作库）那一页开着没有
@@ -231,6 +233,11 @@ struct MainHomeView: View {
         //   有自己完整的视图树和生命周期 —— 键盘在这里不会像飘在主页上那样被吞掉。
         .fullScreenCover(isPresented: $talkOpen) {
             TalkPage()
+        }
+        // ★ 2026-11-22：第三格「记忆」页。
+        .fullScreenCover(isPresented: $记忆开) {
+            // ★ 3D 记忆页：整份粒子星球装进 App（原 MemView 列表式保留不删）
+            Mem3DView(charId: CatBrain.currentCharId)
         }
         // ★★★ v64：小窗上那个键按下去 ＝「问它」。
         //
@@ -387,6 +394,7 @@ struct MainHomeView: View {
         HStack(spacing: 0) {
             tabItem(0, "它", "pawprint.fill")
             chatTabItem()
+            memTabItem()
         }
         .padding(.top, 10)
         .padding(.bottom, 4)
@@ -406,6 +414,25 @@ struct MainHomeView: View {
                 Text("聊天")
                     .font(.system(size: 10))
                     .foregroundStyle(Tw.gray400)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// ★ 2026-11-22：第三格「记忆」——弹记忆页看柜子里的文件（不切屏）。
+    private func memTabItem() -> some View {
+        Button {
+            hit()
+            记忆开 = true
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: "book.fill")
+                    .font(.system(size: 17)).foregroundStyle(Tw.gray400)
+                Text("记忆")
+                    .font(.system(size: 10)).foregroundStyle(Tw.gray400)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)

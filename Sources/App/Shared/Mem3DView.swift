@@ -150,7 +150,7 @@ enum Mem3DBuild {
         for r in roles {
             data[r.标识] = await tree(r.标识)
         }
-        var init: [String: Any] = ["roles": [], "data": data, "charId": start]
+        var payload: [String: Any] = ["roles": [], "data": data, "charId": start]
         var rs: [[String: Any]] = []
         for r in roles {
             var row: [String: Any] = ["id": r.标识, "name": r.名字,
@@ -167,8 +167,8 @@ enum Mem3DBuild {
             if let s = comp?.string { row["img"] = s }
             rs.append(row)
         }
-        init["roles"] = rs
-        guard let d = try? JSONSerialization.data(withJSONObject: init, options: []),
+        payload["roles"] = rs
+        guard let d = try? JSONSerialization.data(withJSONObject: payload, options: []),
               let s = String(data: d, encoding: .utf8) else { return "{}" }
         return s
     }

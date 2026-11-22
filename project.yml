@@ -152,6 +152,12 @@ targets:
           # ★ v194 OTCO：AgentStore.swift 也要给台子的请求贴票（`req.stillStamp()`），
           #   登录那一套只在主 App 里。小组件用不上选脑子，排除掉，否则编译不过。
           - "AgentStore.swift"
+          # ★ v198 记忆页：记忆柜四件套都在 Shared、链式依赖 ActLab/CatBrain/贴票，
+          #   这些只在主 App 里；小组件用不上记忆页，排除掉，否则 Widget target 编译不过。
+          - "MemAPI.swift"
+          - "MemView.swift"
+          - "MemBallView.swift"
+          - "Mem3DView.swift"
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
       # 组件里那张静态猫图。★ 显式写 buildPhase：png 是资源不是源码，

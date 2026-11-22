@@ -54,6 +54,13 @@ final class ActLibModel: ObservableObject {
 @MainActor
 struct ActLibPage: View {
 
+    /// ★ 2026-11-22：从单聊设置卡「创建动态形象」进来时带上这只的 id ——
+    ///   列表加载完直接进它的动作墙（对齐安卓 ActLibV2Activity 带 EXTRA_CHAR 进页）。
+    ///   默认 nil：主页「角色」入口照旧先看到列表，不受影响。
+    var openCharId: String? = nil
+    /// 只自动进一次，避免回到前台重拉列表时又把动作墙弹出来。
+    @State private var didAutoOpen = false
+
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = ActLibModel()
     /// 装了哪只、正在用哪只 —— 列表上要标出来
@@ -151,7 +158,16 @@ struct ActLibPage: View {
             .refreshable { await model.load() }
         }
         .background(Tw.gray50.ignoresSafeArea())
-        .task { await model.load() }
+        .task {
+            await model.load()
+            // 从设置卡带角色进来：加载完按 id 直接进这只的动作墙，只进一次。
+            // 找不到这只（可能还没登记）就停在列表，不硬造一只出来。
+            if !didAutoOpen, let id = openCharId,
+               let c = model.chars.first(where: { $0.id == id }) {
+                didAutoOpen = true
+                watching = c
+            }
+        }
         // ★ 2026-11-03（他报的）：新角色不立刻出现 —— 从制作流程/充值页回来都要重拉。
         .onReceive(NotificationCenter.default.publisher(
             for: UIApplication.didBecomeActiveNotification)) { _ in

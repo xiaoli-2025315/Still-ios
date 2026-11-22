@@ -101,6 +101,9 @@ struct TalkPage: View {
     @State private var showGroupSettings = false
     // ★ 2026-11-21：单聊的圆角设置浮卡（大圆动态形象 + 模型/Agent）
     @State private var showSingleSettings = false
+    // ★ 2026-11-22：设置卡里点「创建动态形象」→ 带这只角色去动作库（对齐安卓）
+    @State private var showActLib = false
+    @State private var actLibTargetId = ""
     /// 群设置页自己留一份当前群，改完就地刷新（CatBrain.group 是静态值，视图不会自己重画）
     @State private var setNumber = ""
     @State private var setTitle = ""
@@ -172,6 +175,11 @@ struct TalkPage: View {
             singleSettingsCard
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        // ★ 2026-11-22（对齐安卓 3.93）：设置卡里点「创建动态形象」→
+        //   关掉卡片、打开动作库并带这只角色，进去就是它的动作墙。
+        .fullScreenCover(isPresented: $showActLib) {
+            ActLibPage(openCharId: actLibTargetId)
         }
     }
 
@@ -403,14 +411,19 @@ struct TalkPage: View {
         }
     }
 
-    // ★ 2026-11-21：单聊圆角设置浮卡的内容。建形象入口先关卡并照实提示去角色页
-    //   （动作库是全屏页、从这层 sheet 里直接推会叠层，没把握就不硬来）。
+    // ★ 2026-11-22：单聊圆角设置浮卡的内容。
+    //   建形象入口对齐安卓 3.93：先关卡片，再带这只角色打开动作库，
+    //   进去直接落在它的动作墙，不再让用户自己回主页翻角色页。
     private var singleSettingsCard: some View {
         SingleSettingsCard(charId: CatBrain.currentCharId,
                            title: CatBrain.currentCharTitle,
                            onCreate: {
+                               actLibTargetId = CatBrain.currentCharId
                                showSingleSettings = false
-                               轻提示("去主页的「角色」页做动作")
+                               // sheet 关掉和全屏页弹出之间留一拍，避免两层切换打架。
+                               DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                   showActLib = true
+                               }
                            })
     }
 

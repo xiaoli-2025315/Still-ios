@@ -92,7 +92,7 @@ enum CatTalk {
         }
         // ★ 2026-11-22：台子回话里带了「动作」建议（点名/话题/心情触发），
         //   广播给主页那只去演。没有就什么都不做；老台子没这个键也不受影响。
-        if let 动作 = stage?.动作 { PetEngine.广播动作(动作) }
+        if let 动作 = stage?.动作 { await PetEngine.广播动作(动作) }
         // 群聊：台子说这次是谁回的，翻成名字给聊天页标气泡用。单聊 / 没拿到就是 nil。
         if let who = stage?.who, let g = CatBrain.group {
             lastSpeakerName = g.names[who]

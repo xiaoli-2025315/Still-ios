@@ -41,6 +41,13 @@ final class Mem3DBox {
         if Thread.isMainThread { work() }
         else { DispatchQueue.main.async(execute: work) }
     }
+
+    /// 单独执行一句 JS（懒读正文回填用）。
+    func run(_ js: String) {
+        let work = { self.web?.evaluateJavaScript(js, completionHandler: nil) }
+        if Thread.isMainThread { work() }
+        else { DispatchQueue.main.async(execute: work) }
+    }
 }
 
 struct Mem3DWebView: UIViewRepresentable {
@@ -84,6 +91,7 @@ struct Mem3DWebView: UIViewRepresentable {
           write:function(a,b,c,d){try{webkit.messageHandlers.StillBridge.postMessage({m:'write',a:[a,b,c,d]})}catch(e){}},
           edit:function(a,b,c,d,e){try{webkit.messageHandlers.StillBridge.postMessage({m:'edit',a:[a,b,c,d,e]})}catch(e){}},
           remove:function(a,b,c){try{webkit.messageHandlers.StillBridge.postMessage({m:'remove',a:[a,b,c]})}catch(e){}},
+          read:function(a,b,c,d){try{webkit.messageHandlers.StillBridge.postMessage({m:'read',a:[a,b,c,d]})}catch(e){}},
           role:function(a){try{webkit.messageHandlers.StillBridge.postMessage({m:'role',a:[a]})}catch(e){}},
           tab:function(a){try{webkit.messageHandlers.StillBridge.postMessage({m:'tab',a:[a]})}catch(e){}},
           ready:function(){}
@@ -113,6 +121,17 @@ final class Mem3DCoord: NSObject, WKScriptMessageHandler {
               let m = d["m"] as? String,
               let a = d["a"] as? [Any] else { return }
         switch m {
+        case "read":
+            guard a.count >= 4 else { return }
+            let cid = a[0] as? String ?? ""
+            let cat = a[1] as? String ?? ""
+            let name = a[2] as? String ?? ""
+            let uid = (a[3] as? NSNumber)?.intValue ?? 0
+            Task {
+                let d = await MemAPI.读(cid, cat, name)
+                let text = d?.正文 ?? ""
+                self.box.run("window.StillFill&&window.StillFill(\(uid),\(Mem3DBuild.jsQuoted(text)));")
+            }
         case "tab":
             DispatchQueue.main.async { self.onClose() }
         case "role":
@@ -173,7 +192,16 @@ enum Mem3DBuild {
         return s
     }
 
+    /// 把一段文字变成 JS 字符串字面量（带引号、转义好）。
+    static func jsQuoted(_ s: String) -> String {
+        guard let d = try? JSONSerialization.data(withJSONObject: [s]),
+              let j = String(data: d, encoding: .utf8) else { return "\"\"" }
+        return String(j.dropFirst().dropLast())
+    }
+
     /// 四类做成 folder，每份文件做成可点节点（都带 catName 供回写）。
+    /// ★ 2026-11-23：正文不再预读（一百多份 = 一百多次请求，角色轮盘会一直空着）；
+    ///   点开某一份时由模板调 StillBridge.read，再回填 StillFill。
     static func tree(_ cid: String) async -> [[String: Any]] {
         let box = await MemAPI.列(cid, nil)
         var out: [[String: Any]] = []
@@ -181,12 +209,11 @@ enum Mem3DBuild {
         for cat in MemAPI.类别 {
             var kids: [[String: Any]] = []
             for f in (box[cat] ?? []) {
-                let detail = await MemAPI.读(cid, cat, f.名)
                 kids.append([
                     "uid": uid, "type": cat == "它会的动作" ? "act" : "text",
                     "label": f.名, "cat": cat == "它会的动作" ? "act" : "text",
                     "catName": cat, "desc": f.摘要, "w": 0.6,
-                    "text": detail?.正文 ?? ""
+                    "text": ""
                 ])
                 uid += 1
             }

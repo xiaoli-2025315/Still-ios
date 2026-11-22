@@ -276,6 +276,9 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0E1018}
 .phone{width:100%!important;height:100%!important;border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important}
 .status{height:calc(24px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px)}
 .tabbar{height:calc(70px + env(safe-area-inset-bottom,0px));padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+/* 内嵌模式：底栏/状态栏交给原生，网页只显示内容 */
+body.emb .tabbar,body.emb .status{display:none!important}
+body.emb .phone{height:100%!important}
 </style>
 </head>
 <body>
@@ -381,12 +384,14 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0E1018}
 <script>  function avHTML(r){var im=(r&&r.img)||'';var bg=(r&&r.av)||'#6E6E68';var ch=(r&&r.ch)||'?';return im?('<img class="avimg" src="'+im+'" onerror="this.style.display=\'none\';this.parentNode.appendChild(document.createTextNode(ch))">'):(ch);}
 
 (function(){
+  try{if(window.INIT&&window.INIT.embedded)document.body.classList.add('emb')}catch(e){}
   var $=function(id){return document.getElementById(id)};
   var toastEl=$('toast'),tt;
   function toast(s){toastEl.textContent=s;toastEl.classList.add('on');clearTimeout(tt);tt=setTimeout(function(){toastEl.classList.remove('on')},1900)}
 
   var CAT={folder:'#6E6E68',text:'#6E6E68',act:'#111111',image:'#5B8FA8',video:'#5B8FA8',doc:'#5B8FA8'};
   var ROLES=(window.INIT&&window.INIT.roles)||[];
+  var LASTERR=(window.INIT&&window.INIT.err)||'';
   var UID=1;
   function f(type,label,extra){return Object.assign({uid:UID++,type,label,desc:''},extra||{})}
   var DATA=(window.INIT&&window.INIT.data)||{};
@@ -598,7 +603,11 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0E1018}
 
   // ---- 放大卡片：列表 / 详情 ----
   var bigcard=$('bigcard'),bcBody=$('bcBody'),bcTitle=$('bcTitle'),bigFile=null,bigPath=[],bigMode='list';
-  function openBig(file,path){bigFile=file;bigPath=path.slice();bigMode=file.type==='folder'?'list':'detail';renderBig();$('mask').classList.add('on');bigcard.classList.add('on');closeFocus();closeOthers()}
+  function openBig(file,path){bigFile=file;bigPath=path.slice();bigMode=file.type==='folder'?'list':'detail';
+    // ★ 2026-11-23：正文不再预读（一百多份会拖死轮盘）——点开这一份时才单独读。
+    try{if(file&&file.type==='text'&&file.catName&&!file._asked&&!file.text){file._asked=true;
+      if(window.StillBridge&&window.StillBridge.read)window.StillBridge.read(ROLES[cur].id,file.catName,file.label,file.uid)}}catch(e){}
+    renderBig();$('mask').classList.add('on');bigcard.classList.add('on');closeFocus();closeOthers()}
   function closeBig(){bigcard.classList.remove('on');$('mask').classList.remove('on')}
   function renderBig(){
     bcTitle.textContent=bigFile.label;
@@ -712,7 +721,7 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0E1018}
     var d=document.createElement('div');d.className='srow'+(i===cur?' sel':'');
     d.innerHTML='<span class="av" style="background:'+r.av+'">'+avHTML(r)+'</span><span class="nm">'+r.name+'</span><span class="n">'+r.n+' 份</span><span class="ck">✓</span>';
     d.onclick=function(){switchRole(i);wd=0;renderWheel();closeAll();toast('现在看「'+r.name+'」')};slist.appendChild(d)});
-    if(!slist.children.length)slist.innerHTML='<div style="padding:14px;font-size:11px;color:var(--ink3)">没找到</div>'}
+    if(!slist.children.length)slist.innerHTML='<div style="padding:14px;font-size:11px;color:var(--ink3)">'+esc(LASTERR||'没找到')+'</div>'}
   shq.oninput=renderList;
 
   // ★ 加记忆：模型/Agent 式，文字 / 文件，按钮「确认」
@@ -770,22 +779,42 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0E1018}
   $('mask').onclick=function(){closeAll();closeBig();closeFocus()};
 
   document.querySelector('.phone').classList.add('memDark');
-  resize();buildPts();init3D();updateWho();renderWheel();renderList();loop();
-  window.addEventListener('resize',function(){resize()});
+  // ★ 真机 WebView 的 WebGL 可能创建失败（全挂或没显卡）——绝不能让它中断
+  //   后面的 StillReload 定义与 ready 回调，否则数据永远进不来（球空/角色空）。
+  try{resize()}catch(e){}
+  try{buildPts()}catch(e){}
+  try{init3D()}catch(e){}
+  try{updateWho()}catch(e){}
+  try{renderWheel()}catch(e){}
+  try{renderList()}catch(e){}
+  try{loop()}catch(e){}
+  window.addEventListener('resize',function(){try{resize()}catch(e){}});
+  // ★ 2026-11-23：点开某一份后，原生读回正文再回填（预读改成懒读）
+  window.StillFill=function(uid,text){
+    try{var n=findUid(uid);if(!n)return;n.text=text||'';
+      if(bigFile===n&&bigMode==='detail')renderBig()}catch(e){}
+  };
   // 原生写完真数据后回调：整体替换 ROLES/DATA 并按当前角色重绘
   window.StillReload=function(payload){
     try{
       if(!payload)return;
+      if(payload.err!==undefined)LASTERR=payload.err||'';
       if(payload.roles)ROLES=payload.roles;
       if(payload.data)DATA=payload.data;
       var keep=payload.charId||(ROLES.length?ROLES[cur].id:null);
       var idx=keep?roleById(keep):-1;if(idx<0)idx=0;
       cur=idx;nodes=(ROLES.length&&DATA[ROLES[cur].id])?DATA[ROLES[cur].id].slice():[];
-      buildPts();rebuildNodes();updateWho();renderList();renderWheel();
+      try{buildPts()}catch(e){}
+      try{rebuildNodes()}catch(e){}
+      try{updateWho()}catch(e){}
+      try{renderList()}catch(e){}
+      try{renderWheel()}catch(e){}
       closeAll();closeBig();closeFocus();
       if(payload.toast)toast(payload.toast);
     }catch(e){}
   };
+  // ★ JS 100% 就绪的信号：数据注入改由它驱动（onPageFinished 太早，
+  //   那时 StillReload 还没定义，evaluateJavascript 会静默失败）。
   try{if(window.StillBridge&&window.StillBridge.ready)window.StillBridge.ready()}catch(e){}
 })();
 </script>

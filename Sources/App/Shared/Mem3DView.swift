@@ -161,7 +161,7 @@ enum Mem3DBuild {
             let assetId = (r.标识 == "builtin" || r.标识 == "__builtin") ? "maozhan" : r.标识
             var comp = URLComponents(string: ActLab.base + "/assets/acts/"
                 + (assetId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? assetId)
-                + "/sit.gif")?
+                + "/sit.gif")
             comp?.queryItems = [URLQueryItem(name: "v", value: "8"),
                                 URLQueryItem(name: "sharecode", value: StillShare.code)]
             if let s = comp?.string { row["img"] = s }

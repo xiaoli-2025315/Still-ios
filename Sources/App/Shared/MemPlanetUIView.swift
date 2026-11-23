@@ -707,7 +707,8 @@ final class MemPlanetUIView: UIView {
     /// 当前屏上（含本事件）前两指间距；不够两指返回 0
     private func 两指距(_ event: UIEvent?) -> CGFloat {
         guard let all = event?.allTouches, all.count >= 2 else { return 0 }
-        let a = all.array[0].location(in: self), b = all.array[1].location(in: self)
+        let arr = Array(all)
+        let a = arr[0].location(in: self), b = arr[1].location(in: self)
         return hypot(a.x - b.x, a.y - b.y)
     }
 
@@ -765,7 +766,7 @@ final class MemPlanetUIView: UIView {
             捏合中 = false
             本趟捏过 = true
             if let all = event?.allTouches, all.count >= 1 {
-                let p = all.array[0].location(in: self)
+                let p = Array(all)[0].location(in: self)
                 lastX = p.x; lastY = p.y; downX0 = p.x; downY0 = p.y
                 dragging = !touches.isEmpty
             }

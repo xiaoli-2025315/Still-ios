@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 // MARK: - 原生记忆球（对齐安卓 MemPlanetView）

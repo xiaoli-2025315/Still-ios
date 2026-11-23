@@ -114,6 +114,8 @@ final class MemPlanetUIView: UIView {
     private var link: CADisplayLink?
     private var lastFrame: CFTimeInterval = 0
     private var glowImg: UIImage?
+    /// 球半径：画图和手势都要用，提成属性，别在 draw 里藏成局部变量
+    private var 球半径: CGFloat { min(bounds.width * 0.31, 112) }
 
     // ★★ 2026-11-23：姿态改成 3×3 旋转矩阵。
     //   以前 ry/rx 两个欧拉角：上下拖会被 clamp 住、斜着划也只能"先竖后横"，
@@ -167,7 +169,7 @@ final class MemPlanetUIView: UIView {
     private func 局部放大(_ p: inout CGPoint) {
         if 聚焦i < 0 || 放大量 < 0.002 { return }
         let dx = p.x - 聚焦x, dy = p.y - 聚焦y
-        let sig = R * 0.38
+        let sig = 球半径 * 0.38
         let w = exp(-(dx * dx + dy * dy) / (2 * sig * sig)) * 放大量
         let g = 1 + 0.60 * w
         p.x = 聚焦x + dx * g
@@ -408,7 +410,7 @@ final class MemPlanetUIView: UIView {
         if W <= 0 || H <= 0 { return }
         let cx = W / 2
         let cy = H / 2 - 6
-        let R = min(W * 0.31, 112)
+        let R = 球半径
         let R用 = R * (1 + 0.05 * 放大量)   // 聚焦时整球再放大 5%（凑近看那块）
 
         if !姿态初 { 建姿态() }
@@ -673,7 +675,7 @@ final class MemPlanetUIView: UIView {
         moved += abs(dx) + abs(dy)
         // ★ 球面沿手指那条线滚：转轴 = 垂直于划线（ω = r × v），转角 = 弧长 / 半径
         let 弧 = (dx * dx + dy * dy).squareRoot()
-        if 弧 > 0.01 && R > 1 { 左乘轴角(dy, dx, 0, 弧 * 1.6 / R) }
+        if 弧 > 0.01 && 球半径 > 1 { 左乘轴角(dy, dx, 0, 弧 * 1.6 / 球半径) }
         lastX = p.x; lastY = p.y
         lastAct = CACurrentMediaTime()
         setNeedsDisplay()

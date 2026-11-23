@@ -459,7 +459,8 @@ final class SquishView: UIView {
     private var oy = [CGFloat](repeating: 0, count: W*H)
     private var vx = [CGFloat](repeating: 0, count: W*H)
     private var vy = [CGFloat](repeating: 0, count: W*H)
-    private var mask = [Bool](repeating: false, count: W*H)
+    // ★ 不能叫 mask：UIView 自带 mask:UIView?，同名会被当覆盖而编译失败
+    private var paintMask = [Bool](repeating: false, count: W*H)
     private var mode = 0, currentTool = 0
     private var down = false, last = CGPoint.zero
     private var link: CADisplayLink?
@@ -481,9 +482,9 @@ final class SquishView: UIView {
         if s == 1 { clearAll() }
     }
     func clearAll() {
-        for i in 0..<(Self.W*Self.H) { ox[i]=0; oy[i]=0; vx[i]=0; vy[i]=0; mask[i]=false }
+        for i in 0..<(Self.W*Self.H) { ox[i]=0; oy[i]=0; vx[i]=0; vy[i]=0; paintMask[i]=false }
     }
-    func hasMask() -> Bool { mask.contains(true) }
+    func hasMask() -> Bool { paintMask.contains(true) }
 
     @objc private func tick() {
         guard mode != 0 else { return }
@@ -503,7 +504,7 @@ final class SquishView: UIView {
             UIColor(red: 0.37, green: 0.78, blue: 0.94, alpha: 0.30).setFill()
             for gy in 0..<Self.H {
                 for gx in 0..<Self.W {
-                    if mask[gy*Self.W+gx] {
+                    if paintMask[gy*Self.W+gx] {
                         UIRectFill(CGRect(x: CGFloat(gx)*cw, y: CGFloat(gy)*ch, width: cw+0.6, height: ch+0.6))
                     }
                 }
@@ -514,7 +515,7 @@ final class SquishView: UIView {
         for gy in 0..<Self.H {
             for gx in 0..<Self.W {
                 let i = gy*Self.W+gx
-                if !mask[i] { continue }
+                if !paintMask[i] { continue }
                 let px = CGFloat(gx+0.5)*cw + ox[i], py = CGFloat(gy+0.5)*ch + oy[i]
                 UIBezierPath(arcCenter: CGPoint(x: px, y: py), radius: 1.4, startAngle: 0, endAngle: .pi*2, clockwise: true).fill()
             }
@@ -540,24 +541,28 @@ final class SquishView: UIView {
     private func paintAt(_ p: CGPoint) {
         let cw = bounds.width/CGFloat(Self.W), ch = bounds.height/CGFloat(Self.H)
         let r: CGFloat = 32
-        for gy in 0..<Self.H for gx in 0..<Self.W {
-            let px = (CGFloat(gx)+0.5)*cw, py = (CGFloat(gy)+0.5)*ch
-            let dx = px-p.x, dy = py-p.y
-            if dx*dx+dy*dy < r*r { mask[gy*Self.W+gx] = (currentTool == 0) }
+        for gy in 0..<Self.H {
+            for gx in 0..<Self.W {
+                let px = (CGFloat(gx)+0.5)*cw, py = (CGFloat(gy)+0.5)*ch
+                let dx = px-p.x, dy = py-p.y
+                if dx*dx+dy*dy < r*r { paintMask[gy*Self.W+gx] = (currentTool == 0) }
+            }
         }
     }
     private func pushAt(_ p: CGPoint, dx: CGFloat, dy: CGFloat) {
         let cw = bounds.width/CGFloat(Self.W), ch = bounds.height/CGFloat(Self.H)
-        for gy in 0..<Self.H for gx in 0..<Self.W {
-            let i = gy*Self.W+gx
-            guard mask[i] else { continue }
-            let px = (CGFloat(gx)+0.5)*cw, py = (CGFloat(gy)+0.5)*ch
-            let d2 = (px-p.x)*(px-p.x)+(py-p.y)*(py-p.y)
-            if d2 > 88*88 { continue }
-            let w = CGFloat(exp(-Double(d2)/(2*30*30)))
-            ox[i] += dx*w; oy[i] += dy*w
-            let m = sqrt(ox[i]*ox[i]+oy[i]*oy[i])
-            if m > 76 { ox[i] *= 76/m; oy[i] *= 76/m }
+        for gy in 0..<Self.H {
+            for gx in 0..<Self.W {
+                let i = gy*Self.W+gx
+                guard paintMask[i] else { continue }
+                let px = (CGFloat(gx)+0.5)*cw, py = (CGFloat(gy)+0.5)*ch
+                let d2 = (px-p.x)*(px-p.x)+(py-p.y)*(py-p.y)
+                if d2 > 88*88 { continue }
+                let w = CGFloat(exp(-Double(d2)/(2*30*30)))
+                ox[i] += dx*w; oy[i] += dy*w
+                let m = sqrt(ox[i]*ox[i]+oy[i]*oy[i])
+                if m > 76 { ox[i] *= 76/m; oy[i] *= 76/m }
+            }
         }
     }
 }

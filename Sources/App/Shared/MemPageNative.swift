@@ -1014,13 +1014,12 @@ struct MemRoleWheel: View {
                     let d: CGFloat = sel ? 50 : 44
                     VStack(spacing: 4) {
                         ZStack {
-                            // ★ 选中头像垫一圈冷光，往外晕开、淡进深底（只选中才有）
-                            if sel {
-                                Circle().fill(Color(red: 143/255, green: 180/255, blue: 255/255).opacity(0.7))
-                                    .blur(radius: 10)
-                                Circle().fill(Color(red: 111/255, green: 168/255, blue: 184/255).opacity(0.5))
-                                    .blur(radius: 20)
-                            }
+                            // ★ 每颗头像都垫一圈冷光，往外晕开、淡进深底；
+                            //   其它头像跟浅色组件一样只有基础光，选中的再叠一层更亮的。
+                            Circle().fill(Color(red: 143/255, green: 180/255, blue: 255/255).opacity(sel ? 0.7 : 0.34))
+                                .blur(radius: sel ? 10 : 7)
+                            Circle().fill(Color(red: 111/255, green: 168/255, blue: 184/255).opacity(sel ? 0.5 : 0.24))
+                                .blur(radius: sel ? 20 : 14)
                             Circle().fill(Color(red: 0.06, green: 0.07, blue: 0.11))
                             OrbPet(charId: 角色[i].标识, actName: "sit", width: d * 0.82)
                                 .frame(width: d * 0.82, height: d * 0.82)

@@ -181,6 +181,8 @@ struct MainHomeView: View {
     @State private var taps = 0
     /// 角色（动作库）那一页开着没有
     @State private var actOpen = false
+    /// ★ 2026-11-23：「它」页角色舞台（横滑选人 + 悬浮/捏捏/制作动作）。老动作库 actOpen 一行没删。
+    @State private var stageOpen = false
     /// ★ v64：小窗上按了那个键 —— 要在**中间**弹一个小框问它说什么（不是整页对话页）。
     @State private var quickAsk = false
     @State private var quickText = ""
@@ -270,6 +272,10 @@ struct MainHomeView: View {
         // 角色（动作库）：安卓那边是「它」这屏上的「角色」格子点进去的那一页
         .fullScreenCover(isPresented: $actOpen) {
             ActLibPage()
+        }
+        // ★ 2026-11-23：「它」页角色舞台。退回老动作库：把上面 onRole 的 stageOpen 改回 actOpen 即可。
+        .fullScreenCover(isPresented: $stageOpen) {
+            RoleStageView()
         }
         .onAppear(perform: boot)
         .onDisappear {
@@ -372,7 +378,7 @@ struct MainHomeView: View {
             switch tab {
             case 0: HerPane(pip: pip, openMe: { showMe = true },
                             onHit: hit, taps: taps,
-                            onRole: { actOpen = true })
+                            onRole: { stageOpen = true })
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }

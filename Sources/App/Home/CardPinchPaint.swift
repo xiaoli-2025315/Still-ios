@@ -37,11 +37,11 @@ final class CardPinchPaint: UIView {
         }
         guard let g = gradient else { return }
         for m in marks {
-            c.save()
+            c.saveGState()
             c.translateBy(x: m.x, y: m.y)
             c.drawRadialGradient(g, startCenter: .zero, startRadius: 0,
                                  endCenter: .zero, endRadius: m.r, options: [])
-            c.restore()
+            c.restoreGState()
         }
     }
 

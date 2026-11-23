@@ -232,11 +232,15 @@ struct HerStagePane: View {
             let c = roles[i]
             let n = roles.count
             // 循环最短偏移：选中的那张永远在正中，左右从队尾/队首接上。
-            var m = pos.truncatingRemainder(dividingBy: Double(n))
-            if m < 0 { m += Double(n) }
-            var d = Double(i) - m
-            if d > Double(n) / 2 { d -= Double(n) }
-            if d < -Double(n) / 2 { d += Double(n) }
+            // ★ 赋值必须放进闭包里算：@ViewBuilder 里直接写 var += 会被当成 View 表达式而报错。
+            let d: Double = {
+                var m = pos.truncatingRemainder(dividingBy: Double(n))
+                if m < 0 { m += Double(n) }
+                var v = Double(i) - m
+                if v > Double(n) / 2 { v -= Double(n) }
+                if v < -Double(n) / 2 { v += Double(n) }
+                return v
+            }()
             let ad = abs(d)
             // ★ 扇形展牌：旋转锚点挪到卡下方（y=1.68），越靠边转得越多 → 底部收拢顶部散开。
             //   spread=0 时合成一叠（微微错开）；切到它页 0→1 摊开。

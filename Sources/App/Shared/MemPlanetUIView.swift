@@ -4,7 +4,7 @@ import UIKit
 //
 // 2026-11-23：记忆页不再嵌网页。这颗球用系统画布自己算透视画出来：
 // 球面散点（多色过渡）+ 细线网 + 记忆节点（极点/核心/呼吸柔光/名字）。
-// 拖动转球、松手继续转、静止两秒自转；点中一颗 → 转到正面 + 放大 + 回调出卡片。
+// 拖动转球、一松手就接着转；点中一颗 → 原地放大 + 拉线出卡片（不转球）；整球缓缓呼吸。
 //
 // ★ 一个点都不编：节点只从 setNodes() 进来，几份画几颗；空就画"这只还没有记忆"。
 // ★ 不用 WebGL / Metal，纯 CoreGraphics —— 老机器也跑得动。
@@ -38,35 +38,27 @@ final class MemPlanetUIView: UIView {
         setNeedsDisplay()
     }
     /// 外面（搜索/列表）直接聚焦某一颗
+    /// ★ 2026-11-23：点中不把球转过去，就在它原来的位置放大 + 拉线（用户要求）
     func focusOn(_ node: MemNode) {
-        guard let i = nodes.firstIndex(where: { $0.id == node.id }) else { return }
+        guard 点号[node.id] != nil else { return }
         focusId = node.id
         auto = false
+        goalOn = false
         lastAct = CACurrentMediaTime()
-        let x = nx[i], y = ny[i], z = nz[i]
-        let cs = cos(-0.28), sn = sin(-0.28)
-        let qx = x * cs - y * sn, qy = x * sn + y * cs, qz = z
-        var tRy = atan2(-qx, qz)
-        var tRx = atan2(qy, sqrt(qx * qx + qz * qz)) - 0.34
-        tRx = max(-1.1, min(1.1, tRx))
-        var d = tRy - ry
-        while d > .pi { d -= .pi * 2 }
-        while d < -.pi { d += .pi * 2 }
-        tRy = ry + d
-        goalRy = tRy; goalRx = tRx; goalOn = true
         setNeedsDisplay()
     }
     func setNodes(_ ns: [MemNode]) {
         nodes = ns
         focusId = nil
         goalOn = false
+        展开点()
         重建节点坐标()
         setNeedsDisplay()
     }
     /// 聚焦那颗现在画在哪（给外面拉线用）
     func focusPoint() -> CGPoint? {
-        guard let id = focusId, let i = nodes.firstIndex(where: { $0.id == id }), i < 512 else { return nil }
-        return CGPoint(x: nsx[i], y: nsy[i])
+        guard let id = focusId, let i = 点号[id], i < 512 else { return nil }
+        return CGPoint(x: CGFloat(nsx[i]), y: CGFloat(nsy[i]))
     }
 
     // ---- 参数（照安卓/网页）----
@@ -76,18 +68,24 @@ final class MemPlanetUIView: UIView {
     private static let DEPTH_N = 3
 
     private static let ANCH: [(Float, Float, Float, Float, Float, Float)] = [
-        (0, 1, 0, 1, .80, .32),
-        (.9, .25, .3, 1, .45, .28),
-        (.25, .3, .9, .94, .42, .80),
-        (-.85, .2, .35, .36, .62, 1),
-        (-.2, -.4, -.9, .28, .88, .84),
-        (.7, -.6, -.3, .60, .92, .52),
-        (-.6, -.7, .4, 1, .96, .86),
+        (0, 1, 0, 1, 0.80, 0.32),
+        (0.9, 0.25, 0.3, 1, 0.45, 0.28),
+        (0.25, 0.3, 0.9, 0.94, 0.42, 0.80),
+        (-0.85, 0.2, 0.35, 0.36, 0.62, 1),
+        (-0.2, -0.4, -0.9, 0.28, 0.88, 0.84),
+        (0.7, -0.6, -0.3, 0.60, 0.92, 0.52),
+        (-0.6, -0.7, 0.4, 1, 0.96, 0.86),
     ]
 
-    private var px = [Float](), py = [Float](), pz = [Float]()
+    private var px = [Float](), py = [Float](), pz = [Float](), pPh = [Float]()
     private var pcol = [Int]()                    // 颜色桶
     private var segA = [Int](), segB = [Int]()
+
+    // 球上真正画出来的每一颗：四类各一颗，类里每一份记忆也各一颗
+    private var 点: [MemNode] = []
+    private var 点号: [Int: Int] = [:]
+    private var 母点 = [Int](repeating: -1, count: 512)
+    private var 点径 = [Float](repeating: 1, count: 512)
 
     private var nx = [Float](repeating: 0, count: 512)
     private var ny = [Float](repeating: 0, count: 512)
@@ -184,6 +182,7 @@ final class MemPlanetUIView: UIView {
             if Float.random(in: 0...1, using: &rng) > keep { continue }
 
             px.append(ax); py.append(ay); pz.append(az)
+            pPh.append(Float(px.count) * 0.6180339)
             pcol.append(颜色桶(ax, ay, az))
         }
 
@@ -244,15 +243,77 @@ final class MemPlanetUIView: UIView {
         }
     }
 
+    /// 把树摊平：四类各占一颗，类里每一份记忆也各占一颗
+    private func 展开点() {
+        点.removeAll(); 点号.removeAll()
+        for top in nodes {
+            if 点.count >= 512 { break }
+            let ti = 点.count
+            点号[top.id] = ti
+            点.append(top)
+            母点[ti] = -1
+            点径[ti] = 1.45
+            for kd in (top.kids ?? []) {
+                if 点.count >= 512 { break }
+                if 点号[kd.id] != nil { continue }
+                let ki = 点.count
+                点号[kd.id] = ki
+                点.append(kd)
+                母点[ki] = ti
+                点径[ki] = 0.80 + 0.45 * Float(ki % 5) / 4
+            }
+        }
+    }
+
+    /// 布点：四类各占球面一个方向，类里每一份围绕它散成一簇（记忆越多簇越大）
     private func 重建节点坐标() {
-        let n = min(nodes.count, 512)
+        let topN = min(nodes.count, 32)
+        guard topN > 0 else { return }
         let gold = Float.pi * (3 - sqrt(5))
-        for i in 0..<n {
-            let p = Float(acos(1 - 2 * (Float(i) + 0.5) / Float(max(n, 1))))
-            let t = gold * Float(i)
-            nx[i] = sin(p) * cos(t)
-            ny[i] = cos(p)
-            nz[i] = sin(p) * sin(t)
+        // 四类时用正四面体四个方向（两两约 109 度），怎么转都不会挤在一起
+        let 四面: [(Float, Float, Float)] = [(0, 1, 0), (0.9428, -0.3333, 0),
+                                          (-0.4714, -0.3333, 0.8165), (-0.4714, -0.3333, -0.8165)]
+        for i in 0..<topN {
+            let ax: Float, ay: Float, az: Float
+            if topN <= 4 {
+                let d = 四面[i]
+                ax = d.0; ay = d.1; az = d.2
+            } else {
+                let p = Float(acos(1 - 2 * (Float(i) + 0.5) / Float(topN)))
+                let t = gold * Float(i)
+                ax = sin(p) * cos(t)
+                ay = cos(p)
+                az = sin(p) * sin(t)
+            }
+            guard let ci = 点号[nodes[i].id] else { continue }
+            nx[ci] = ax; ny[ci] = ay; nz[ci] = az
+
+            let kids = nodes[i].kids ?? []
+            let k = kids.count
+            if k == 0 { continue }
+
+            var ux: Float = 0, uy: Float = 1, uz: Float = 0
+            if abs(ay) > 0.92 { ux = 1; uy = 0; uz = 0 }
+            var e1x = uy * az - uz * ay, e1y = uz * ax - ux * az, e1z = ux * ay - uy * ax
+            var l1 = sqrt(e1x * e1x + e1y * e1y + e1z * e1z)
+            if l1 < 1e-4 { e1x = 1; e1y = 0; e1z = 0; l1 = 1 }
+            e1x /= l1; e1y /= l1; e1z /= l1
+            let e2x = ay * e1z - az * e1y, e2y = az * e1x - ax * e1z, e2z = ax * e1y - ay * e1x
+
+            let cap = min(0.50, 0.16 + 0.040 * sqrt(Float(k)))
+            for j in 0..<k {
+                guard let ki = 点号[kids[j].id] else { continue }
+                let tt = (Float(j) + 0.5) / Float(k)
+                let rr = cap * sqrt(tt) * (0.84 + 0.30 * Float((j * 37) % 11) / 10)
+                let ph = gold * Float(j)
+                let cs = cos(rr), sn = sin(rr)
+                let qx = ax * cs + (e1x * cos(ph) + e2x * sin(ph)) * sn
+                let qy = ay * cs + (e1y * cos(ph) + e2y * sin(ph)) * sn
+                let qz = az * cs + (e1z * cos(ph) + e2z * sin(ph)) * sn
+                let ql = sqrt(qx * qx + qy * qy + qz * qz)
+                if ql < 1e-4 { continue }
+                nx[ki] = qx / ql; ny[ki] = qy / ql; nz[ki] = qz / ql
+            }
         }
     }
 
@@ -270,7 +331,7 @@ final class MemPlanetUIView: UIView {
             if abs(goalRy - ry) < 0.003 && abs(goalRx - rx) < 0.003 {
                 ry = goalRy; rx = goalRx; goalOn = false
             }
-        } else if !dragging && auto && now - lastAct > 2.2 {
+        } else if !dragging && auto && now - lastAct > 0.26 {   // 一松手就接着转
             ry += 0.096 * dt
         }
         setNeedsDisplay()
@@ -287,6 +348,9 @@ final class MemPlanetUIView: UIView {
         let csY = CGFloat(cos(ry)), snY = CGFloat(sin(ry))
         let csX = CGFloat(cos(rx)), snX = CGFloat(sin(rx))
         let csZ = CGFloat(cos(0.28)), snZ = CGFloat(sin(0.28))
+        let now = CACurrentMediaTime()
+        // 整球缓缓胀缩：6 秒一次、幅度 3%（"它在喘气"，不是缩放动画）
+        let 呼吸 = 1 + 0.030 * CGFloat(sin(now * 0.00052))
 
         // ---- 散点分桶 ----
         let bucketN = Self.COLOR_N * Self.DEPTH_N
@@ -302,8 +366,9 @@ final class MemPlanetUIView: UIView {
             let sx = x1 * csZ - y1 * snZ
             let sy = x1 * snZ + y1 * csZ
             let f = 1 / (1 - z2 * 0.30)
-            let X = cx + sx * R * f
-            let Y = cy - sy * R * f
+            let wob = 1 + 0.015 * CGFloat(sin(now * 0.00090 + Double(pPh[i])))
+            let X = cx + sx * R * 呼吸 * wob * f
+            let Y = cy - sy * R * 呼吸 * wob * f
             let depth = z2 > 0.25 ? 2 : (z2 > -0.25 ? 1 : 0)
             let bi = depth * Self.COLOR_N + pcol[i]
             if bufPaths[bi] == nil { bufPaths[bi] = CGMutablePath() }
@@ -331,8 +396,10 @@ final class MemPlanetUIView: UIView {
                 let bsx = bx1 * csZ - by1 * snZ, bsy = bx1 * snZ + by1 * csZ
                 let bf = 1 / (1 - bz2 * 0.30)
 
-                linePath.move(to: CGPoint(x: cx + asx * R * af, y: cy - asy * R * af))
-                linePath.addLine(to: CGPoint(x: cx + bsx * R * bf, y: cy - bsy * R * bf))
+                let aw = 呼吸 * (1 + 0.015 * CGFloat(sin(now * 0.00090 + Double(pPh[a]))))
+                let bw = 呼吸 * (1 + 0.015 * CGFloat(sin(now * 0.00090 + Double(pPh[b]))))
+                linePath.move(to: CGPoint(x: cx + asx * R * aw * af, y: cy - asy * R * aw * af))
+                linePath.addLine(to: CGPoint(x: cx + bsx * R * bw * bf, y: cy - bsy * R * bw * bf))
             }
             ctx.addPath(linePath)
             ctx.setStrokeColor(UIColor(red: 111/255, green: 168/255, blue: 184/255, alpha: 0.13).cgColor)
@@ -351,8 +418,8 @@ final class MemPlanetUIView: UIView {
             ctx.fillPath()
         }
 
-        // ---- 记忆节点 ----
-        let n = min(nodes.count, 512)
+        // ---- 记忆点：四类各一簇，每一份记忆都是一颗 ----
+        let n = min(点.count, 512)
         for i in 0..<n {
             let x = CGFloat(nx[i]), y = CGFloat(ny[i]), z = CGFloat(nz[i])
             let x1 = x * csY + z * snY
@@ -362,50 +429,101 @@ final class MemPlanetUIView: UIView {
             let sx = x1 * csZ - y1 * snZ
             let sy = x1 * snZ + y1 * csZ
             let f = 1 / (1 - z2 * 0.30)
-            nsx[i] = Float(cx + sx * R * 1.02 * f)
-            nsy[i] = Float(cy - sy * R * 1.02 * f)
+            let nw = 呼吸 * (1 + 0.012 * CGFloat(sin(now * 0.00080 + Double(i) * 0.9)))
+            let out: CGFloat = 母点[i] < 0 ? 1.055 : 1.040
+            nsx[i] = Float(cx + sx * R * out * nw * f)
+            nsy[i] = Float(cy - sy * R * out * nw * f)
             nsf[i] = Float(z2)
         }
+
+        // 类别到它自己每一份之间的细线：一眼看得出"这些记忆属于这一类"
+        let 簇色 = UIColor(red: 111/255, green: 168/255, blue: 184/255, alpha: 1)
+        ctx.setLineWidth(0.7)
+        for i in 0..<n {
+            let m = 母点[i]
+            if m < 0 || m >= n { continue }
+            if nsf[i] < -0.30 { continue }
+            let dep = CGFloat((nsf[i] + 1) * 0.5)
+            ctx.setStrokeColor(簇色.withAlphaComponent(0.06 + 0.20 * dep).cgColor)
+            ctx.move(to: CGPoint(x: CGFloat(nsx[m]), y: CGFloat(nsy[m])))
+            ctx.addLine(to: CGPoint(x: CGFloat(nsx[i]), y: CGFloat(nsy[i])))
+            ctx.strokePath()
+        }
+
         var order = Array(0..<n)
         order.sort { nsf[$0] < nsf[$1] }
 
-        let now = CACurrentMediaTime()
         for i in order {
-            let nd = nodes[i]
+            let nd = 点[i]
             let sel = (focusId == nd.id)
+            let 类 = 母点[i] < 0
+            let 径 = CGFloat(点径[i])
             let scale: CGFloat = sel ? 2.4 : 1
             let depth = CGFloat(max(0, min(1, (nsf[i] + 1) / 2)))
-            let alpha = 0.25 + 0.75 * depth
+            let alpha = (类 ? 0.30 : 0.18) + (类 ? 0.70 : 0.82) * depth
             let col = 类别色(nd.cat)
             let X = CGFloat(nsx[i]), Y = CGFloat(nsy[i])
 
             // 柔光
-            let gs = 38 * scale * (1 + 0.10 * CGFloat(sin(now * 3 + Double(i) * 0.9)))
+            let gs = (类 ? 30.0 : 17.0) * 径 * scale
+                * (1 + 0.10 * CGFloat(sin(now * 3 + Double(i) * 0.9)))
             if let g = 光晕图() {
                 ctx.saveGState()
-                ctx.setAlpha(alpha * (sel ? 0.58 : 0.46))
+                ctx.setAlpha(alpha * (sel ? 0.58 : (类 ? 0.44 : 0.30)))
                 ctx.setBlendMode(.plusLighter)
                 ctx.draw(g, in: CGRect(x: X - gs / 2, y: Y - gs / 2, width: gs, height: gs))
                 ctx.restoreGState()
             }
+            // 类别点外面那圈淡环（一颗"珠子"，跟装饰散点分开）
+            if 类 {
+                ctx.setStrokeColor(col.withAlphaComponent(alpha * (sel ? 0.75 : 0.45)).cgColor)
+                ctx.setLineWidth(1.1)
+                let rr = 9 * scale
+                ctx.strokeEllipse(in: CGRect(x: X - rr, y: Y - rr, width: rr * 2, height: rr * 2))
+            }
             // 极点
-            ctx.setFillColor(UIColor.white.withAlphaComponent(alpha).cgColor)
-            ctx.fillEllipse(in: CGRect(x: X - 5.5 * scale, y: Y - 5.5 * scale,
-                                       width: 11 * scale, height: 11 * scale))
+            ctx.setFillColor(UIColor.white.withAlphaComponent(min(1, alpha + 0.10)).cgColor)
+            let r1 = (类 ? 6.0 : 3.2) * scale
+            ctx.fillEllipse(in: CGRect(x: X - r1, y: Y - r1, width: r1 * 2, height: r1 * 2))
             // 核心
-            ctx.setFillColor(col.withAlphaComponent(min(1, alpha + 0.15)).cgColor)
-            ctx.fillEllipse(in: CGRect(x: X - 2.6 * scale, y: Y - 2.6 * scale,
-                                       width: 5.2 * scale, height: 5.2 * scale))
+            ctx.setFillColor(col.withAlphaComponent(min(1, alpha + 0.20)).cgColor)
+            let r2 = (类 ? 3.0 : 1.6) * scale
+            ctx.fillEllipse(in: CGRect(x: X - r2, y: Y - r2, width: r2 * 2, height: r2 * 2))
 
-            // 名字
-            let la = sel ? 1.0 : 0.08 + 0.92 * pow(depth, 1.7)
-            let font = UIFont.systemFont(ofSize: sel ? 12.5 : 10.5, weight: .light)
-            let str = NSAttributedString(string: 缩短(nd.label), attributes: [
-                .font: font,
-                .foregroundColor: UIColor(red: 236/255, green: 244/255, blue: 252/255, alpha: la),
-            ])
-            let sz = str.size()
-            str.draw(at: CGPoint(x: X - sz.width / 2, y: Y - (sel ? 30 : 18) - sz.height))
+            // 名字：类别一直显示（带份数）；单份记忆只在点中时显示，免得糊成一片
+            if 类 {
+                let kn = (nd.kids ?? []).count
+                let la = sel ? 1.0 : 0.10 + 0.90 * pow(depth, 1.5)
+                let font = UIFont.systemFont(ofSize: sel ? 12.5 : 10.5, weight: .light)
+                let sh = NSShadow()
+                sh.shadowColor = UIColor.black.withAlphaComponent(0.70)
+                sh.shadowBlurRadius = 3
+                sh.shadowOffset = CGSize(width: 0, height: 1)
+                let str = NSAttributedString(string: "\(缩短(nd.label)) · \(kn)", attributes: [
+                    .font: font,
+                    .foregroundColor: UIColor(red: 236/255, green: 244/255, blue: 252/255, alpha: la),
+                    .shadow: sh,
+                ])
+                let sz = str.size()
+                var ly = Y - (sel ? 30 : 17) - sz.height
+                if ly < 6 { ly = Y + (sel ? 20 : 14) }   // 贴到顶就画到下面
+                str.draw(at: CGPoint(x: X - sz.width / 2, y: ly))
+            } else if sel {
+                let font = UIFont.systemFont(ofSize: 12, weight: .medium)
+                let sh = NSShadow()
+                sh.shadowColor = UIColor.black.withAlphaComponent(0.75)
+                sh.shadowBlurRadius = 3
+                sh.shadowOffset = CGSize(width: 0, height: 1)
+                let str = NSAttributedString(string: 缩短(nd.label), attributes: [
+                    .font: font,
+                    .foregroundColor: UIColor(red: 236, green: 244, blue: 252, alpha: 1).withAlphaComponent(1),
+                    .shadow: sh,
+                ])
+                let sz = str.size()
+                var ly = Y - 26 - sz.height
+                if ly < 6 { ly = Y + 16 }
+                str.draw(at: CGPoint(x: X - sz.width / 2, y: ly))
+            }
         }
 
         if n == 0 {
@@ -504,15 +622,17 @@ final class MemPlanetUIView: UIView {
     }
 
     private func 命中(_ p: CGPoint) -> MemNode? {
-        let n = min(nodes.count, 512)
+        let n = min(点.count, 512)
         var best = -1
-        var bd: CGFloat = 30
+        var bd = CGFloat.greatestFiniteMagnitude
         for i in 0..<n {
-            if nsf[i] < 0.05 { continue }
+            if nsf[i] < 0.02 { continue }
             let d = hypot(p.x - CGFloat(nsx[i]), p.y - CGFloat(nsy[i]))
+            let lim: CGFloat = 母点[i] < 0 ? 26 : 15
+            if d > lim { continue }
             if d < bd { bd = d; best = i }
         }
-        return best >= 0 ? nodes[best] : nil
+        return best >= 0 ? 点[best] : nil
     }
 }
 
@@ -546,7 +666,10 @@ struct MemPlanet: UIViewRepresentable {
 
     private func 算签名(_ ns: [MemNode]) -> Int {
         var h = 17
-        for n in ns { h = h &* 31 &+ n.id &+ n.label.count }
+        for n in ns {
+            h = h &* 31 &+ n.id &+ n.label.count
+            for k in (n.kids ?? []) { h = h &* 31 &+ k.id &+ k.label.count }   // ★ 加了/删了一份也要重画
+        }
         return h
     }
 }

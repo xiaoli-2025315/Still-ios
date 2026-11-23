@@ -59,6 +59,20 @@ enum MemAPI {
               let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               o["ok"] as? Bool == true else { return [:] }
+        /// ★★ 2026-11-23 真根因：带了「类别」时台子回的「柜子」直接是数组，
+        ///   只有不带类别时才是 {类别: [...]}。以前一律当字典 ⇒ 每只猫都「还没有记忆」。
+        func 解析(_ arr: [[String: Any]]) -> [File] {
+            arr.compactMap { d in
+                guard let 名 = d["名"] as? String else { return nil }
+                return File(名: 名, 摘要: d["摘要"] as? String ?? "",
+                            重要: d["重要"] as? String ?? "",
+                            时间: d["时间"] as? String ?? "",
+                            字节: (d["字节"] as? NSNumber)?.intValue ?? 0)
+            }
+        }
+        if let flat = o["柜子"] as? [[String: Any]] {
+            return [cat ?? "": 解析(flat)]
+        }
         guard let box = o["柜子"] as? [String: Any] else { return [:] }
         var out: [String: [File]] = [:]
         for (k, v) in box {

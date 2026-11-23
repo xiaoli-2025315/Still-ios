@@ -43,7 +43,9 @@ final class MemPlanetUIView: UIView {
     func focusOn(_ node: MemNode) {
         guard 点号[node.id] != nil else { return }
         focusId = node.id
-        auto = false
+        // ★★ 2026-11-23：以前这里关掉自动旋转后再没人打开 ⇒ 点一颗就永远停住。
+        //   现在照样转，只放慢（在 tick 里按 focus 分档）。
+        auto = true
         goalOn = false
         lastAct = CACurrentMediaTime()
         setNeedsDisplay()
@@ -106,11 +108,71 @@ final class MemPlanetUIView: UIView {
 
     private var dragging = false
     private var lastX: CGFloat = 0, lastY: CGFloat = 0
+    private var downX0: CGFloat = 0, downY0: CGFloat = 0
     private var moved: CGFloat = 0
 
     private var link: CADisplayLink?
     private var lastFrame: CFTimeInterval = 0
     private var glowImg: UIImage?
+
+    // ★★ 2026-11-23：姿态改成 3×3 旋转矩阵。
+    //   以前 ry/rx 两个欧拉角：上下拖会被 clamp 住、斜着划也只能"先竖后横"，
+    //   跟手指划的那条线对不上。现在拖动 = 绕**垂直于划线**的轴转（那条线的横截面方向）。
+    private var M: [CGFloat] = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    private var 姿态初 = false
+    // 聚焦那块区域整体放大（不是只把一颗珠子画大）
+    private var 聚焦i = -1
+    private var 聚焦x: CGFloat = 0, 聚焦y: CGFloat = 0
+    private var 放大量: CGFloat = 0
+
+    private func 左乘Y(_ th: CGFloat) {
+        let c = cos(th), s = sin(th)
+        左乘([c, 0, s, 0, 1, 0, -s, 0, c])
+    }
+
+    private func 左乘轴角(_ ux: CGFloat, _ uy: CGFloat, _ uz: CGFloat, _ th: CGFloat) {
+        let len = (ux * ux + uy * uy + uz * uz).squareRoot()
+        if len < 0.000001 || abs(th) < 0.0000001 { return }
+        let x = ux / len, y = uy / len, z = uz / len
+        let c = cos(th), s = sin(th), t = 1 - c
+        左乘([t * x * x + c, t * x * y - s * z, t * x * z + s * y,
+             t * x * y + s * z, t * y * y + c, t * y * z - s * x,
+             t * x * z - s * y, t * y * z + s * x, t * z * z + c])
+    }
+
+    private func 左乘(_ r: [CGFloat]) {
+        let m00 = M[0], m01 = M[1], m02 = M[2]
+        let m10 = M[3], m11 = M[4], m12 = M[5]
+        let m20 = M[6], m21 = M[7], m22 = M[8]
+        M[0] = r[0] * m00 + r[1] * m10 + r[2] * m20
+        M[1] = r[0] * m01 + r[1] * m11 + r[2] * m21
+        M[2] = r[0] * m02 + r[1] * m12 + r[2] * m22
+        M[3] = r[3] * m00 + r[4] * m10 + r[5] * m20
+        M[4] = r[3] * m01 + r[4] * m11 + r[5] * m21
+        M[5] = r[3] * m02 + r[4] * m12 + r[5] * m22
+        M[6] = r[6] * m00 + r[7] * m10 + r[8] * m20
+        M[7] = r[6] * m01 + r[7] * m11 + r[8] * m21
+        M[8] = r[6] * m02 + r[7] * m12 + r[8] * m22
+    }
+
+    private func 建姿态() {
+        M = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+        左乘Y(CGFloat(ry))
+        左乘轴角(1, 0, 0, CGFloat(rx))
+        左乘轴角(0, 0, 1, 0.28)
+        姿态初 = true
+    }
+
+    /// 局部放大：以聚焦点为心，附近一整片一起放大（高斯权重，边上平滑过渡）
+    private func 局部放大(_ p: inout CGPoint) {
+        if 聚焦i < 0 || 放大量 < 0.002 { return }
+        let dx = p.x - 聚焦x, dy = p.y - 聚焦y
+        let sig = R * 0.38
+        let w = exp(-(dx * dx + dy * dy) / (2 * sig * sig)) * 放大量
+        let g = 1 + 0.60 * w
+        p.x = 聚焦x + dx * g
+        p.y = 聚焦y + dy * g
+    }
 
     // 分桶缓冲
     private var bufPaths = [CGMutablePath?](repeating: nil, count: MemPlanetUIView.COLOR_N * MemPlanetUIView.DEPTH_N)
@@ -325,6 +387,7 @@ final class MemPlanetUIView: UIView {
         let dt = min(0.05, Float(now - lastFrame))
         lastFrame = now
 
+        if !姿态初 { 建姿态() }
         if goalOn {
             let k = 1 - pow(1 - 0.11, dt * 60)
             ry += (goalRy - ry) * k
@@ -333,7 +396,8 @@ final class MemPlanetUIView: UIView {
                 ry = goalRy; rx = goalRx; goalOn = false
             }
         } else if !dragging && auto && now - lastAct > 0.26 {   // 一松手就接着转
-            ry += 0.096 * dt
+            // 聚焦着也慢慢转（约 1/3 速），标签跟着那颗点走
+            左乘Y(CGFloat((focusId != nil ? 0.030 : 0.096) * Double(dt)))
         }
         setNeedsDisplay()
     }
@@ -345,13 +409,46 @@ final class MemPlanetUIView: UIView {
         let cx = W / 2
         let cy = H / 2 - 6
         let R = min(W * 0.31, 112)
+        let R用 = R * (1 + 0.05 * 放大量)   // 聚焦时整球再放大 5%（凑近看那块）
 
-        let csY = CGFloat(cos(ry)), snY = CGFloat(sin(ry))
-        let csX = CGFloat(cos(rx)), snX = CGFloat(sin(rx))
-        let csZ = CGFloat(cos(0.28)), snZ = CGFloat(sin(0.28))
+        if !姿态初 { 建姿态() }
+        let m00 = M[0], m01 = M[1], m02 = M[2]
+        let m10 = M[3], m11 = M[4], m12 = M[5]
+        let m20 = M[6], m21 = M[7], m22 = M[8]
         let now = CACurrentMediaTime()
         // 整球缓缓胀缩：6 秒一次、幅度 3%（"它在喘气"，不是缩放动画）
         let 呼吸 = 1 + 0.030 * CGFloat(sin(now * 0.00052))
+
+        // ---- 记忆点先投影（散点要跟着它们做"整块放大"）----
+        let n = min(点.count, 512)
+        for i in 0..<n {
+            let x = CGFloat(nx[i]), y = CGFloat(ny[i]), z = CGFloat(nz[i])
+            let x1 = m00 * x + m01 * y + m02 * z
+            let y1 = m10 * x + m11 * y + m12 * z
+            let z2 = m20 * x + m21 * y + m22 * z
+            let f = 1 / (1 - z2 * 0.30)
+            let nw = 呼吸 * (1 + 0.012 * CGFloat(sin(now * 0.00080 + Double(i) * 0.9)))
+            let out: CGFloat = 母点[i] < 0 ? 1.055 : 1.040
+            nsx[i] = Float(cx + x1 * R用 * out * nw * f)
+            nsy[i] = Float(cy - y1 * R用 * out * nw * f)
+            nsf[i] = Float(z2)
+        }
+        聚焦i = -1
+        if let fid = focusId, let boxed = 点号[fid], boxed >= 0, boxed < n {
+            聚焦i = boxed
+            聚焦x = CGFloat(nsx[boxed])
+            聚焦y = CGFloat(nsy[boxed])
+        }
+        let 目标量: CGFloat = 聚焦i >= 0 ? 1 : 0
+        放大量 += (目标量 - 放大量) * 0.13
+        if 放大量 < 0.002 { 放大量 = 目标量 > 0 ? 0.002 : 0 }
+        if 放大量 > 0.002 {
+            for i in 0..<n {
+                var p = CGPoint(x: CGFloat(nsx[i]), y: CGFloat(nsy[i]))
+                局部放大(&p)
+                nsx[i] = Float(p.x); nsy[i] = Float(p.y)
+            }
+        }
 
         // ---- 散点分桶 ----
         let bucketN = Self.COLOR_N * Self.DEPTH_N
@@ -360,16 +457,18 @@ final class MemPlanetUIView: UIView {
 
         for i in 0..<px.count {
             let x = CGFloat(px[i]), y = CGFloat(py[i]), z = CGFloat(pz[i])
-            let x1 = x * csY + z * snY
-            let z1 = -x * snY + z * csY
-            let y1 = y * csX - z1 * snX
-            let z2 = y * snX + z1 * csX
-            let sx = x1 * csZ - y1 * snZ
-            let sy = x1 * snZ + y1 * csZ
+            let x1 = m00 * x + m01 * y + m02 * z
+            let y1 = m10 * x + m11 * y + m12 * z
+            let z2 = m20 * x + m21 * y + m22 * z
             let f = 1 / (1 - z2 * 0.30)
             let wob = 1 + 0.015 * CGFloat(sin(now * 0.00090 + Double(pPh[i])))
-            let X = cx + sx * R * 呼吸 * wob * f
-            let Y = cy - sy * R * 呼吸 * wob * f
+            var X = cx + x1 * R用 * 呼吸 * wob * f
+            var Y = cy - y1 * R用 * 呼吸 * wob * f
+            if 放大量 > 0.002 {
+                var p = CGPoint(x: X, y: Y)
+                局部放大(&p)
+                X = p.x; Y = p.y
+            }
             let depth = z2 > 0.25 ? 2 : (z2 > -0.25 ? 1 : 0)
             let bi = depth * Self.COLOR_N + pcol[i]
             if bufPaths[bi] == nil { bufPaths[bi] = CGMutablePath() }
@@ -383,24 +482,20 @@ final class MemPlanetUIView: UIView {
             let linePath = CGMutablePath()
             for k in 0..<segA.count {
                 let a = segA[k], b = segB[k]
-                let ax1 = CGFloat(px[a]) * csY + CGFloat(pz[a]) * snY
-                let az1 = -CGFloat(px[a]) * snY + CGFloat(pz[a]) * csY
-                let ay1 = CGFloat(py[a]) * csX - az1 * snX
-                let az2 = CGFloat(py[a]) * snX + az1 * csX
-                let asx = ax1 * csZ - ay1 * snZ, asy = ax1 * snZ + ay1 * csZ
+                let ax1 = CGFloat(px[a]) * m00 + CGFloat(py[a]) * m01 + CGFloat(pz[a]) * m02
+                let ay1 = CGFloat(px[a]) * m10 + CGFloat(py[a]) * m11 + CGFloat(pz[a]) * m12
+                let az2 = CGFloat(px[a]) * m20 + CGFloat(py[a]) * m21 + CGFloat(pz[a]) * m22
                 let af = 1 / (1 - az2 * 0.30)
 
-                let bx1 = CGFloat(px[b]) * csY + CGFloat(pz[b]) * snY
-                let bz1 = -CGFloat(px[b]) * snY + CGFloat(pz[b]) * csY
-                let by1 = CGFloat(py[b]) * csX - bz1 * snX
-                let bz2 = CGFloat(py[b]) * snX + bz1 * csX
-                let bsx = bx1 * csZ - by1 * snZ, bsy = bx1 * snZ + by1 * csZ
+                let bx1 = CGFloat(px[b]) * m00 + CGFloat(py[b]) * m01 + CGFloat(pz[b]) * m02
+                let by1 = CGFloat(px[b]) * m10 + CGFloat(py[b]) * m11 + CGFloat(pz[b]) * m12
+                let bz2 = CGFloat(px[b]) * m20 + CGFloat(py[b]) * m21 + CGFloat(pz[b]) * m22
                 let bf = 1 / (1 - bz2 * 0.30)
 
                 let aw = 呼吸 * (1 + 0.015 * CGFloat(sin(now * 0.00090 + Double(pPh[a]))))
                 let bw = 呼吸 * (1 + 0.015 * CGFloat(sin(now * 0.00090 + Double(pPh[b]))))
-                linePath.move(to: CGPoint(x: cx + asx * R * aw * af, y: cy - asy * R * aw * af))
-                linePath.addLine(to: CGPoint(x: cx + bsx * R * bw * bf, y: cy - bsy * R * bw * bf))
+                linePath.move(to: CGPoint(x: cx + ax1 * R用 * aw * af, y: cy - ay1 * R用 * aw * af))
+                linePath.addLine(to: CGPoint(x: cx + bx1 * R用 * bw * bf, y: cy - by1 * R用 * bw * bf))
             }
             ctx.addPath(linePath)
             ctx.setStrokeColor(UIColor(red: 111/255, green: 168/255, blue: 184/255, alpha: 0.13).cgColor)
@@ -419,23 +514,7 @@ final class MemPlanetUIView: UIView {
             ctx.fillPath()
         }
 
-        // ---- 记忆点：四类各一簇，每一份记忆都是一颗 ----
-        let n = min(点.count, 512)
-        for i in 0..<n {
-            let x = CGFloat(nx[i]), y = CGFloat(ny[i]), z = CGFloat(nz[i])
-            let x1 = x * csY + z * snY
-            let z1 = -x * snY + z * csY
-            let y1 = y * csX - z1 * snX
-            let z2 = y * snX + z1 * csX
-            let sx = x1 * csZ - y1 * snZ
-            let sy = x1 * snZ + y1 * csZ
-            let f = 1 / (1 - z2 * 0.30)
-            let nw = 呼吸 * (1 + 0.012 * CGFloat(sin(now * 0.00080 + Double(i) * 0.9)))
-            let out: CGFloat = 母点[i] < 0 ? 1.055 : 1.040
-            nsx[i] = Float(cx + sx * R * out * nw * f)
-            nsy[i] = Float(cy - sy * R * out * nw * f)
-            nsf[i] = Float(z2)
-        }
+        // ---- 记忆点：四类各一簇，每一份记忆都是一颗（投影已在上面算好）----
 
         // 类别到它自己每一份之间的细线：一眼看得出"这些记忆属于这一类"
         let 簇色 = UIColor(red: 111/255, green: 168/255, blue: 184/255, alpha: 1)
@@ -581,6 +660,7 @@ final class MemPlanetUIView: UIView {
         moved = 0
         lastX = t.location(in: self).x
         lastY = t.location(in: self).y
+        downX0 = lastX; downY0 = lastY
         auto = false
         goalOn = false
         lastAct = CACurrentMediaTime()
@@ -591,8 +671,9 @@ final class MemPlanetUIView: UIView {
         let p = t.location(in: self)
         let dx = p.x - lastX, dy = p.y - lastY
         moved += abs(dx) + abs(dy)
-        ry += Float(dx) * 0.012
-        rx = max(-1.1, min(1.1, rx + Float(dy) * 0.009))
+        // ★ 球面沿手指那条线滚：转轴 = 垂直于划线（ω = r × v），转角 = 弧长 / 半径
+        let 弧 = (dx * dx + dy * dy).squareRoot()
+        if 弧 > 0.01 && R > 1 { 左乘轴角(dy, dx, 0, 弧 * 1.6 / R) }
         lastX = p.x; lastY = p.y
         lastAct = CACurrentMediaTime()
         setNeedsDisplay()
@@ -603,7 +684,9 @@ final class MemPlanetUIView: UIView {
         dragging = false
         lastAct = CACurrentMediaTime()
         let p = t.location(in: self)
-        if moved < 7 {
+        // ★ 判"点一下"用起止距离（以前用抖动累加，轻微抖就被当拖动）
+        let 位移 = hypot(p.x - downX0, p.y - downY0)
+        if 位移 < 8 {
             let hit = 命中(p)
             if let h = hit {
                 focusOn(h)
@@ -612,13 +695,13 @@ final class MemPlanetUIView: UIView {
                 clearFocus()
                 onTap?(nil)
             }
-        } else {
-            auto = (focusId == nil)
         }
+        auto = true      // ★ 松手一定接着转（以前会留 false ⇒ 卡死）
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         dragging = false
+        auto = true
         lastAct = CACurrentMediaTime()
     }
 

@@ -1,24 +1,26 @@
 import SwiftUI
 
-// ★ 2026-11-23：浅色组件在深底上的「冷光悬浮」。
-// 白卡边缘一圈冷青光（不是白光，白光在深底上会糊成一片），配一点黑影托底，
-// 像浅卡浮在深背景之上。参数照用户确认的预览：淡冷描边 + 近光 + 远光 + 基础黑影。
+// ★ 2026-11-23 二次修正：真辉光 —— 从白卡边缘「向外晕开」，不是描一圈线。
+// 做法：在白卡底下垫两层冷色圆角并做 .blur()，白卡盖住光心，
+// 只留边缘透出来的柔光；最外面再垫一层黑影托住，浅卡就像浮在深底上。
 private struct 冷光悬浮: ViewModifier {
     var 圆角: CGFloat = 16
     func body(content: Content) -> some View {
         content
-            // 远光 rgba(111,168,184,.28)
-            .shadow(color: Color(red: 111/255, green: 168/255, blue: 184/255).opacity(0.28),
-                    radius: 16, y: 0)
-            // 近光 rgba(143,180,255,.42)
-            .shadow(color: Color(red: 143/255, green: 180/255, blue: 255/255).opacity(0.42),
-                    radius: 6, y: 0)
+            .background(
+                ZStack {
+                    // 远光：冷青 rgba(111,168,184)，大半径慢慢散开
+                    RoundedRectangle(cornerRadius: 圆角)
+                        .fill(Color(red: 111/255, green: 168/255, blue: 184/255).opacity(0.55))
+                        .blur(radius: 20)
+                    // 近光：冷蓝白 rgba(143,180,255)，小半径、亮一点，贴边往外透
+                    RoundedRectangle(cornerRadius: 圆角)
+                        .fill(Color(red: 143/255, green: 180/255, blue: 255/255).opacity(0.75))
+                        .blur(radius: 8)
+                }
+            )
             // 基础黑影托底
-            .shadow(color: .black.opacity(0.30), radius: 8, y: 4)
-            // 淡冷描边 rgba(174,205,255,.55)
-            .overlay(RoundedRectangle(cornerRadius: 圆角)
-                        .stroke(Color(red: 174/255, green: 205/255, blue: 255/255).opacity(0.55),
-                                lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
     }
 }
 private extension View {

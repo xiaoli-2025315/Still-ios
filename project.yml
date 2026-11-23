@@ -23,8 +23,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.199.0"
-    CURRENT_PROJECT_VERSION: "199"
+    MARKETING_VERSION: "1.200.0"
+    CURRENT_PROJECT_VERSION: "200"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_PREVIEWS: "YES"
 
@@ -158,6 +158,10 @@ targets:
           - "MemView.swift"
           - "MemBallView.swift"
           - "Mem3DView.swift"
+          # ★ v200 记忆页改原生：球和页面都依赖 MemAPI / OrbPet / 贴票，
+          #   小组件没有这些，一并排除，否则 Widget target 编译不过。
+          - "MemPageNative.swift"
+          - "MemPlanetUIView.swift"
       - path: Sources/App/Cat
       - path: Sources/App/Home/WidgetCardView.swift
       # 组件里那张静态猫图。★ 显式写 buildPhase：png 是资源不是源码，

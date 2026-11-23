@@ -1,0 +1,1047 @@
+import SwiftUI
+
+// MARK: - 记忆页（原生版，2026-11-23）
+//
+// 整页不再嵌网页：深色底 + 柔光、原生粒子球、原生半圆轮盘、原生卡片。
+// 交互与网页版一一对应：点球上一颗 → 转到正面 + 拉线 + 出信息卡；
+// 点「打开这一份」→ 大卡片列表/详情，可改可删可加；三个点 → 角色表。
+//
+// ★ 数据只走 MemAPI 真读真写；读不到就空球 + 一句人话，绝不编数据。
+// ★ 旧的网页版 Mem3DView 原样留着，要退回把 MainHomeView 那一行换回去即可。
+
+struct MemPageNative: View {
+    let charId0: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var 角色: [MemAPI.Role] = []
+    @State private var curId: String = ""
+    @State private var 节点: [MemNode] = []
+    @State private var 聚焦: MemNode?
+
+    @State private var 搜索 = ""
+    @State private var 大卡路径: [MemNode] = []
+    @State private var 大卡详情正文: String = ""
+    @State private var 大卡说明: String = ""
+
+    @State private var 角色表开 = false
+    @State private var 角色表搜 = ""
+    @State private var 加卡开 = false
+    @State private var 加卡页 = 0
+    @State private var 新正文 = ""
+    @State private var 新说明 = ""
+    @State private var 新文件名 = ""
+
+    @State private var 待删: MemNode?
+    @State private var 吐 = ""
+    @State private var 载入中 = true
+    @State private var 拉柜子中 = false
+    @State private var 光晕动 = false
+
+    private let 深底 = Color(red: 14/255, green: 16/255, blue: 24/255)
+
+    // MARK: 画面
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                背景
+
+                MemPlanet(nodes: 节点) { nd in
+                    if let nd {
+                        withAnimation(.easeOut(duration: 0.2)) { 聚焦 = nd }
+                    } else {
+                        关聚焦()
+                    }
+                }
+                .padding(.bottom, 196)
+
+                VStack(spacing: 0) {
+                    顶栏
+                    if !搜索.isEmpty { 搜索结果 }
+                    Spacer(minLength: 0)
+                }
+
+                VStack {
+                    Spacer()
+                    MemRoleWheel(角色: $角色, cur: Binding(
+                        get: { 当前索引 },
+                        set: { 切角色到($0) }
+                    )) { 角色表开 = true }
+                    .frame(height: 206)
+                }
+
+                if let f = 聚焦 {
+                    信息卡层(f, geo)
+                }
+
+                弹层
+                吐司层
+            }
+            .background(深底.ignoresSafeArea())
+            .onAppear {
+                开始动()
+                Task { await 起() }
+            }
+        }
+    }
+
+    // 背景：深底 + 三团缓慢游走的柔光
+    private var 背景: some View {
+        ZStack {
+            深底
+            Circle()
+                .fill(RadialGradient(colors: [Color(red: 72/255, green: 104/255, blue: 196/255).opacity(0.28), .clear],
+                                     center: .center, startRadius: 0, endRadius: 260))
+                .frame(width: 520, height: 520)
+                .blur(radius: 60)
+                .offset(x: 光晕动 ? 40 : -40, y: 光晕动 ? -60 : -20)
+            Circle()
+                .fill(RadialGradient(colors: [Color(red: 150/255, green: 86/255, blue: 168/255).opacity(0.24), .clear],
+                                     center: .center, startRadius: 0, endRadius: 240))
+                .frame(width: 480, height: 480)
+                .blur(radius: 60)
+                .offset(x: 光晕动 ? -50 : 50, y: 光晕动 ? 160 : 190)
+            Circle()
+                .fill(RadialGradient(colors: [Color(red: 46/255, green: 140/255, blue: 150/255).opacity(0.18), .clear],
+                                     center: .center, startRadius: 0, endRadius: 220))
+                .frame(width: 440, height: 440)
+                .blur(radius: 60)
+                .offset(x: 光晕动 ? 60 : -20, y: 光晕动 ? 320 : 360)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func 开始动() {
+        withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) {
+            光晕动 = true
+        }
+    }
+
+    // MARK: 顶栏
+
+    private var 顶栏: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Color(red: 0.9, green: 0.91, blue: 0.95))
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                TextField("", text: $搜索,
+                          prompt: Text("搜一搜，直接打开任意一层")
+                            .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61)))
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                if !搜索.isEmpty {
+                    Button { 搜索 = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 13)
+            .frame(height: 40)
+            .background(.white, in: Capsule())
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+
+            Button { 开加卡() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .frame(width: 42, height: 40)
+                    .background(.white, in: Capsule())
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 15)
+        .padding(.top, 6)
+    }
+
+    private var 搜索结果: some View {
+        let hits = 搜到的()
+        return VStack(spacing: 0) {
+            if hits.isEmpty {
+                Text("没找到「\(搜索)」")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            } else {
+                ForEach(hits, id: \.id) { n in
+                    Button {
+                        搜索 = ""
+                        开大卡(n)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle().fill(类别色(n.cat)).frame(width: 7, height: 7)
+                            Text(n.label).font(.system(size: 11))
+                                .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                            Spacer()
+                            Text(n.type == "folder" ? "球上" : n.catName)
+                                .font(.system(size: 8.5))
+                                .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                    }
+                    .buttonStyle(.plain)
+                    Divider().overlay(Color(red: 0.91, green: 0.91, blue: 0.89))
+                }
+            }
+        }
+        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.25), radius: 14, y: 6)
+        .padding(.horizontal, 15)
+        .padding(.top, 4)
+    }
+
+    // MARK: 信息卡
+
+    private func 信息卡层(_ f: MemNode, _ geo: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: geo.size.height * 0.45)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 7) {
+                    Circle().fill(类别色(f.cat)).frame(width: 8, height: 8)
+                    Text(f.label)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(标签名(f))
+                        .font(.system(size: 8.5))
+                        .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .overlay(RoundedRectangle(cornerRadius: 5)
+                            .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                }
+                Text(f.desc.isEmpty ? "还没有写说明。" : f.desc)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                    .lineSpacing(2)
+                    .padding(.leading, 15)
+                    .padding(.top, 7)
+                    .padding(.bottom, 10)
+
+                Button { 开大卡(f) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 12))
+                        Text("打开这一份").font(.system(size: 10.5))
+                    }
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .background(Color(red: 0.97, green: 0.97, blue: 0.96),
+                                in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(13)
+            .frame(width: 248)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: 所有弹层
+
+    @ViewBuilder private var 弹层: some View {
+        if !大卡路径.isEmpty {
+            遮罩层
+            大卡层
+        }
+        if 角色表开 {
+            遮罩层
+            角色表层
+        }
+        if 加卡开 {
+            遮罩层
+            加卡层
+        }
+        if 待删 != nil {
+            遮罩层
+            确认层
+        }
+    }
+
+    private var 遮罩层: some View {
+        Color.black.opacity(0.58)
+            .ignoresSafeArea()
+            .onTapGesture { 关所有() }
+            .transition(.opacity)
+    }
+
+    // ---------------- 大卡 ----------------
+
+    private var 当前文件: MemNode? { 大卡路径.last }
+
+    private var 大卡层: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                Button { 大卡返回() } label: {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                        .frame(width: 31, height: 31)
+                        .background(.white, in: Circle())
+                        .overlay(Circle().stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Text(当前文件?.label ?? "")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .lineLimit(1)
+                Spacer()
+                if (当前文件?.type ?? "") == "folder" {
+                    Button { 开加卡() } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                            .frame(width: 31, height: 31)
+                            .background(.white, in: Circle())
+                            .overlay(Circle().stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(13)
+            Divider().overlay(Color(red: 0.91, green: 0.91, blue: 0.89))
+            ScrollView { 大卡内容.padding(13) }
+        }
+        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 14)
+        .padding(.top, 56)
+        .padding(.bottom, 104)
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+    }
+
+    @ViewBuilder private var 大卡内容: some View {
+        if let f = 当前文件, f.type == "folder" {
+            Text("点一条看详情 · 长按左边小图标删掉 · 右上 + 在这一层加")
+                .font(.system(size: 9.5))
+                .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 9)
+            if (f.kids ?? []).isEmpty {
+                Text("这一层还空着，点右上 + 加一份。")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 22)
+            } else {
+                ForEach(f.kids ?? []) { k in
+                    列表行(k)
+                }
+            }
+        } else if let f = 当前文件 {
+            详情(f)
+        }
+    }
+
+    private func 列表行(_ k: MemNode) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(red: 0.95, green: 0.95, blue: 0.94))
+                Text("●").font(.system(size: 13)).foregroundColor(类别色(k.cat))
+            }
+            .frame(width: 36, height: 36)
+            .onLongPressGesture(minimumDuration: 0.55) {
+                待删 = k
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(k.label).font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07)).lineLimit(1)
+                Text(k.desc.isEmpty ? "点开看看里面" : k.desc)
+                    .font(.system(size: 9.5))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41)).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11))
+                .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+        }
+        .padding(10)
+        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { 进一层(k) }
+    }
+
+    private func 详情(_ f: MemNode) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("点下面就能改，改完写回同一份")
+                .font(.system(size: 9.5))
+                .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                .padding(.bottom, 9)
+
+            TextEditor(text: $大卡详情正文)
+                .font(.system(size: 12))
+                .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 140)
+                .padding(8)
+                .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+
+            Text("一句话说明")
+                .font(.system(size: 9.5))
+                .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                .padding(.top, 12).padding(.bottom, 5)
+
+            TextField("可选", text: $大卡说明)
+                .font(.system(size: 11))
+                .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                .padding(10)
+                .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+
+            Button { 存(f) } label: {
+                Text("存好")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).frame(height: 36)
+                    .background(Color(red: 0.07, green: 0.07, blue: 0.07),
+                                in: RoundedRectangle(cornerRadius: 11))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+        }
+    }
+
+    // ---------------- 角色表 ----------------
+
+    private var 角色表层: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("所有角色")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                Spacer()
+                Button { 角色表开 = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 9)
+
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                TextField("", text: $角色表搜, prompt: Text("搜角色名字")
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61)))
+                    .font(.system(size: 11))
+                .textInputAutocapitalization(.never)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(Color(red: 0.97, green: 0.97, blue: 0.96), in: Capsule())
+            .padding(.bottom, 5)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(角色.enumerated()), id: \.element.id) { i, r in
+                        if 角色表搜.isEmpty || r.名字.lowercased().contains(角色表搜.lowercased()) {
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    Circle().fill(Color(red: 0.89, green: 0.95, blue: 0.97))
+                                    Text(String(r.名字.prefix(1)))
+                                        .font(.system(size: 15)).foregroundColor(.black.opacity(0.8))
+                                }
+                                .frame(width: 32, height: 32)
+                                Text(r.名字).font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                                Spacer()
+                                Text("\(r.n) 份").font(.system(size: 9))
+                                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                                ZStack {
+                                    Circle()
+                                        .fill(i == 当前索引 ? Color(red: 0.07, green: 0.07, blue: 0.07) : .white)
+                                        .overlay(Circle().stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                                    if i == 当前索引 {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                                    }
+                                }
+                                .frame(width: 17, height: 17)
+                            }
+                            .padding(.vertical, 9)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                切角色到(i)
+                                角色表开 = false
+                                提示("现在看「\(r.名字)」")
+                            }
+                            Divider().overlay(Color(red: 0.91, green: 0.91, blue: 0.89))
+                        }
+                    }
+                    if 角色.isEmpty {
+                        Text("还没读到角色")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                            .padding(.vertical, 14)
+                    }
+                }
+            }
+        }
+        .padding(15)
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.60, alignment: .top)
+        .background(.white, in: UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22))
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .ignoresSafeArea(edges: .bottom)
+        .transition(.move(edge: .bottom))
+    }
+
+    // ---------------- 加记忆 ----------------
+
+    private var 加卡层: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if 加卡页 == 0 {
+                Text("＋")
+                    .font(.system(size: 30))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                    .frame(width: 84, height: 84)
+                    .background(Color(red: 0.95, green: 0.95, blue: 0.94), in: Circle())
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 12)
+                Text(当前角色名)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .frame(maxWidth: .infinity)
+
+                VStack(spacing: 0) {
+                    选项行("T", "文字", "写一段话，它读一遍记住") { 加卡页 = 1 }
+                    Divider().overlay(Color(red: 0.91, green: 0.91, blue: 0.89))
+                    选项行("▤", "文件", "照片、文件，记一笔") { 加卡页 = 2 }
+                }
+                .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                .padding(.top, 12)
+
+                Button { 关加卡() } label: {
+                    Text("关上").font(.system(size: 11))
+                        .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+            } else if 加卡页 == 1 {
+                Text("文字").font(.system(size: 13, weight: .bold))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .padding(.bottom, 10)
+                TextEditor(text: $新正文)
+                    .font(.system(size: 12))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 110)
+                    .padding(8)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 11))
+                    .overlay(RoundedRectangle(cornerRadius: 11)
+                        .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                TextField("", text: $新说明, prompt: Text("一句话说明（可不填）")
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61)))
+                    .font(.system(size: 11.5))
+                    .padding(10)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 11))
+                    .overlay(RoundedRectangle(cornerRadius: 11)
+                        .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                    .padding(.top, 9)
+                脚("确认") { 存新的文字() }
+            } else {
+                Text("文件").font(.system(size: 13, weight: .bold))
+                    .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .padding(.bottom, 10)
+                TextField("", text: $新文件名, prompt: Text("文件名 / 一句话")
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61)))
+                    .font(.system(size: 12))
+                    .padding(10)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 11))
+                    .overlay(RoundedRectangle(cornerRadius: 11)
+                        .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                Text("原文件仍在手机里，柜子只记一条。")
+                    .font(.system(size: 9.5))
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                    .padding(.top, 8)
+                脚("确认") { 存新的文件() }
+            }
+        }
+        .padding(16)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 20)
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+    }
+
+    private func 选项行(_ icon: String, _ title: String, _ sub: String,
+                     _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: 11) {
+                Text(icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                    .frame(width: 32, height: 32)
+                    .overlay(RoundedRectangle(cornerRadius: 9)
+                        .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    Text(sub).font(.system(size: 9))
+                        .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
+            }
+            .padding(11)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func 脚(_ ok: String, _ tap: @escaping () -> Void) -> some View {
+        HStack {
+            Button { 关加卡() } label: {
+                Text("关上").font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Button(action: tap) {
+                Text(ok)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 18).padding(.vertical, 9)
+                    .background(Color(red: 0.07, green: 0.07, blue: 0.07),
+                                in: RoundedRectangle(cornerRadius: 11))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 11)
+    }
+
+    // ---------------- 删除确认 ----------------
+
+    private var 确认层: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("确定删掉这一份？")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
+            Text("「\(待删?.label ?? "这一份")」会从柜子里删掉，可以在返回里找回来。")
+                .font(.system(size: 11))
+                .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                .padding(.top, 6)
+            HStack(spacing: 7) {
+                Button { 待删 = nil } label: {
+                    Text("再想想").font(.system(size: 11))
+                        .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                        .frame(maxWidth: .infinity).frame(height: 34)
+                        .overlay(RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                Button { 真删() } label: {
+                    Text("删掉").font(.system(size: 11))
+                        .foregroundColor(Color(red: 0.75, green: 0.22, blue: 0.17))
+                        .frame(maxWidth: .infinity).frame(height: 34)
+                        .background(Color(red: 1, green: 0.95, blue: 0.95),
+                                    in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 12)
+        }
+        .padding(16)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 28)
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+    }
+
+    // ---------------- 吐司 ----------------
+
+    @ViewBuilder private var 吐司层: some View {
+        if !吐.isEmpty {
+            VStack {
+                Spacer()
+                Text(吐)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 13).padding(.vertical, 8)
+                    .background(Color(red: 0.07, green: 0.07, blue: 0.07), in: Capsule())
+                    .padding(.bottom, 76)
+            }
+            .transition(.opacity)
+        }
+    }
+
+    // MARK: - 数据
+
+    private var 当前索引: Int {
+        角色.firstIndex(where: { $0.标识 == curId }) ?? 0
+    }
+    private var 当前角色名: String {
+        角色.first(where: { $0.标识 == curId })?.名字 ?? "它"
+    }
+
+    private func 起() async {
+        if curId.isEmpty { curId = charId0 }
+        let rs = await MemAPI.角色列表()
+        await MainActor.run {
+            if rs.isEmpty {
+                if 角色.isEmpty {
+                    角色 = [MemAPI.Role(标识: curId, 名字: "它", n: 0)]
+                }
+            } else {
+                角色 = rs
+                if !rs.contains(where: { $0.标识 == curId }) {
+                    curId = rs[0].标识
+                }
+            }
+            载入中 = false
+        }
+        await 拉柜子(curId)
+    }
+
+    private func 拉柜子(_ cid: String) async {
+        if 拉柜子中 { return }
+        拉柜子中 = true
+        let box = await MemAPI.列(cid, nil)
+        var list: [MemNode] = []
+        var uid = 1
+        for cat in MemAPI.类别 {
+            let fs = box[cat] ?? []
+            var kids: [MemNode] = []
+            for f in fs {
+                kids.append(MemNode(id: uid, label: f.名,
+                                    type: cat == "它会的动作" ? "act" : "text",
+                                    cat: cat == "它会的动作" ? "act" : "text",
+                                    catName: cat, desc: f.摘要))
+                uid += 1
+            }
+            list.append(MemNode(id: uid, label: cat, type: "folder", cat: "folder",
+                                catName: cat, desc: "\(fs.count) 份", kids: kids))
+            uid += 1
+        }
+        await MainActor.run {
+            节点 = list
+            拉柜子中 = false
+        }
+    }
+
+    private func 切角色到(_ i: Int) {
+        guard i >= 0, i < 角色.count else { return }
+        let id = 角色[i].标识
+        guard id != curId else { return }
+        curId = id
+        聚焦 = nil
+        节点 = []
+        Task { await 拉柜子(id) }
+    }
+
+    private func 开大卡(_ n: MemNode) {
+        // 顶层节点（四类文件夹）直接开；子项要带上它的父层，返回才退得回去
+        if n.type == "folder" {
+            大卡路径 = [n]
+        } else if let parent = 节点.first(where: { ($0.kids ?? []).contains(where: { $0.id == n.id }) }) {
+            大卡路径 = [parent, n]
+        } else {
+            大卡路径 = [n]
+        }
+        大卡详情正文 = ""
+        大卡说明 = n.desc
+        聚焦 = nil
+        if n.type != "folder" { Task { await 读正文(n) } }
+    }
+
+    private func 大卡返回() {
+        if !大卡路径.isEmpty { 大卡路径.removeLast() }
+    }
+
+    private func 进一层(_ k: MemNode) {
+        大卡路径.append(k)
+        if k.type != "folder" {
+            大卡详情正文 = ""
+            大卡说明 = k.desc
+            Task { await 读正文(k) }
+        }
+    }
+
+    private func 读正文(_ n: MemNode) async {
+        if let d = await MemAPI.读(curId, n.catName, n.label) {
+            await MainActor.run { 大卡详情正文 = d.正文 }
+        }
+    }
+
+    private func 存(_ n: MemNode) {
+        Task {
+            let ok = await MemAPI.动("/api/mem/edit", curId, [
+                "类别": n.catName, "名": n.label, "正文": 大卡详情正文,
+            ])
+            await MainActor.run {
+                提示(ok ? "存好了" : "没存上，检查一下网络")
+                if ok { Task { await 拉柜子(curId) } }
+            }
+        }
+    }
+
+    private func 真删() {
+        guard let n = 待删 else { return }
+        待删 = nil
+        Task {
+            let ok = await MemAPI.动("/api/mem/delete", curId, ["类别": n.catName, "名": n.label])
+            await MainActor.run {
+                提示(ok ? "删掉了" : "没删掉，检查一下网络")
+                if ok {
+                    Task { await 拉柜子(curId) }
+                    if 大卡路径.last?.id == n.id { 大卡路径.removeLast() }
+                }
+            }
+        }
+    }
+
+    private func 存新的文字() {
+        let body = 新正文.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { 提示("先写点什么"); return }
+        let title = String(body.replacingOccurrences(of: "\n", with: " ").prefix(10))
+        let desc = 新说明.trimmingCharacters(in: .whitespacesAndNewlines)
+        写一份(title, desc.isEmpty ? body : desc, body)
+    }
+
+    private func 存新的文件() {
+        let name = 新文件名.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { 提示("先写个名字"); return }
+        写一份(name, "文件", "【文件】" + name)
+    }
+
+    private func 写一份(_ name: String, _ desc: String, _ body: String) {
+        Task {
+            let ok = await MemAPI.动("/api/mem/write", curId, [
+                "类别": "它记住的", "名": name, "正文": body,
+            ])
+            await MainActor.run {
+                关加卡()
+                新正文 = ""; 新说明 = ""; 新文件名 = ""
+                提示(ok ? "确认了，也让它读进去了" : "没写进去，检查一下网络")
+                if ok { Task { await 拉柜子(curId) } }
+            }
+        }
+    }
+
+    // MARK: - 小工具
+
+    private func 关聚焦() {
+        withAnimation(.easeOut(duration: 0.15)) { 聚焦 = nil }
+    }
+
+    private func 开加卡() {
+        加卡页 = 0
+        新正文 = ""; 新说明 = ""; 新文件名 = ""
+        withAnimation(.easeOut(duration: 0.2)) { 加卡开 = true }
+        关聚焦()
+    }
+
+    private func 关加卡() {
+        withAnimation(.easeOut(duration: 0.16)) { 加卡开 = false }
+    }
+
+    private func 关所有() {
+        withAnimation(.easeOut(duration: 0.18)) {
+            大卡路径 = []
+            角色表开 = false
+            加卡开 = false
+            待删 = nil
+        }
+    }
+
+    private func 提示(_ s: String) {
+        withAnimation(.easeOut(duration: 0.16)) { 吐 = s }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_900_000_000)
+            await MainActor.run {
+                if 吐 == s { withAnimation(.easeOut(duration: 0.22)) { 吐 = "" } }
+            }
+        }
+    }
+
+    private func 搜到的() -> [MemNode] {
+        var out: [MemNode] = []
+        let v = 搜索.lowercased()
+        for n in 节点 {
+            if n.label.lowercased().contains(v) || n.desc.lowercased().contains(v) {
+                out.append(n)
+            }
+            for k in (n.kids ?? []) {
+                if k.label.lowercased().contains(v) || k.desc.lowercased().contains(v) {
+                    out.append(k)
+                }
+                if out.count >= 6 { return out }
+            }
+            if out.count >= 6 { break }
+        }
+        return out
+    }
+
+    private func 标签名(_ n: MemNode) -> String {
+        switch n.type {
+        case "folder": return "文件夹"
+        case "text": return "文字"
+        case "act": return "动作"
+        default: return "文件"
+        }
+    }
+
+    private func 类别色(_ cat: String) -> Color {
+        switch cat {
+        case "act": return Color(red: 0.07, green: 0.07, blue: 0.07)
+        case "image", "video": return Color(red: 91/255, green: 143/255, blue: 168/255)
+        default: return Color(red: 0.43, green: 0.43, blue: 0.41)
+        }
+    }
+}
+
+// MARK: - 半圆轮盘（原生）
+
+/// 轮盘上一颗头像的位置。
+private struct 轮盘项: Identifiable {
+    let id: Int
+    let x: CGFloat
+    let y: CGFloat
+}
+
+struct MemRoleWheel: View {
+    @Binding var 角色: [MemAPI.Role]
+    @Binding var cur: Int
+    var onHub: () -> Void
+
+    @State private var wd: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let W = geo.size.width
+            let H = geo.size.height
+            let R = min(W * 0.34, 128)
+            let cx = W / 2
+            let cy = H - 16
+            let items = 可见(W: W, H: H)
+
+            ZStack {
+                Path { p in
+                    p.addArc(center: CGPoint(x: cx, y: cy), radius: R,
+                             startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                }
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+
+                Path { p in
+                    p.addArc(center: CGPoint(x: cx, y: cy), radius: R * 0.57,
+                             startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                }
+                .stroke(.white.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+
+                ForEach(items) { item in
+                    let i = item.id
+                    let sel = (i == cur)
+                    let d: CGFloat = sel ? 50 : 44
+                    VStack(spacing: 4) {
+                        ZStack {
+                            Circle().fill(Color(red: 0.06, green: 0.07, blue: 0.11))
+                            OrbPet(charId: 角色[i].标识, actName: "sit", width: d * 0.82)
+                                .frame(width: d * 0.82, height: d * 0.82)
+                                .clipShape(Circle())
+                            Circle()
+                                .stroke(sel ? Color(red: 0.56, green: 0.71, blue: 1) : .white.opacity(0.25),
+                                        lineWidth: sel ? 2 : 1)
+                        }
+                        .frame(width: d, height: d)
+                        if sel {
+                            Text(角色[i].名字)
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundColor(.white)
+                                .fixedSize()
+                        }
+                    }
+                    .position(x: item.x, y: item.y)
+                    .onTapGesture {
+                        guard i != cur else { return }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        cur = i
+                        wd = 0
+                    }
+                }
+
+                ZStack {
+                    Circle().fill(.white)
+                    HStack(spacing: 3) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            Circle().fill(Color(red: 0.07, green: 0.07, blue: 0.07))
+                                .frame(width: 4, height: 4)
+                        }
+                    }
+                }
+                .frame(width: 42, height: 42)
+                .position(x: cx, y: cy - 17)
+                .onTapGesture { onHub() }
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 6)
+                    .onChanged { g in
+                        wd = g.translation.width * 0.34
+                    }
+                    .onEnded { _ in
+                        var s = Int((wd / 46).rounded())
+                        if abs(wd) < 23 { s = 0 }
+                        let n = 角色.count
+                        if s != 0 && n > 0 {
+                            cur = ((cur + s) % n + n) % n
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { wd = 0 }
+                    }
+            )
+        }
+    }
+
+    /// 看得见的那几颗（按离中间远近排序，远的先画）
+    private func 可见(W: CGFloat, H: CGFloat) -> [轮盘项] {
+        var out: [轮盘项] = []
+        let n = 角色.count
+        guard n > 0 else { return out }
+        let R = min(W * 0.34, 128)
+        let cx = W / 2
+        let cy = H - 16
+        var arr: [(Int, CGFloat, CGFloat, CGFloat)] = []
+        for i in 0..<n {
+            var d = i - cur
+            while d > n / 2 { d -= n }
+            while d < -n / 2 { d += n }
+            let deg = 90 + CGFloat(d) * 46 - wd
+            if deg < 22 || deg > 158 { continue }
+            let rad = deg * .pi / 180
+            arr.append((i, cx + R * cos(rad), cy - R * sin(rad), abs(CGFloat(d))))
+        }
+        arr.sort { $0.3 > $1.3 }
+        for a in arr { out.append(轮盘项(id: a.0, x: a.1, y: a.2)) }
+        return out
+    }
+}

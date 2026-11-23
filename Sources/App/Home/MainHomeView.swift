@@ -236,8 +236,9 @@ struct MainHomeView: View {
         }
         // ★ 2026-11-22：第三格「记忆」页。
         .fullScreenCover(isPresented: $记忆开) {
-            // ★ 3D 记忆页：整份粒子星球装进 App（原 MemView 列表式保留不删）
-            Mem3DView(charId: CatBrain.currentCharId)
+            // ★ 2026-11-23：记忆页改成原生渲染（不嵌网页了）。
+            //   旧的网页版 Mem3DView 原样留着，要退回把这一行换回去即可。
+            MemPageNative(charId: CatBrain.currentCharId)
         }
         // ★★★ v64：小窗上那个键按下去 ＝「问它」。
         //

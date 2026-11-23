@@ -441,7 +441,6 @@ struct SquishUIView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SquishView {
         let v = SquishView()
-        v.onMaskEmpty = { /* 由外层确认时判断 */ }
         return v
     }
     func updateUIView(_ v: SquishView, context: Context) {
@@ -465,7 +464,8 @@ final class SquishView: UIView {
     private var down = false, last = CGPoint.zero
     private var link: CADisplayLink?
     var lastKey = -1
-    var onMaskEmpty: (() -> Void)?
+    /// 涂过没有 —— 外层拿它决定「确认」能不能点亮。
+    var onMaskChanged: ((Bool) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -483,6 +483,7 @@ final class SquishView: UIView {
     }
     func clearAll() {
         for i in 0..<(Self.W*Self.H) { ox[i]=0; oy[i]=0; vx[i]=0; vy[i]=0; paintMask[i]=false }
+        onMaskChanged?(false)
     }
     func hasMask() -> Bool { paintMask.contains(true) }
 
@@ -548,6 +549,7 @@ final class SquishView: UIView {
                 if dx*dx+dy*dy < r*r { paintMask[gy*Self.W+gx] = (currentTool == 0) }
             }
         }
+        onMaskChanged?(hasMask())
     }
     private func pushAt(_ p: CGPoint, dx: CGFloat, dy: CGFloat) {
         let cw = bounds.width/CGFloat(Self.W), ch = bounds.height/CGFloat(Self.H)

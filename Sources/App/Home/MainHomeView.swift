@@ -179,10 +179,8 @@ struct MainHomeView: View {
     @State private var 记忆开 = false
     /// 点过几个按钮 —— 自检用：按了没反应时，先看这个数字动没动
     @State private var taps = 0
-    /// 角色（动作库）那一页开着没有
+    /// 角色（动作库）那一页开着没有 —— 只作「创作动态形象」的承接，不再从首页抢入口。
     @State private var actOpen = false
-    /// ★ 2026-11-23：「它」页角色舞台（横滑选人 + 悬浮/捏捏/制作动作）。老动作库 actOpen 一行没删。
-    @State private var stageOpen = false
     /// ★ v64：小窗上按了那个键 —— 要在**中间**弹一个小框问它说什么（不是整页对话页）。
     @State private var quickAsk = false
     @State private var quickText = ""
@@ -272,10 +270,6 @@ struct MainHomeView: View {
         // 角色（动作库）：安卓那边是「它」这屏上的「角色」格子点进去的那一页
         .fullScreenCover(isPresented: $actOpen) {
             ActLibPage()
-        }
-        // ★ 2026-11-23：「它」页角色舞台。退回老动作库：把上面 onRole 的 stageOpen 改回 actOpen 即可。
-        .fullScreenCover(isPresented: $stageOpen) {
-            RoleStageView()
         }
         .onAppear(perform: boot)
         .onDisappear {
@@ -376,9 +370,9 @@ struct MainHomeView: View {
     private var content: some View {
         Group {
             switch tab {
-            case 0: HerPane(pip: pip, openMe: { showMe = true },
-                            onHit: hit, taps: taps,
-                            onRole: { stageOpen = true })
+            // ★ 2026-11-23：新舞台直接当「它」页首页本体，不再从「角色」按钮另开一页。
+            //   老 HerPane 整段留着；想退回把这一行换回 HerPane(...) 即可。
+            case 0: HerStagePane(pip: pip, onHit: hit, onCreateImage: { actOpen = true })
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }

@@ -28,8 +28,9 @@ final class CardPinchPaint: UIView {
         for m in marks {
             let cs = CGColorSpaceCreateDeviceRGB()
             let colors = [UIColor(red: 0.47, green: 0.86, blue: 0.80, alpha: 0.55).cgColor,
-                          UIColor(red: 0.47, green: 0.86, blue: 0.80, alpha: 0).cgColor]
-            if let g = CGGradient(colorsSpace: cs, colors: colors, locations: [0, 1]) {
+                          UIColor(red: 0.47, green: 0.86, blue: 0.80, alpha: 0).cgColor] as CFArray
+            let locs: [CGFloat] = [0, 1]
+            if let g = CGGradient(colorsSpace: cs, colors: colors, locations: locs) {
                 c.drawRadialGradient(g, startCenter: CGPoint(x: m.x, y: m.y), startRadius: 0,
                                      endCenter: CGPoint(x: m.x, y: m.y), endRadius: m.r, options: [])
             }

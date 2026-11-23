@@ -1,5 +1,32 @@
 import SwiftUI
 
+// ★ 2026-11-23：浅色组件在深底上的「冷光悬浮」。
+// 白卡边缘一圈冷青光（不是白光，白光在深底上会糊成一片），配一点黑影托底，
+// 像浅卡浮在深背景之上。参数照用户确认的预览：淡冷描边 + 近光 + 远光 + 基础黑影。
+private struct 冷光悬浮: ViewModifier {
+    var 圆角: CGFloat = 16
+    func body(content: Content) -> some View {
+        content
+            // 远光 rgba(111,168,184,.28)
+            .shadow(color: Color(red: 111/255, green: 168/255, blue: 184/255).opacity(0.28),
+                    radius: 16, y: 0)
+            // 近光 rgba(143,180,255,.42)
+            .shadow(color: Color(red: 143/255, green: 180/255, blue: 255/255).opacity(0.42),
+                    radius: 6, y: 0)
+            // 基础黑影托底
+            .shadow(color: .black.opacity(0.30), radius: 8, y: 4)
+            // 淡冷描边 rgba(174,205,255,.55)
+            .overlay(RoundedRectangle(cornerRadius: 圆角)
+                        .stroke(Color(red: 174/255, green: 205/255, blue: 255/255).opacity(0.55),
+                                lineWidth: 1))
+    }
+}
+private extension View {
+    func 上冷光(_ 圆角: CGFloat = 16) -> some View {
+        modifier(冷光悬浮(圆角: 圆角))
+    }
+}
+
 // MARK: - 记忆页（原生版，2026-11-23）
 //
 // 整页不再嵌网页：深色底 + 柔光、原生粒子球、原生半圆轮盘、原生卡片。
@@ -166,7 +193,7 @@ struct MemPageNative: View {
             .padding(.horizontal, 13)
             .frame(height: 40)
             .background(.white, in: Capsule())
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+            .上冷光(20)
 
             Button { 开加卡() } label: {
                 Image(systemName: "plus")
@@ -174,7 +201,7 @@ struct MemPageNative: View {
                     .foregroundColor(Color(red: 0.07, green: 0.07, blue: 0.07))
                     .frame(width: 42, height: 40)
                     .background(.white, in: Capsule())
-                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    .上冷光(20)
             }
             .buttonStyle(.plain)
         }
@@ -265,7 +292,7 @@ struct MemPageNative: View {
             .padding(13)
             .frame(width: 248)
             .background(.white, in: RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+            .上冷光(16)
             Spacer()
         }
         .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.86, anchor: .top)), removal: .opacity))
@@ -338,6 +365,7 @@ struct MemPageNative: View {
             ScrollView { 大卡内容.padding(13) }
         }
         .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .上冷光(20)
         .padding(.horizontal, 14)
         .padding(.top, 56)
         .padding(.bottom, 104)

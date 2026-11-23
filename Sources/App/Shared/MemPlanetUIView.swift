@@ -125,6 +125,13 @@ final class MemPlanetUIView: UIView {
     /// ★ 镜头＝整屏靠近那颗点；轴x/轴y 是那颗点钉住不动的屏幕位置
     private var 镜头: CGFloat = 1
     private var 轴x: CGFloat = 0, 轴y: CGFloat = 0
+    /// ★ 2026-11-23：双指缩放。下限 1.0＝原始大小（不缩得更小），上限 2.8。
+    ///  放大时次级记忆点名称渐显；跟聚焦镜头叠加（两级缩放）。
+    private var 捏放: CGFloat = 1
+    private let 捏放上限: CGFloat = 2.8
+    private var 捏合中 = false
+    private var 本趟捏过 = false
+    private var 捏起距: CGFloat = 0, 捏起放: CGFloat = 1
 
     private func 左乘Y(_ th: CGFloat) {
         let c = cos(th), s = sin(th)
@@ -168,10 +175,20 @@ final class MemPlanetUIView: UIView {
     var 线进度: CGFloat = 0
     var 线终点Y: CGFloat = 0
 
-    /// 过镜头：以聚焦点为轴心把整个画面推近（不是只撑开那一块）
+    /// 两级缩放：先按聚焦镜头绕焦点推近，再按双指捏放绕屏幕中心放大。
     private func 过镜头(_ X: CGFloat, _ Y: CGFloat) -> CGPoint {
-        if 镜头 == 1 { return CGPoint(x: X, y: Y) }
-        return CGPoint(x: 轴x + (X - 轴x) * 镜头, y: 轴y + (Y - 轴y) * 镜头)
+        var x = X, y = Y
+        if 镜头 != 1 {
+            x = 轴x + (x - 轴x) * 镜头
+            y = 轴y + (y - 轴y) * 镜头
+        }
+        if 捏放 != 1 {
+            let 中x = bounds.width / 2
+            let 中y = bounds.height / 2 - 6
+            x = 中x + (x - 中x) * 捏放
+            y = 中y + (y - 中y) * 捏放
+        }
+        return CGPoint(x: x, y: y)
     }
 
     // 分桶缓冲
@@ -616,21 +633,26 @@ final class MemPlanetUIView: UIView {
                 var ly = Y - (sel ? 30 : 17) - sz.height
                 if ly < 6 { ly = Y + (sel ? 20 : 14) }   // 贴到顶就画到下面
                 str.draw(at: CGPoint(x: X - sz.width / 2, y: ly))
-            } else if sel {
-                let font = UIFont.systemFont(ofSize: 12, weight: .medium)
-                let sh = NSShadow()
-                sh.shadowColor = UIColor.black.withAlphaComponent(0.75)
-                sh.shadowBlurRadius = 3
-                sh.shadowOffset = CGSize(width: 0, height: 1)
-                let str = NSAttributedString(string: 缩短(nd.label), attributes: [
-                    .font: font,
-                    .foregroundColor: UIColor(red: 236, green: 244, blue: 252, alpha: 1).withAlphaComponent(1),
-                    .shadow: sh,
-                ])
-                let sz = str.size()
-                var ly = Y - 26 - sz.height
-                if ly < 6 { ly = Y + 16 }
-                str.draw(at: CGPoint(x: X - sz.width / 2, y: ly))
+            } else {
+                // ★ 双指放大时次级记忆点名称随放大程度慢慢显现；缩回原始就隐去
+                let 显现 = max(0, min(1, (捏放 - 1.35) / 0.85))
+                let la: CGFloat = sel ? 1.0 : 显现 * (0.35 + 0.65 * depth)
+                if la > 0.02 {
+                    let font = UIFont.systemFont(ofSize: sel ? 12 : 10.5, weight: sel ? .medium : .light)
+                    let sh = NSShadow()
+                    sh.shadowColor = UIColor.black.withAlphaComponent(0.75)
+                    sh.shadowBlurRadius = 3
+                    sh.shadowOffset = CGSize(width: 0, height: 1)
+                    let str = NSAttributedString(string: 缩短(nd.label), attributes: [
+                        .font: font,
+                        .foregroundColor: UIColor(red: 236/255, green: 244/255, blue: 252/255, alpha: la),
+                        .shadow: sh,
+                    ])
+                    let sz = str.size()
+                    var ly = Y - (sel ? 26 : 17) - sz.height
+                    if ly < 6 { ly = Y + (sel ? 16 : 12) }
+                    str.draw(at: CGPoint(x: X - sz.width / 2, y: ly))
+                }
             }
         }
 
@@ -682,10 +704,19 @@ final class MemPlanetUIView: UIView {
 
     // MARK: 触摸
 
+    /// 当前屏上（含本事件）前两指间距；不够两指返回 0
+    private func 两指距(_ event: UIEvent?) -> CGFloat {
+        guard let all = event?.allTouches, all.count >= 2 else { return 0 }
+        let a = all.array[0].location(in: self), b = all.array[1].location(in: self)
+        return hypot(a.x - b.x, a.y - b.y)
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let t = touches.first else { return }
         dragging = true
         moved = 0
+        本趟捏过 = false
+        捏合中 = false
         lastX = t.location(in: self).x
         lastY = t.location(in: self).y
         downX0 = lastX; downY0 = lastY
@@ -695,6 +726,26 @@ final class MemPlanetUIView: UIView {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // 两指捏合：只缩放、不转球；下限 1.0（不缩得比原始更小），上限 2.8
+        if 捏合中 {
+            let d = 两指距(event)
+            if 捏起距 > 1, d > 0 {
+                捏放 = max(1, min(捏放上限, 捏起放 * d / 捏起距))
+            }
+            lastAct = CACurrentMediaTime()
+            setNeedsDisplay()
+            return
+        }
+        // 第二指刚落下（还没进 MOVE 的捏合分支）：识别并记起点
+        if let all = event?.allTouches, all.count >= 2 {
+            捏合中 = true
+            本趟捏过 = true
+            捏起距 = 两指距(event)
+            捏起放 = 捏放
+            dragging = false
+            lastAct = CACurrentMediaTime()
+            return
+        }
         guard dragging, let t = touches.first else { return }
         let p = t.location(in: self)
         let dx = p.x - lastX, dy = p.y - lastY
@@ -708,13 +759,26 @@ final class MemPlanetUIView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        let 捏过 = 本趟捏过
+        if 捏合中 {
+            // 还有手指在屏上：本次捏合结束，剩一指接管拖动，别跳
+            捏合中 = false
+            本趟捏过 = true
+            if let all = event?.allTouches, all.count >= 1 {
+                let p = all.array[0].location(in: self)
+                lastX = p.x; lastY = p.y; downX0 = p.x; downY0 = p.y
+                dragging = !touches.isEmpty
+            }
+            lastAct = CACurrentMediaTime()
+            return
+        }
         guard dragging, let t = touches.first else { return }
         dragging = false
         lastAct = CACurrentMediaTime()
         let p = t.location(in: self)
-        // ★ 判"点一下"用起止距离（以前用抖动累加，轻微抖就被当拖动）
+        // ★ 判"点一下"用起止距离；捏合那一趟绝不当点击
         let 位移 = hypot(p.x - downX0, p.y - downY0)
-        if 位移 < 8 {
+        if !捏过 && 位移 < 8 * 捏放 {
             let hit = 命中(p)
             if let h = hit {
                 focusOn(h)
@@ -730,6 +794,7 @@ final class MemPlanetUIView: UIView {
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         dragging = false
+        捏合中 = false
         auto = (focusId == nil)
         lastAct = CACurrentMediaTime()
     }
@@ -741,7 +806,7 @@ final class MemPlanetUIView: UIView {
         for i in 0..<n {
             if nsf[i] < 0.02 { continue }
             let d = hypot(p.x - CGFloat(nsx[i]), p.y - CGFloat(nsy[i]))
-            let lim: CGFloat = (母点[i] < 0 ? 26 : 15) * 镜头
+            let lim: CGFloat = (母点[i] < 0 ? 26 : 15) * 镜头 * 捏放
             if d > lim { continue }
             if d < bd { bd = d; best = i }
         }

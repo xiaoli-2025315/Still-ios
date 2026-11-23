@@ -12,6 +12,7 @@ enum MemAPI {
         var id: String { 名 }
         var 名: String
         var 摘要: String
+        var 说明: String = ""
         var 重要: String
         var 时间: String
         var 字节: Int
@@ -65,6 +66,7 @@ enum MemAPI {
             arr.compactMap { d in
                 guard let 名 = d["名"] as? String else { return nil }
                 return File(名: 名, 摘要: d["摘要"] as? String ?? "",
+                            说明: d["说明"] as? String ?? "",
                             重要: d["重要"] as? String ?? "",
                             时间: d["时间"] as? String ?? "",
                             字节: (d["字节"] as? NSNumber)?.intValue ?? 0)
@@ -80,6 +82,7 @@ enum MemAPI {
             out[k] = arr.compactMap { d in
                 guard let 名 = d["名"] as? String else { return nil }
                 return File(名: 名, 摘要: d["摘要"] as? String ?? "",
+                            说明: d["说明"] as? String ?? "",
                             重要: d["重要"] as? String ?? "",
                             时间: d["时间"] as? String ?? "",
                             字节: (d["字节"] as? NSNumber)?.intValue ?? 0)

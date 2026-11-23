@@ -18,6 +18,10 @@ struct MemPageNative: View {
     @State private var curId: String = ""
     @State private var 节点: [MemNode] = []
     @State private var 聚焦: MemNode?
+    /// 点一颗：先长线（0→1），线到位浮窗才长出来；关卡片时给球发清焦点信号
+    @State private var 线进度: CGFloat = 0
+    @State private var 浮窗长好 = false
+    @State private var 清焦点号 = 0
 
     @State private var 搜索 = ""
     @State private var 大卡路径: [MemNode] = []
@@ -47,13 +51,21 @@ struct MemPageNative: View {
             ZStack {
                 背景
 
-                MemPlanet(nodes: 节点) { nd in
+                MemPlanet(nodes: 节点, onTap: { nd in
                     if let nd {
-                        withAnimation(.easeOut(duration: 0.2)) { 聚焦 = nd }
+                        线进度 = 0
+                        浮窗长好 = false
+                        聚焦 = nd
+                        withAnimation(.easeOut(duration: 0.28)) { 线进度 = 1 }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                            if 聚焦?.id == nd.id {
+                                withAnimation(.easeOut(duration: 0.22)) { 浮窗长好 = true }
+                            }
+                        }
                     } else {
                         关聚焦()
                     }
-                }
+                }, 线进度: 线进度, 线终点Y: geo.size.height * 0.45, 清焦点号: 清焦点号)
                 .padding(.bottom, 196)
 
                 VStack(spacing: 0) {
@@ -71,7 +83,7 @@ struct MemPageNative: View {
                     .frame(height: 206)
                 }
 
-                if let f = 聚焦 {
+                if let f = 聚焦, 浮窗长好 {
                     信息卡层(f, geo)
                 }
 
@@ -228,7 +240,7 @@ struct MemPageNative: View {
                         .overlay(RoundedRectangle(cornerRadius: 5)
                             .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
                 }
-                Text(f.desc.isEmpty ? "还没有写说明。" : f.desc)
+                Text(f.说明.isEmpty ? (f.desc.isEmpty ? "还没有写说明。" : f.desc) : f.说明)
                     .font(.system(size: 10.5))
                     .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
                     .lineSpacing(2)
@@ -256,7 +268,7 @@ struct MemPageNative: View {
             .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
             Spacer()
         }
-        .transition(.opacity)
+        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.86, anchor: .top)), removal: .opacity))
     }
 
     // MARK: 所有弹层
@@ -388,7 +400,8 @@ struct MemPageNative: View {
 
     private func 详情(_ f: MemNode) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("点下面就能改，改完写回同一份")
+            if f.type == "act" { 动作预览(charId: curId, 动作名: f.label) }
+            Text("上面是记的原物；下面写清它为什么被记下来")
                 .font(.system(size: 9.5))
                 .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
                 .padding(.bottom, 9)
@@ -403,12 +416,12 @@ struct MemPageNative: View {
                 .overlay(RoundedRectangle(cornerRadius: 12)
                     .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
 
-            Text("一句话说明")
+            Text("为什么记它")
                 .font(.system(size: 9.5))
                 .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61))
                 .padding(.top, 12).padding(.bottom, 5)
 
-            TextField("可选", text: $大卡说明)
+            TextField("什么时候说的 / 为什么说 / 记下来有什么用", text: $大卡说明)
                 .font(.system(size: 11))
                 .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
                 .padding(10)
@@ -561,7 +574,7 @@ struct MemPageNative: View {
                     .background(.white, in: RoundedRectangle(cornerRadius: 11))
                     .overlay(RoundedRectangle(cornerRadius: 11)
                         .stroke(Color(red: 0.91, green: 0.91, blue: 0.89), lineWidth: 1))
-                TextField("", text: $新说明, prompt: Text("一句话说明（可不填）")
+                TextField("", text: $新说明, prompt: Text("为什么记它：什么时候 / 为什么说 / 有什么用")
                     .foregroundColor(Color(red: 0.64, green: 0.64, blue: 0.61)))
                     .font(.system(size: 11.5))
                     .padding(10)
@@ -736,7 +749,7 @@ struct MemPageNative: View {
                 kids.append(MemNode(id: uid, label: f.名,
                                     type: cat == "它会的动作" ? "act" : "text",
                                     cat: cat == "它会的动作" ? "act" : "text",
-                                    catName: cat, desc: f.摘要))
+                                    catName: cat, desc: f.摘要, 说明: f.说明))
                 uid += 1
             }
             list.append(MemNode(id: uid, label: cat, type: "folder", cat: "folder",
@@ -754,7 +767,7 @@ struct MemPageNative: View {
         let id = 角色[i].标识
         guard id != curId else { return }
         curId = id
-        聚焦 = nil
+        关聚焦()
         节点 = []
         Task { await 拉柜子(id) }
     }
@@ -769,8 +782,8 @@ struct MemPageNative: View {
             大卡路径 = [n]
         }
         大卡详情正文 = ""
-        大卡说明 = n.desc
-        聚焦 = nil
+        大卡说明 = n.说明.isEmpty ? n.desc : n.说明
+        关聚焦()
         if n.type != "folder" { Task { await 读正文(n) } }
     }
 
@@ -782,14 +795,17 @@ struct MemPageNative: View {
         大卡路径.append(k)
         if k.type != "folder" {
             大卡详情正文 = ""
-            大卡说明 = k.desc
+            大卡说明 = k.说明.isEmpty ? k.desc : k.说明
             Task { await 读正文(k) }
         }
     }
 
     private func 读正文(_ n: MemNode) async {
         if let d = await MemAPI.读(curId, n.catName, n.label) {
-            await MainActor.run { 大卡详情正文 = d.正文 }
+            await MainActor.run {
+                大卡详情正文 = d.正文
+                if 大卡说明.isEmpty { 大卡说明 = d.元信息["注解"] ?? "" }
+            }
         }
     }
 
@@ -797,6 +813,7 @@ struct MemPageNative: View {
         Task {
             let ok = await MemAPI.动("/api/mem/edit", curId, [
                 "类别": n.catName, "名": n.label, "正文": 大卡详情正文,
+                "注解": 大卡说明,
             ])
             await MainActor.run {
                 提示(ok ? "存好了" : "没存上，检查一下网络")
@@ -825,19 +842,19 @@ struct MemPageNative: View {
         guard !body.isEmpty else { 提示("先写点什么"); return }
         let title = String(body.replacingOccurrences(of: "\n", with: " ").prefix(10))
         let desc = 新说明.trimmingCharacters(in: .whitespacesAndNewlines)
-        写一份(title, desc.isEmpty ? body : desc, body)
+        写一份(title, desc, body)
     }
 
     private func 存新的文件() {
         let name = 新文件名.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { 提示("先写个名字"); return }
-        写一份(name, "文件", "【文件】" + name)
+        写一份(name, "这是一份文件：上面留着它的名字，真正的内容在文件本身。", "【文件】" + name)
     }
 
     private func 写一份(_ name: String, _ desc: String, _ body: String) {
         Task {
             let ok = await MemAPI.动("/api/mem/write", curId, [
-                "类别": "它记住的", "名": name, "正文": body,
+                "类别": "它记住的", "名": name, "正文": body, "注解": desc,
             ])
             await MainActor.run {
                 关加卡()
@@ -851,6 +868,9 @@ struct MemPageNative: View {
     // MARK: - 小工具
 
     private func 关聚焦() {
+        线进度 = 0
+        浮窗长好 = false
+        清焦点号 += 1
         withAnimation(.easeOut(duration: 0.15)) { 聚焦 = nil }
     }
 
@@ -1043,5 +1063,47 @@ struct MemRoleWheel: View {
         arr.sort { $0.3 > $1.3 }
         for a in arr { out.append(轮盘项(id: a.0, x: a.1, y: a.2)) }
         return out
+    }
+}
+
+/// 动作卡上方那块：真帧在动；没装包就直说没装，绝不画一张假图冒充。
+private struct 动作预览: View {
+    let charId: String
+    let 动作名: String
+    @State private var 帧 = 0
+    @State private var 包: CatPack?
+    @State private var 定时器: Timer?
+
+    private var 本条: CatPack.Act? { 包?.acts.first(where: { $0.name == 动作名 }) }
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.97, green: 0.97, blue: 0.96)
+            if let p = 包, let a = 本条, let img = p.image(act: a, index: 帧) {
+                Image(uiImage: img)
+                    .resizable().scaledToFit()
+                    .padding(.vertical, 4)
+            } else {
+                Text("这台手机上还没装这条动作的画面，先看下面写的是什么")
+                    .font(.system(size: 10))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.41))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+            }
+        }
+        .frame(height: 140)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onAppear {
+            包 = CatPackStore.shared.installed(charId)
+            let 间隔 = 1.0 / max(8, min(24, 本条?.fps ?? 12))
+            定时器 = Timer.scheduledTimer(withTimeInterval: 间隔, repeats: true) { _ in
+                let n = 本条?.frames ?? 0
+                帧 = n > 0 ? (帧 + 1) % n : 0
+            }
+        }
+        .onDisappear {
+            定时器?.invalidate()
+            定时器 = nil
+        }
     }
 }

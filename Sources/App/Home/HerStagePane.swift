@@ -25,13 +25,16 @@ struct HerStagePane: View {
     @State private var spread: CGFloat = 0
     @State private var panel = ""          // "" / "float" / "pinch" / "make" / "chat"
     @State private var hint = ""
-    @State private var sqState = 0         // 0 browse / 1 paint / 2 squish
+    @State private var sqState = 0         // 0 browse / 1 paint / 2 play
     @State private var sqTool = 0
     @State private var sqKey = 0
-    @State private var hasPaint = false
-    /// 焦点卡上那层涂抹层（笔迹直接画在卡里这只身上）。
+    /// 焦点卡上那层涂抹层（只记软区 mask，不触发形变）。
     @State private var paintRef: CardPinchPaint? = nil
-    @State private var springAmt: CGFloat = 1
+    /// ★ 形变桥：涂抹层和形变 view 通过它传软区采样 + 触摸事件。
+    ///   @State 持引用类型，SwiftUI 重建不会换实例。
+    @State private var playBridge = SquishPlayBridge()
+    /// 软区有无（驱动「确认」按钮 enabled，避免回调里读 @State 快照滞后）
+    @State private var hasSoftPaint = false
 
     @State private var prompt = ""
     @State private var model = "wan"
@@ -70,32 +73,40 @@ struct HerStagePane: View {
         !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var body: some View {
-        // ★ 11-24 夜：整页铺满、不再上下滑；「它在这儿」小标题按他要求删掉。
-        GeometryReader { geo in
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack {
-                    if roles.isEmpty {
-                        addCard
-                    } else {
-                        ForEach(roles.indices, id: \.self) { i in
-                            roleCard(i)
-                        }
-                    }
+    /// 舞台卡片本身。抽出来是为了按 sqState 决定要不要挂高优先级拖拽。
+    @ViewBuilder
+    private var stageContent: some View {
+        ZStack {
+            if roles.isEmpty {
+                addCard
+            } else {
+                ForEach(roles.indices, id: \.self) { i in
+                    roleCard(i)
                 }
-                // 舞台固定高度（跟安卓 330dp 一致），下方交给 Spacer 把面板压到底栏上方。
-                .frame(height: 330)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 8)
+            }
+        }
+        // 舞台固定高度（跟安卓 330dp 一致），下方交给 Spacer 把面板压到底栏上方。
+        .frame(height: 330)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    /// ★ 拖动改成 highPriorityGesture（对齐 MainHomeView 老 HerPane）：按在卡上也能拨。
+    ///   涂抹时（stageLocked）整段手势不挂 —— 高优先级拖拽会抢走笔迹的触摸；
+    ///   这样既保留「stageLocked 吞拖动」，笔也涂得动。
+    @ViewBuilder
+    private var stageView: some View {
+        if stageLocked {
+            stageContent
+        } else {
+            stageContent
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 6)
                         .onChanged { v in
-                            if stageLocked { return }
                             // 循环：往一个方向一直滑就一直换，不再卡在两端。
                             pos = dragStart - Double(v.translation.width / gap)
                         }
-                        .onEnded { v in
-                            if stageLocked { return }
+                        .onEnded { _ in
                             guard !roles.isEmpty else { return }
                             let n = roles.count
                             let target = ((Int(pos.rounded()) % n) + n) % n
@@ -113,11 +124,14 @@ struct HerStagePane: View {
                             onHit()
                         }
                 )
-                .onAppear {
-                    // 每次切到它页，三张卡从一叠摊开（这个页面每次 tab 切换都会重建）。
-                    spread = 0
-                    withAnimation(.easeInOut(duration: 0.42)) { spread = 1 }
-                }
+        }
+    }
+
+    var body: some View {
+        // ★ 11-24 夜：整页铺满、不再上下滑；「它在这儿」小标题按他要求删掉。
+        GeometryReader { _ in
+            VStack(alignment: .leading, spacing: 0) {
+                stageView
 
                 Text(currentRole?.title ?? "还没有形象")
                     .font(.system(size: 17, weight: .bold))
@@ -178,7 +192,13 @@ struct HerStagePane: View {
                         .padding(.top, 8)
                 }
             }
-            .padding(.horizontal, 20)
+            // ★ 展开动画挂在外层稳定 VStack 上：开合捏捏面板不会重播摊牌。
+            .onAppear {
+                spread = 0
+                withAnimation(.easeInOut(duration: 0.42)) { spread = 1 }
+            }
+            // ★ 整页铺满：左右不留白，两侧卡延伸到屏幕边缘（gap 仍按安卓约定 150）。
+            .padding(.horizontal, 0)
             .padding(.top, 4)
             .padding(.bottom, 12)
         }
@@ -207,23 +227,20 @@ struct HerStagePane: View {
         }
         .frame(width: cardW, height: cardH)
         .background(glassCard(on: false))
-        .onTapGesture { onCreateImage() }
+        // ★ 加号卡不再进动作库：点到只给个提示，什么都不打开。
+        .onTapGesture { hint = "加号卡只占位，这里不进动作库" }
         .frame(maxWidth: .infinity)
     }
 
-    /// 玻璃卡面：半透明白 + 白描边 + 斜向那道高光。中间那张更透亮、描边更实。
+    /// ★ 玻璃卡：厚度感由 GlassPlate 分层画出，无阴影、无均匀白描边。
     private func glassCard(on: Bool) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Color.white.opacity(on ? 0.30 : 0.18))
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.white.opacity(on ? 0.90 : 0.60), lineWidth: on ? 2.5 : 1)
-            // 斜向高光
-            LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0.08), Color.clear],
+            GlassPlate(corner: 26, opacity: on ? 0.32 : 0.22)
+            // 斜向内高光保留
+            LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.03), Color.clear],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
                 .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
-        .shadow(color: Color.black.opacity(0.16), radius: on ? 22 : 16, y: 10)
     }
 
     @ViewBuilder
@@ -251,13 +268,19 @@ struct HerStagePane: View {
             let on = (i == focus)
             let stackRot = CGFloat(i - (n - 1) / 2) * 1.6
             let rot = CGFloat(d) * 11 * spread + stackRot * fold
+            // ★ 帧是 384×216 宽幅，在卡里 scaledToFit 后只占中间一条。
+            //   涂抹层按这个实际显示矩形摆，软区采样 (u,v) 才跟播放帧逐格对齐。
+            let frameBox = CGSize(width: cardW * 0.92, height: cardH * 0.84)
+            let frameRect = OrbPet.frameRect(in: frameBox, charId: c.id)
 
             ZStack(alignment: .bottom) {
                 glassCard(on: on)
 
                 if OrbPet.hasFrame(c.id) {
-                    // ★ 11-24 夜：按他要求放大、在卡里真正居中（原来太小）。
-                    OrbPet(charId: c.id, actName: "sit", width: cardW * 0.92)
+                    // ★ 玩耍态形变只给焦点卡；确认后桥接软区采样，涂抹期照旧走 Image 分支。
+                    OrbPet(charId: c.id, actName: "sit", width: cardW * 0.92,
+                           playBridge: on ? playBridge : nil,
+                           playEnabled: on && sqState == 2)
                         .frame(width: cardW * 0.92, height: cardH * 0.84)
                 } else {
                     VStack(spacing: 8) {
@@ -270,46 +293,117 @@ struct HerStagePane: View {
                     }
                 }
 
-                Text(c.title)
-                    .font(.system(size: 13, weight: on ? .bold : .regular))
-                    .foregroundStyle(on ? Tw.gray900 : Tw.gray500)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.72))
+                // ★ 名字区：一整块深灰半透明托槽，从角色图下沿铺到卡底。
+                //   Z 序在 OrbPet 之后、CardPinchPaint 之前；半透明能透出一点猫。
+                nameTray(i, c)
 
-                // ★ 捏捏直接涂在卡里这只身上：只叠在焦点卡、只捏的时候能吃触摸。
-                if on && panel == "pinch" {
-                    CardPinchPaintView(active: true, tool: sqTool, key: sqKey,
-                                       onPaint: { springOnce() },
+                // ★ 涂抹层严格盖在帧图的实际显示矩形上（居中），软区采样 (u,v)
+                //   才跟形变格心逐格对上。只焦点卡常驻：涂抹/玩耍期收触摸，平时不收。
+                if on && OrbPet.hasFrame(c.id) {
+                    CardPinchPaintView(active: panel == "pinch" && (sqState == 1 || sqState == 2),
+                                       playMode: sqState == 2,
+                                       tool: sqTool, key: sqKey,
+                                       bridge: playBridge,
+                                       onSoftChanged: { hasSoftPaint = $0 },
                                        onReady: { paintRef = $0 })
-                        .frame(width: cardW, height: cardH)
+                        .frame(width: frameRect.width, height: frameRect.height)
+                        .frame(width: frameBox.width, height: frameBox.height, alignment: .center)
                 }
             }
             .frame(width: cardW, height: cardH)
             .rotationEffect(.degrees(rot), anchor: UnitPoint(x: 0.5, y: 1.68))
-            .scaleEffect(CGFloat(sc) * springAmt)
+            .scaleEffect(CGFloat(sc))
             .opacity(op)
             .offset(x: CGFloat(d) * gap * spread,
                     y: ad * 14 * spread + CGFloat(i) * 2 * fold)
             .onTapGesture {
-                if !OrbPet.hasFrame(c.id) {
-                    onCreateImage()
-                } else if i != focus {
-                    // 点到哪张就近转成哪张（循环），不硬跳整条队列。
-                    var mm = pos.truncatingRemainder(dividingBy: Double(n))
-                    if mm < 0 { mm += Double(n) }
-                    var delta = Double(i) - mm
-                    if delta > Double(n) / 2 { delta -= Double(n) }
-                    if delta < -Double(n) / 2 { delta += Double(n) }
-                    withAnimation(.easeOut(duration: 0.26)) {
-                        focus = i
-                        pos += delta
-                        dragStart = pos
-                    }
-                    onHit()
-                }
+                // ★ 点卡只做选中，绝不进动作库（有没有形象都一样）。
+                selectRole(i)
             }
         }
+    }
+
+    /// 点卡 / 托槽「看看它」共用：就近选中，锁住时（涂抹/玩耍）不换人。
+    private func selectRole(_ i: Int) {
+        guard !stageLocked, roles.indices.contains(i), i != focus else { return }
+        let n = roles.count
+        var mm = pos.truncatingRemainder(dividingBy: Double(n))
+        if mm < 0 { mm += Double(n) }
+        var delta = Double(i) - mm
+        if delta > Double(n) / 2 { delta -= Double(n) }
+        if delta < -Double(n) / 2 { delta += Double(n) }
+        withAnimation(.easeOut(duration: 0.26)) {
+            focus = i
+            pos += delta
+            dragStart = pos
+        }
+        onHit()
+    }
+
+    /// ★ 名字区大灰托槽：名字 + 认证勾 / 灰色简介 / 底部数据 + 中性小按钮。
+    @ViewBuilder
+    private func nameTray(_ i: Int, _ c: ActLab.Char) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(c.title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Tw.white)
+                    .lineLimit(1)
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            Text(c.channel.map { $0.isEmpty ? "一只住在这里的小家伙" : $0 }
+                 ?? "一只住在这里的小家伙")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .lineLimit(1)
+            HStack(spacing: 6) {
+                Text("已完成 \(c.done ?? 0) 段动作")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Button {
+                    onHit()
+                    selectRole(i)
+                } label: {
+                    Text("看看它")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.white.opacity(0.16)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 9)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(hex: 0x1E1E22).opacity(0.86))
+                // 顶边一道细高光，两端渐隐，呼应玻璃厚度语言
+                GeometryReader { g in
+                    Path { p in
+                        p.move(to: CGPoint(x: 16, y: 0.6))
+                        p.addLine(to: CGPoint(x: g.size.width - 16, y: 0.6))
+                    }
+                    .stroke(
+                        LinearGradient(colors: [Color.white.opacity(0),
+                                                Color.white.opacity(0.22),
+                                                Color.white.opacity(0)],
+                                       startPoint: .leading, endPoint: .trailing),
+                        lineWidth: 0.9
+                    )
+                }
+            }
+        )
+        .padding(.horizontal, 5)
+        .padding(.bottom, 4)
     }
 
     // MARK: - 三颗功能键
@@ -325,16 +419,8 @@ struct HerStagePane: View {
                 .foregroundStyle(enabled ? Tw.gray900 : Tw.gray400)
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
-                // ★ 11-24 夜：悬浮玻璃底，浮在动态柔光上。
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(enabled ? Color.white.opacity(0.62) : Color.white.opacity(0.28))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color.white.opacity(enabled ? 0.9 : 0.4), lineWidth: enabled ? 1.5 : 1)
-                        )
-                )
-                .shadow(color: Color.black.opacity(0.10), radius: 10, y: 5)
+                // ★ 玻璃厚度：分层侧壁 + 高光断点，无阴影无白框。
+                .glassThickness(corner: 18, opacity: enabled ? 0.46 : 0.22)
         }
         .buttonStyle(PressStyle(scale: 0.97))
         .disabled(!enabled)
@@ -354,39 +440,51 @@ struct HerStagePane: View {
         }
     }
 
-    /// 涂一下：卡里那只软一下、松手弹回（弹簧手感）。
-    private func springOnce() {
-        springAmt = 0.94
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.45)) { springAmt = 1 }
-        hasPaint = true
-    }
-
     private func pinchTap() {
-        if sqState != 0 {
+        if sqState == 2 {
+            // 玩耍态再点「捏捏它」＝还原退出
+            clearPinch()
+            return
+        }
+        if sqState == 1 {
             exitPinch()
             return
         }
         panel = "pinch"
         sqState = 1
         sqTool = 0
+        // 只有真正开始新的一次才清软区（key 变化会让涂抹层回调一次空 mask）。
         sqKey += 1
-        hasPaint = false
-        paintRef?.clearMarks()
-        hint = "用笔在卡里这只身上涂，涂到就软，涂完点确认"
+        playBridge.playEnabled = false
+        playBridge.setPlaying(false)
+        paintRef?.clearSoft()
+        paintRef?.setMarksVisible(true, animated: false)
+        hasSoftPaint = false
+        hint = "用笔在它身上涂一块软的，涂完点确认"
     }
 
     private func confirmPinch() {
-        guard paintRef?.hasMarks == true else {
+        guard paintRef?.hasSoft() == true else {
             hint = "先用笔在它身上涂一块，再点确认"
             return
         }
-        springOnce()
+        // ★ 确认 → 玩耍态：桥接软区采样，形变 view 进玩耍，工具条只留「还原」。
+        //   stageLocked 由 panel == "pinch" 派生，卡片拖动手势自动不挂。
+        playBridge.paintView = paintRef
+        playBridge.playEnabled = true
+        playBridge.setPlaying(true)
+        paintRef?.setMarksVisible(false, animated: true)
         sqState = 2
-        hint = "捏着呢：清除了才能换"
+        hint = "摸摸它软的地方，按住拽拽看"
     }
 
     private func clearPinch() {
-        paintRef?.clearMarks()
+        // 先收形变，再清软区 / 标记，最后解锁恢复工具条。
+        playBridge.setPlaying(false)
+        playBridge.playEnabled = false
+        paintRef?.clearSoft()
+        paintRef?.setMarksVisible(true, animated: true)
+        hasSoftPaint = false
         exitPinch()
         hint = "已还原，可以换动作了"
     }
@@ -394,7 +492,6 @@ struct HerStagePane: View {
     private func exitPinch() {
         sqState = 0
         sqKey += 1
-        hasPaint = false
         panel = ""
         hint = ""
     }
@@ -427,10 +524,7 @@ struct HerStagePane: View {
                     .foregroundStyle(Tw.gray900)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(
-                        Capsule().fill(Tw.white)
-                            .overlay(Capsule().stroke(Tw.gray200, lineWidth: 1))
-                    )
+                    .glassThickness(corner: 22, opacity: 0.52)
             }
             .buttonStyle(PressStyle(scale: 0.97))
         }
@@ -439,19 +533,25 @@ struct HerStagePane: View {
 
     @ViewBuilder
     private var pinchPanel: some View {
-        // ★ 2026-11-24：不再另起画布复制一只来捏 —— 笔/橡皮直接涂在卡里那只身上，
-        //   这里只剩工具条（两个大图形 + 取消/确认/清除）。
-        HStack(spacing: 12) {
-            toolGlyph(asset: "tool_pencil", selected: sqTool == 0, wide: false) { sqTool = 0 }
-            toolGlyph(asset: "tool_eraser", selected: sqTool == 1, wide: true) { sqTool = 1 }
-            Spacer(minLength: 0)
-            smallButton("取消", primary: false) { exitPinch() }
-            smallButton("确认", primary: true, enabled: paintRef?.hasMarks == true) { confirmPinch() }
-            if sqState == 2 {
-                smallButton("清除", primary: true) { clearPinch() }
+        if sqState == 2 {
+            // ★ 确认后工具条收起：只留一个居中的「还原」，别的全不显示。
+            HStack {
+                Spacer(minLength: 0)
+                smallButton("还原", primary: true) { clearPinch() }
+                Spacer(minLength: 0)
             }
+            .frame(height: 62)
+        } else {
+            // ★ 涂抹中：笔 / 橡皮 / 取消 / 确认，白底阴影无白边。
+            HStack(spacing: 12) {
+                toolGlyph(asset: "tool_pencil", selected: sqTool == 0, wide: false) { sqTool = 0 }
+                toolGlyph(asset: "tool_eraser", selected: sqTool == 1, wide: true) { sqTool = 1 }
+                Spacer(minLength: 0)
+                smallButton("取消", primary: false) { exitPinch() }
+                smallButton("确认", primary: true, enabled: hasSoftPaint) { confirmPinch() }
+            }
+            .frame(height: 62)
         }
-        .frame(height: 62)
     }
 
     /// ★ 11-24 夜：换成他给的真素材（黄木铅笔 / 奶油小狗 4B 橡皮），系统图标那版留着可回退。
@@ -460,14 +560,8 @@ struct HerStagePane: View {
         Button {
             onHit()
             tap()
-        } label: {
+        }         label: {
             ZStack {
-                Circle()
-                    .fill(selected ? Color.white.opacity(0.92) : Color.white.opacity(0.5))
-                    .overlay(Circle().stroke(Color.white.opacity(selected ? 0.9 : 0.55),
-                                             lineWidth: selected ? 2 : 1))
-                    .frame(width: wide ? 76 : 62, height: 62)
-                    .shadow(color: Color.black.opacity(0.12), radius: selected ? 10 : 5, y: 4)
                 if let img = UIImage(named: asset) {
                     Image(uiImage: img)
                         .resizable()
@@ -475,6 +569,8 @@ struct HerStagePane: View {
                         .frame(width: wide ? 68 : 52, height: 52)
                 }
             }
+            .frame(width: wide ? 76 : 62, height: 62)
+            .glassThickness(corner: 31, opacity: selected ? 0.52 : 0.30)
         }
         .opacity(selected ? 1 : 0.72)
         .buttonStyle(PressStyle(scale: 0.94))
@@ -488,16 +584,11 @@ struct HerStagePane: View {
         } label: {
             Text(label)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(enabled ? (primary ? Tw.white : Tw.gray500) : Tw.gray400)
+                .foregroundStyle(enabled ? Tw.gray900 : Tw.gray400)
                 .frame(width: 62, height: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(enabled ? (primary ? Tw.gray900 : Tw.white) : Tw.gray100)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(primary ? Color.clear : Tw.gray200, lineWidth: 1)
-                        )
-                )
+                // ★ 统一玻璃厚度，无阴影无描边。
+                .glassThickness(corner: 12,
+                                opacity: enabled ? (primary ? 0.55 : 0.34) : 0.18)
         }
         .buttonStyle(PressStyle(scale: 0.94))
         .disabled(!enabled)
@@ -536,7 +627,7 @@ struct HerStagePane: View {
                         .foregroundStyle(Tw.gray500)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Capsule().fill(Tw.white).overlay(Capsule().stroke(Tw.gray200, lineWidth: 1)))
+                        .glassThickness(corner: 13, opacity: 0.44)
                 }
                 Text("5 秒")
                     .font(.system(size: 11))
@@ -560,14 +651,8 @@ struct HerStagePane: View {
             }
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Tw.gray100)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Tw.gray200, lineWidth: 1)
-                )
-        )
+        // ★ 玻璃厚度面板；TextEditor 文字仍是深色，看得清。
+        .glassThickness(corner: 18, opacity: 0.50)
     }
 
     private var chatPanel: some View {
@@ -588,11 +673,7 @@ struct HerStagePane: View {
                                 .padding(.vertical, 7)
                                 .background(
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(line.mine ? Tw.gray900 : Tw.white)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .stroke(line.mine ? Color.clear : Tw.gray200, lineWidth: 1)
-                                        )
+                                        .fill(line.mine ? Tw.gray900 : Color.white.opacity(0.72))
                                 )
                             if !line.mine { Spacer(minLength: 0) }
                         }
@@ -603,14 +684,8 @@ struct HerStagePane: View {
             .scrollIndicators(.hidden)
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Tw.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Tw.gray200, lineWidth: 1)
-                )
-        )
+        // ★ 玻璃厚度面板，无阴影无描边。
+        .glassThickness(corner: 18, opacity: 0.52)
     }
 
     // MARK: - 数据 / 下单
@@ -700,6 +775,86 @@ struct HerStagePane: View {
             }
             try? await Task.sleep(nanoseconds: 5_000_000_000)
         }
+    }
+}
+
+// MARK: - 玻璃厚度（替代阴影 + 均匀白描边）
+//
+// ★ 一块有厚度的透明玻璃：底层比面层略大、下/右缘更深（侧壁），
+//   上层半透明白（玻璃面），再叠顶/左高光（两端 alpha 渐隐成高光断点）、
+//   底边细折射线、上/左转角更亮的高光。
+
+private struct GlassPlate: View {
+    let corner: CGFloat
+    let opacity: CGFloat
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width
+            let h = g.size.height
+            ZStack {
+                // 玻璃侧壁：略大一点、往右下错开，下/右缘渐深
+                RoundedRectangle(cornerRadius: corner + 1.5, style: .continuous)
+                    .fill(
+                        LinearGradient(colors: [
+                            Color.white.opacity(0.06),
+                            Color.white.opacity(0.14),
+                            Color.black.opacity(0.20)
+                        ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .offset(x: 1.4, y: 2.6)
+
+                // 玻璃面
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(Color.white.opacity(opacity))
+
+                // 顶边 + 左边一道亮线，LinearGradient 两端渐隐 → 高光不是一整圈
+                Path { p in
+                    p.move(to: CGPoint(x: corner * 0.9, y: 0.7))
+                    p.addLine(to: CGPoint(x: w - corner * 0.6, y: 0.7))
+                    p.move(to: CGPoint(x: 0.7, y: corner * 0.9))
+                    p.addLine(to: CGPoint(x: 0.7, y: h - corner * 0.6))
+                }
+                .stroke(
+                    LinearGradient(colors: [
+                        Color.white.opacity(0),
+                        Color.white.opacity(0.72),
+                        Color.white.opacity(0.16),
+                        Color.white.opacity(0)
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1.1
+                )
+
+                // 底边细亮折射线
+                Path { p in
+                    p.move(to: CGPoint(x: corner, y: h - 0.8))
+                    p.addLine(to: CGPoint(x: w - corner, y: h - 0.8))
+                }
+                .stroke(Color.white.opacity(0.26), lineWidth: 0.9)
+
+                // 上/左转角高光更亮
+                Path { p in
+                    p.move(to: CGPoint(x: 0.9, y: corner))
+                    p.addQuadCurve(to: CGPoint(x: corner, y: 0.9),
+                                   control: CGPoint(x: 0.9, y: 0.9))
+                }
+                .stroke(Color.white.opacity(0.92), lineWidth: 1.5)
+            }
+        }
+    }
+}
+
+private struct GlassThickness: ViewModifier {
+    let corner: CGFloat
+    let opacity: CGFloat
+    func body(content: Content) -> some View {
+        content.background(GlassPlate(corner: corner, opacity: opacity))
+    }
+}
+
+private extension View {
+    func glassThickness(corner: CGFloat = 18, opacity: CGFloat = 0.32) -> some View {
+        modifier(GlassThickness(corner: corner, opacity: opacity))
     }
 }
 

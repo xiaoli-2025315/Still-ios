@@ -158,6 +158,9 @@ struct PackCatView: View {
     /// ★ 2026-11-09：聊天页浮窗按住要演挣扎。默认还是坐立，
     ///   主页框那个调用点一个字都不用改。包里没这个动作就自动退回坐立。
     var actName: String = "sit"
+    /// ★ 玩耍态才创建形变 view：默认 false / nil ⇒ 老调用点照旧走 `Image(uiImage:)`。
+    var playBridge: SquishPlayBridge? = nil
+    var playEnabled: Bool = false
 
     @State private var img: UIImage?
     @State private var idx = 0
@@ -174,9 +177,14 @@ struct PackCatView: View {
     var body: some View {
         Group {
             if let i = img {
-                Image(uiImage: i)
-                    .resizable()
-                    .scaledToFit()
+                if playEnabled, let bridge = playBridge {
+                    // ★ 玩耍态：逐顶点弹簧形变，img 变了只重画、不重置形变状态。
+                    SquishFrameHost(img: i, bridge: bridge, width: width)
+                } else {
+                    Image(uiImage: i)
+                        .resizable()
+                        .scaledToFit()
+                }
             } else {
                 Color.clear
             }

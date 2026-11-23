@@ -17,8 +17,27 @@ struct OrbPet: View {
     let charId: String
     var actName: String = "sit"
     var width: CGFloat = 58
+    /// ★ 玩耍态形变：默认 false / nil ⇒ 其它调用点行为完全不变。
+    var playBridge: SquishPlayBridge? = nil
+    var playEnabled: Bool = false
 
     @ObservedObject private var store = CatPackStore.shared
+
+    /// ★ 帧图（384×216，宽幅）scaledToFit 后在给定框里的实际显示矩形。
+    ///   涂抹层要按这个矩形摆，才能跟播放帧的归一化 (u,v) 一一对上。
+    static func frameRect(in box: CGSize, charId: String) -> CGRect {
+        let s = CatPackStore.shared
+        let p = s.installed(charId) ?? (charId == CatPackStore.builtinId ? s.builtin : nil)
+        let fs = p?.frameSize ?? CGSize(width: 384, height: 216)
+        guard fs.width > 0, fs.height > 0 else {
+            return CGRect(origin: .zero, size: box)
+        }
+        let scale = min(box.width / fs.width, box.height / fs.height)
+        let w = fs.width * scale
+        let h = fs.height * scale
+        return CGRect(x: (box.width - w) / 2, y: (box.height - h) / 2,
+                      width: w, height: h)
+    }
 
     /// 这只角色有没有自己的动画可播（给外层判断露不露「创建动态形象」）。
     static func hasFrame(_ id: String) -> Bool {
@@ -37,7 +56,8 @@ struct OrbPet: View {
     var body: some View {
         Group {
             if let p = pack {
-                PackCatView(pack: p, width: width, actName: actName)
+                PackCatView(pack: p, width: width, actName: actName,
+                            playBridge: playBridge, playEnabled: playEnabled)
             } else {
                 Color.clear
             }

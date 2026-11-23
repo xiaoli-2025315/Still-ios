@@ -238,7 +238,7 @@ struct MainHomeView: View {
         .fullScreenCover(isPresented: $记忆开) {
             // ★ 2026-11-23：记忆页改成原生渲染（不嵌网页了）。
             //   旧的网页版 Mem3DView 原样留着，要退回把这一行换回去即可。
-            MemPageNative(charId: CatBrain.currentCharId)
+            MemPageNative(charId0: CatBrain.currentCharId)
         }
         // ★★★ v64：小窗上那个键按下去 ＝「问它」。
         //

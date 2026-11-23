@@ -468,7 +468,7 @@ final class MemPlanetUIView: UIView {
             // 柔光
             let gs = (类 ? 30.0 : 17.0) * 径 * scale
                 * (1 + 0.10 * CGFloat(sin(now * 3 + Double(i) * 0.9)))
-            if let g = 光晕图() {
+            if let g = 光晕图()?.cgImage {
                 ctx.saveGState()
                 ctx.setAlpha(alpha * (sel ? 0.58 : (类 ? 0.44 : 0.30)))
                 ctx.setBlendMode(.plusLighter)

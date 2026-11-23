@@ -27,6 +27,9 @@ struct HerStagePane: View {
     @State private var sqTool = 0
     @State private var sqKey = 0
     @State private var hasPaint = false
+    /// 焦点卡上那层涂抹层（笔迹直接画在卡里这只身上）。
+    @State private var paintRef: CardPinchPaint? = nil
+    @State private var springAmt: CGFloat = 1
 
     @State private var prompt = ""
     @State private var model = "wan"
@@ -41,9 +44,10 @@ struct HerStagePane: View {
         let mine: Bool
     }
 
-    private let cardW: CGFloat = 142
-    private let cardH: CGFloat = 214
-    private let gap: CGFloat = 124
+    // ★ 2026-11-24：卡面加大（对齐预览），角色缩小留白；扇形展牌靠 rotationEffect。
+    private let cardW: CGFloat = 182
+    private let cardH: CGFloat = 258
+    private let gap: CGFloat = 150
 
     // MARK: 当前角色
 
@@ -83,7 +87,7 @@ struct HerStagePane: View {
                         }
                     }
                 }
-                .frame(height: 262)
+                .frame(height: 300)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .gesture(
@@ -162,7 +166,7 @@ struct HerStagePane: View {
             .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
-        .background(Tw.white)
+        .background(Color.clear)   // ★ 透出底下 MainHomeView 的全屏动态柔光
         .task { await load() }
         .alert("确认开始生成？", isPresented: $confirmShow) {
             Button("取消", role: .cancel) {}
@@ -186,16 +190,24 @@ struct HerStagePane: View {
                 .foregroundStyle(Tw.gray500)
         }
         .frame(width: cardW, height: cardH)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Tw.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Tw.gray200, lineWidth: 1)
-                )
-        )
+        .background(glassCard(on: false))
         .onTapGesture { onCreateImage() }
         .frame(maxWidth: .infinity)
+    }
+
+    /// 玻璃卡面：半透明白 + 白描边 + 斜向那道高光。中间那张更透亮、描边更实。
+    private func glassCard(on: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color.white.opacity(on ? 0.30 : 0.18))
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.white.opacity(on ? 0.90 : 0.60), lineWidth: on ? 2.5 : 1)
+            // 斜向高光
+            LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0.08), Color.clear],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        }
+        .shadow(color: Color.black.opacity(0.16), radius: on ? 22 : 16, y: 10)
     }
 
     @ViewBuilder
@@ -204,22 +216,19 @@ struct HerStagePane: View {
             let c = roles[i]
             let d = Double(i) - pos
             let ad = abs(d)
-            let sc = max(0.74, 1 - ad * 0.13)
-            let op = max(0.42, 1 - ad * 0.28)
+            // ★ 扇形展牌：旋转锚点挪到卡下方（y=1.68），越靠边转得越多 → 底部收拢顶部散开。
+            let sc = max(0.90, 1 - ad * 0.05)
+            let op = ad > 2.01 ? 0 : max(0.5, 1 - ad * 0.22)
             let on = (i == focus)
+            let rot = CGFloat(d) * 11
 
             ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Tw.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(on ? Tw.gray400 : Tw.gray200, lineWidth: on ? 1.6 : 1)
-                    )
+                glassCard(on: on)
 
                 if OrbPet.hasFrame(c.id) {
-                    OrbPet(charId: c.id, actName: "sit", width: cardW - 12)
-                        .frame(width: cardW - 12, height: cardH - 36)
-                        .clipped()
+                    // ★ 角色缩小、居中、四周留白，跟卡面比例拉开（不贴边）。
+                    OrbPet(charId: c.id, actName: "sit", width: cardW * 0.72)
+                        .frame(width: cardW * 0.72, height: cardH * 0.72)
                 } else {
                     VStack(spacing: 8) {
                         Text("＋")
@@ -236,12 +245,21 @@ struct HerStagePane: View {
                     .foregroundStyle(on ? Tw.gray900 : Tw.gray500)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 3)
-                    .background(Tw.white.opacity(0.82))
+                    .background(Color.white.opacity(0.72))
+
+                // ★ 捏捏直接涂在卡里这只身上：只叠在焦点卡、只捏的时候能吃触摸。
+                if on && panel == "pinch" {
+                    CardPinchPaintView(active: true, tool: sqTool, key: sqKey,
+                                       onPaint: { springOnce() },
+                                       onReady: { paintRef = $0 })
+                        .frame(width: cardW, height: cardH)
+                }
             }
             .frame(width: cardW, height: cardH)
-            .scaleEffect(CGFloat(sc))
+            .rotationEffect(.degrees(rot), anchor: UnitPoint(x: 0.5, y: 1.68))
+            .scaleEffect(CGFloat(sc) * springAmt)
             .opacity(op)
-            .offset(x: CGFloat(d) * gap, y: (1 - CGFloat(sc)) * 16)
+            .offset(x: CGFloat(d) * gap, y: ad * 14)
             .onTapGesture {
                 if !OrbPet.hasFrame(c.id) {
                     onCreateImage()
@@ -297,6 +315,13 @@ struct HerStagePane: View {
         }
     }
 
+    /// 涂一下：卡里那只软一下、松手弹回（弹簧手感）。
+    private func springOnce() {
+        springAmt = 0.94
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.45)) { springAmt = 1 }
+        hasPaint = true
+    }
+
     private func pinchTap() {
         if sqState != 0 {
             exitPinch()
@@ -307,13 +332,24 @@ struct HerStagePane: View {
         sqTool = 0
         sqKey += 1
         hasPaint = false
-        hint = "选笔或橡皮在它身上涂，涂完点确认"
+        paintRef?.clearMarks()
+        hint = "用笔在卡里这只身上涂，涂到就软，涂完点确认"
     }
 
     private func confirmPinch() {
-        guard hasPaint else { return }
+        guard paintRef?.hasMarks == true else {
+            hint = "先用笔在它身上涂一块，再点确认"
+            return
+        }
+        springOnce()
         sqState = 2
         hint = "捏着呢：清除了才能换"
+    }
+
+    private func clearPinch() {
+        paintRef?.clearMarks()
+        exitPinch()
+        hint = "已还原，可以换动作了"
     }
 
     private func exitPinch() {
@@ -364,39 +400,19 @@ struct HerStagePane: View {
 
     @ViewBuilder
     private var pinchPanel: some View {
-        if let c = currentRole {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Tw.white)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Tw.gray200, lineWidth: 1)
-                        )
-                    OrbPet(charId: c.id, actName: "sit", width: 132)
-                        .frame(width: 132, height: 150)
-                        .clipped()
-                    StageSquish(state: $sqState, tool: $sqTool, key: $sqKey, hasPaint: $hasPaint)
-                        .frame(width: 132, height: 150)
-                }
-                .frame(width: 150, height: 190)
-
-                VStack(spacing: 10) {
-                    HStack(spacing: 10) {
-                        toolGlyph(system: "pencil", selected: sqTool == 0) { sqTool = 0 }
-                        toolGlyph(system: "eraser", selected: sqTool == 1) { sqTool = 1 }
-                    }
-                    HStack(spacing: 8) {
-                        smallButton("取消", primary: false) { exitPinch() }
-                        smallButton("确认", primary: true, enabled: hasPaint) { confirmPinch() }
-                    }
-                    if sqState == 2 {
-                        smallButton("清除", primary: true) { exitPinch() }
-                    }
-                }
-                .frame(maxWidth: .infinity)
+        // ★ 2026-11-24：不再另起画布复制一只来捏 —— 笔/橡皮直接涂在卡里那只身上，
+        //   这里只剩工具条（两个大图形 + 取消/确认/清除）。
+        HStack(spacing: 10) {
+            toolGlyph(system: "pencil", selected: sqTool == 0) { sqTool = 0 }
+            toolGlyph(system: "eraser", selected: sqTool == 1) { sqTool = 1 }
+            Spacer(minLength: 0)
+            smallButton("取消", primary: false) { exitPinch() }
+            smallButton("确认", primary: true, enabled: paintRef?.hasMarks == true) { confirmPinch() }
+            if sqState == 2 {
+                smallButton("清除", primary: true) { clearPinch() }
             }
         }
+        .frame(height: 52)
     }
 
     private func toolGlyph(system: String, selected: Bool,

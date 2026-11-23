@@ -205,6 +205,14 @@ struct MainHomeView: View {
         ZStack(alignment: .bottom) {
             Tw.gray50.ignoresSafeArea()
 
+            // ★ 2026-11-24：它页全屏动态柔光，玻璃卡底下那层；只在 tab==0 渐显，
+            //   切走（聊天/记忆整页盖上来）渐隐，切回它页再渐显 —— 对称安卓切页过渡。
+            HerStageBg()
+                .ignoresSafeArea()
+                .opacity(tab == 0 ? 1 : 0)
+                .animation(.easeInOut(duration: 0.42), value: tab)
+                .allowsHitTesting(false)
+
             VStack(spacing: 0) {
                 topBar
                 content

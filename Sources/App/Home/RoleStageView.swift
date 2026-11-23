@@ -516,7 +516,7 @@ final class SquishView: UIView {
             for gx in 0..<Self.W {
                 let i = gy*Self.W+gx
                 if !paintMask[i] { continue }
-                let px = CGFloat(gx+0.5)*cw + ox[i], py = CGFloat(gy+0.5)*ch + oy[i]
+                let px = (CGFloat(gx)+0.5)*cw + ox[i], py = (CGFloat(gy)+0.5)*ch + oy[i]
                 UIBezierPath(arcCenter: CGPoint(x: px, y: py), radius: 1.4, startAngle: 0, endAngle: .pi*2, clockwise: true).fill()
             }
         }

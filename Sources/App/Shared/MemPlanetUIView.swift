@@ -305,7 +305,7 @@ final class MemPlanetUIView: UIView {
             for j in 0..<k {
                 guard let ki = 点号[kids[j].id] else { continue }
                 let tt = (Float(j) + 0.5) / Float(k)
-                let rr = cap * sqrt(tt) * (0.84 + 0.30 * Float((j * 37) % 11) / 10)
+                let rr = cap * (0.42 + 0.58 * sqrt(tt)) * (0.88 + 0.24 * Float((j * 37) % 11) / 10)
                 let ph = gold * Float(j)
                 let cs = cos(rr), sn = sin(rr)
                 let qx = ax * cs + (e1x * cos(ph) + e2x * sin(ph)) * sn

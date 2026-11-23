@@ -21,6 +21,8 @@ struct HerStagePane: View {
     @State private var pos: Double = 0
     @State private var dragStart: Double = 0
     @State private var focus = 0
+    /// 0 = 三张合在一起像一叠牌；1 = 摊开成扇形。切到它页时播放展开。
+    @State private var spread: CGFloat = 0
     @State private var panel = ""          // "" / "float" / "pinch" / "make" / "chat"
     @State private var hint = ""
     @State private var sqState = 0         // 0 browse / 1 paint / 2 squish
@@ -69,15 +71,9 @@ struct HerStagePane: View {
     }
 
     var body: some View {
-        ScrollView {
+        // ★ 11-24 夜：整页铺满、不再上下滑；「它在这儿」小标题按他要求删掉。
+        GeometryReader { geo in
             VStack(alignment: .leading, spacing: 0) {
-                Text("它在这儿")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Tw.gray400)
-                    .kerning(0.8)
-                    .padding(.horizontal, 2)
-                    .padding(.bottom, 4)
-
                 ZStack {
                     if roles.isEmpty {
                         addCard
@@ -87,39 +83,53 @@ struct HerStagePane: View {
                         }
                     }
                 }
-                .frame(height: 300)
+                // 舞台固定高度（跟安卓 330dp 一致），下方交给 Spacer 把面板压到底栏上方。
+                .frame(height: 330)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 8)
                         .onChanged { v in
                             if stageLocked { return }
-                            let raw = dragStart - Double(v.translation.width / gap)
-                            pos = max(-0.35, min(Double(max(0, roles.count - 1)) + 0.35, raw))
+                            // 循环：往一个方向一直滑就一直换，不再卡在两端。
+                            pos = dragStart - Double(v.translation.width / gap)
                         }
                         .onEnded { v in
                             if stageLocked { return }
                             guard !roles.isEmpty else { return }
-                            let target = max(0, min(roles.count - 1, Int(pos.rounded())))
+                            let n = roles.count
+                            let target = ((Int(pos.rounded()) % n) + n) % n
+                            // 走最短一圈回到选中位置，避免多滑了后跳一大段。
+                            var m = pos.truncatingRemainder(dividingBy: Double(n))
+                            if m < 0 { m += Double(n) }
+                            var delta = Double(target) - m
+                            if delta > Double(n) / 2 { delta -= Double(n) }
+                            if delta < -Double(n) / 2 { delta += Double(n) }
                             withAnimation(.easeOut(duration: 0.26)) {
                                 focus = target
-                                pos = Double(target)
+                                pos += delta
                                 dragStart = pos
                             }
                             onHit()
                         }
                 )
+                .onAppear {
+                    // 每次切到它页，三张卡从一叠摊开（这个页面每次 tab 切换都会重建）。
+                    spread = 0
+                    withAnimation(.easeInOut(duration: 0.42)) { spread = 1 }
+                }
 
                 Text(currentRole?.title ?? "还没有形象")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Tw.gray900)
                     .frame(maxWidth: .infinity)
-                Text(currentRole == nil ? "先做一只，它就有地方住了" : "左右拖动换一只")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Tw.gray400)
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, 10)
-
+                // 「左右拖动换一只」按他要求删掉。
+                if currentRole == nil {
+                    Text("先做一只，它就有地方住了")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Tw.gray400)
+                        .frame(maxWidth: .infinity)
+                }
                 HStack(spacing: 8) {
                     actionButton("悬浮模式", enabled: currentHasFrame && sqState != 2) { showPanel("float") }
                     actionButton("捏捏它", enabled: currentHasFrame) { pinchTap() }
@@ -142,6 +152,10 @@ struct HerStagePane: View {
                         .padding(.top, 8)
                 }
 
+                // 这段空白把面板压到底栏上方，工具条贴着底栏从下方推出。
+                Spacer(minLength: 8)
+
+                // ★ 11-24 夜：面板从屏幕下方推出、切走收回（跟安卓同一手感）。
                 ZStack {
                     if panel == "float" { floatPanel }
                     if panel == "pinch" { pinchPanel }
@@ -150,6 +164,9 @@ struct HerStagePane: View {
                 }
                 .frame(height: 214)
                 .padding(.top, 4)
+                .offset(y: panel.isEmpty ? 240 : 0)
+                .opacity(panel.isEmpty ? 0 : 1)
+                .animation(.easeOut(duration: 0.26), value: panel)
 
                 if !banner.isEmpty {
                     Text(banner)
@@ -163,9 +180,8 @@ struct HerStagePane: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
-            .padding(.bottom, 18)
+            .padding(.bottom, 12)
         }
-        .scrollIndicators(.hidden)
         .background(Color.clear)   // ★ 透出底下 MainHomeView 的全屏动态柔光
         .task { await load() }
         .alert("确认开始生成？", isPresented: $confirmShow) {
@@ -214,21 +230,31 @@ struct HerStagePane: View {
     private func roleCard(_ i: Int) -> some View {
         if i < roles.count {
             let c = roles[i]
-            let d = Double(i) - pos
+            let n = roles.count
+            // 循环最短偏移：选中的那张永远在正中，左右从队尾/队首接上。
+            var m = pos.truncatingRemainder(dividingBy: Double(n))
+            if m < 0 { m += Double(n) }
+            var d = Double(i) - m
+            if d > Double(n) / 2 { d -= Double(n) }
+            if d < -Double(n) / 2 { d += Double(n) }
             let ad = abs(d)
             // ★ 扇形展牌：旋转锚点挪到卡下方（y=1.68），越靠边转得越多 → 底部收拢顶部散开。
-            let sc = max(0.90, 1 - ad * 0.05)
+            //   spread=0 时合成一叠（微微错开）；切到它页 0→1 摊开。
+            let fold: CGFloat = 1 - spread
+            let sc0 = max(0.90, 1 - ad * 0.05)
+            let sc = sc0 * spread + 0.86 * fold
             let op = ad > 2.01 ? 0 : max(0.5, 1 - ad * 0.22)
             let on = (i == focus)
-            let rot = CGFloat(d) * 11
+            let stackRot = CGFloat(i - (n - 1) / 2) * 1.6
+            let rot = CGFloat(d) * 11 * spread + stackRot * fold
 
             ZStack(alignment: .bottom) {
                 glassCard(on: on)
 
                 if OrbPet.hasFrame(c.id) {
-                    // ★ 角色缩小、居中、四周留白，跟卡面比例拉开（不贴边）。
-                    OrbPet(charId: c.id, actName: "sit", width: cardW * 0.72)
-                        .frame(width: cardW * 0.72, height: cardH * 0.72)
+                    // ★ 11-24 夜：按他要求放大、在卡里真正居中（原来太小）。
+                    OrbPet(charId: c.id, actName: "sit", width: cardW * 0.92)
+                        .frame(width: cardW * 0.92, height: cardH * 0.84)
                 } else {
                     VStack(spacing: 8) {
                         Text("＋")
@@ -259,14 +285,21 @@ struct HerStagePane: View {
             .rotationEffect(.degrees(rot), anchor: UnitPoint(x: 0.5, y: 1.68))
             .scaleEffect(CGFloat(sc) * springAmt)
             .opacity(op)
-            .offset(x: CGFloat(d) * gap, y: ad * 14)
+            .offset(x: CGFloat(d) * gap * spread,
+                    y: ad * 14 * spread + CGFloat(i) * 2 * fold)
             .onTapGesture {
                 if !OrbPet.hasFrame(c.id) {
                     onCreateImage()
                 } else if i != focus {
+                    // 点到哪张就近转成哪张（循环），不硬跳整条队列。
+                    var mm = pos.truncatingRemainder(dividingBy: Double(n))
+                    if mm < 0 { mm += Double(n) }
+                    var delta = Double(i) - mm
+                    if delta > Double(n) / 2 { delta -= Double(n) }
+                    if delta < -Double(n) / 2 { delta += Double(n) }
                     withAnimation(.easeOut(duration: 0.26)) {
                         focus = i
-                        pos = Double(i)
+                        pos += delta
                         dragStart = pos
                     }
                     onHit()
@@ -288,14 +321,16 @@ struct HerStagePane: View {
                 .foregroundStyle(enabled ? Tw.gray900 : Tw.gray400)
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
+                // ★ 11-24 夜：悬浮玻璃底，浮在动态柔光上。
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(enabled ? Tw.white : Tw.gray100)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(enabled ? Color.white.opacity(0.62) : Color.white.opacity(0.28))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Tw.gray200, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(enabled ? 0.9 : 0.4), lineWidth: enabled ? 1.5 : 1)
                         )
                 )
+                .shadow(color: Color.black.opacity(0.10), radius: 10, y: 5)
         }
         .buttonStyle(PressStyle(scale: 0.97))
         .disabled(!enabled)
@@ -402,9 +437,9 @@ struct HerStagePane: View {
     private var pinchPanel: some View {
         // ★ 2026-11-24：不再另起画布复制一只来捏 —— 笔/橡皮直接涂在卡里那只身上，
         //   这里只剩工具条（两个大图形 + 取消/确认/清除）。
-        HStack(spacing: 10) {
-            toolGlyph(system: "pencil", selected: sqTool == 0) { sqTool = 0 }
-            toolGlyph(system: "eraser", selected: sqTool == 1) { sqTool = 1 }
+        HStack(spacing: 12) {
+            toolGlyph(asset: "tool_pencil", selected: sqTool == 0, wide: false) { sqTool = 0 }
+            toolGlyph(asset: "tool_eraser", selected: sqTool == 1, wide: true) { sqTool = 1 }
             Spacer(minLength: 0)
             smallButton("取消", primary: false) { exitPinch() }
             smallButton("确认", primary: true, enabled: paintRef?.hasMarks == true) { confirmPinch() }
@@ -412,10 +447,11 @@ struct HerStagePane: View {
                 smallButton("清除", primary: true) { clearPinch() }
             }
         }
-        .frame(height: 52)
+        .frame(height: 62)
     }
 
-    private func toolGlyph(system: String, selected: Bool,
+    /// ★ 11-24 夜：换成他给的真素材（黄木铅笔 / 奶油小狗 4B 橡皮），系统图标那版留着可回退。
+    private func toolGlyph(asset: String, selected: Bool, wide: Bool,
                            _ tap: @escaping () -> Void) -> some View {
         Button {
             onHit()
@@ -423,14 +459,20 @@ struct HerStagePane: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(selected ? Tw.gray100 : Tw.white)
-                    .overlay(Circle().stroke(Tw.gray200, lineWidth: 1))
-                    .frame(width: 52, height: 52)
-                Image(systemName: system)
-                    .font(.system(size: 27, weight: .medium))
-                    .foregroundStyle(selected ? Tw.gray900 : Tw.gray500)
+                    .fill(selected ? Color.white.opacity(0.92) : Color.white.opacity(0.5))
+                    .overlay(Circle().stroke(Color.white.opacity(selected ? 0.9 : 0.55),
+                                             lineWidth: selected ? 2 : 1))
+                    .frame(width: wide ? 76 : 62, height: 62)
+                    .shadow(color: Color.black.opacity(0.12), radius: selected ? 10 : 5, y: 4)
+                if let img = UIImage(named: asset) {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: wide ? 68 : 52, height: 52)
+                }
             }
         }
+        .opacity(selected ? 1 : 0.72)
         .buttonStyle(PressStyle(scale: 0.94))
     }
 

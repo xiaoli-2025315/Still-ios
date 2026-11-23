@@ -9,6 +9,10 @@ final class CardPinchPaint: UIView {
     var marks: [Mark] = []
     var tool: Int = 0                  // 0 笔 / 1 橡皮
     var onPaint: (() -> Void)?
+    // ★ 卡顿修复：渐变只建一次，靠 translate 挪到各笔迹上；回调限到约 9 次/秒。
+    private var gradient: CGGradient?
+    private var lastCb: TimeInterval = 0
+    private static let maxMarks = 400
     private var down = false
     private var last: CGPoint = .zero
 
@@ -25,15 +29,19 @@ final class CardPinchPaint: UIView {
     override func draw(_ rect: CGRect) {
         super.draw(rect)
         guard let c = UIGraphicsGetCurrentContext() else { return }
-        for m in marks {
+        if gradient == nil {
             let cs = CGColorSpaceCreateDeviceRGB()
             let colors = [UIColor(red: 0.47, green: 0.86, blue: 0.80, alpha: 0.55).cgColor,
                           UIColor(red: 0.47, green: 0.86, blue: 0.80, alpha: 0).cgColor] as CFArray
-            let locs: [CGFloat] = [0, 1]
-            if let g = CGGradient(colorsSpace: cs, colors: colors, locations: locs) {
-                c.drawRadialGradient(g, startCenter: CGPoint(x: m.x, y: m.y), startRadius: 0,
-                                     endCenter: CGPoint(x: m.x, y: m.y), endRadius: m.r, options: [])
-            }
+            gradient = CGGradient(colorsSpace: cs, colors: colors, locations: [0, 1])
+        }
+        guard let g = gradient else { return }
+        for m in marks {
+            c.save()
+            c.translateBy(x: m.x, y: m.y)
+            c.drawRadialGradient(g, startCenter: .zero, startRadius: 0,
+                                 endCenter: .zero, endRadius: m.r, options: [])
+            c.restore()
         }
     }
 
@@ -60,8 +68,16 @@ final class CardPinchPaint: UIView {
             marks.removeAll { hypot($0.x - p.x, $0.y - p.y) < $0.r + 18 }
         } else {
             marks.append(Mark(x: p.x, y: p.y))
+            if marks.count > CardPinchPaint.maxMarks { marks.removeFirst() }
         }
         setNeedsDisplay()
+        notify()
+    }
+
+    private func notify() {
+        let now = Date().timeIntervalSince1970
+        if now - lastCb < 0.11 { return }
+        lastCb = now
         onPaint?()
     }
 }

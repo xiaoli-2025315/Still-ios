@@ -95,8 +95,8 @@ struct MemPageNative: View {
                         关聚焦()
                     }
                 }, 线进度: 线进度, 线终点Y: geo.size.height * 0.45, 清焦点号: 清焦点号)
-                // ★ 2026-11-24：球往屏幕中间挪——底距从 196 收到 128。
-                .padding(.bottom, 128)
+                // ★ 2026-11-24 二次：球回屏幕正中——底距从 128 收到 76（与安卓一致）。
+                .padding(.bottom, 76)
 
                 VStack(spacing: 0) {
                     顶栏
@@ -104,12 +104,12 @@ struct MemPageNative: View {
                     Spacer(minLength: 0)
                 }
 
-                // ★ 轮盘和球同一块区域、同一球心：头像沿球上半弧，名字内圈一一对应。
+                // ★ 2026-11-24 二次：头像走上弧、名字走球下沿反向浅弧，两端共用同一个 cur，拨哪边都同步。
                 MemRoleWheel(角色: $角色, cur: Binding(
                     get: { 当前索引 },
                     set: { 切角色到($0) }
                 )) { 角色表开 = true }
-                .padding(.bottom, 128)
+                .padding(.bottom, 76)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let f = 聚焦, 浮窗长好 {
@@ -972,15 +972,16 @@ struct MemPageNative: View {
 
 // MARK: - 半圆轮盘（原生）
 
-/// 轮盘上一颗头像的位置。
+/// 轮盘上一颗的位置：头像走上弧、名字走球下沿的反向浅弧，同档一一对应。
 private struct 轮盘项: Identifiable {
-    let id: Int
-    let x: CGFloat   // 头像外圈
-    let y: CGFloat
-    let nx: CGFloat  // 名字内圈
-    let ny: CGFloat
-    let deg: CGFloat // 当前角度（算边缘虚化）
+    let id: Int                    // 虚拟槽位，只用来区分循环出来的同一角色
+    let 角色号: Int
+    let x: CGFloat, y: CGFloat     // 头像（上弧）
+    let nx: CGFloat, ny: CGFloat   // 名字（下半球弧上的落点）
+    let d: CGFloat                 // 带符号档数：虚化用真实方向、排序用绝对值
+    let 名角: CGFloat              // 字头朝球心的旋转角（列方向再转 -90°）
 }
+
 
 struct MemRoleWheel: View {
     @Binding var 角色: [MemAPI.Role]
@@ -988,13 +989,20 @@ struct MemRoleWheel: View {
     var onHub: () -> Void
 
     @State private var wd: CGFloat = 0
+    @State private var 手势中 = false
+    @State private var 起点cur = 0
+    @State private var 已走档 = 0
 
-    // ★ 2026-11-24：轮盘和球同一块区域、同一球心。头像贴球的上半外缘，名字在内圈一一对应。
+    // ★ 2026-11-24 二次：与安卓 MemWheelView 同一套几何——两弧都离球一段距离。
+    private let 档角: CGFloat = 28                                          // 头像更密：46°→28°
     private func 球半径(_ W: CGFloat) -> CGFloat { min(W * 0.31, 112) }
-    private func 头像弧半径(_ W: CGFloat) -> CGFloat { 球半径(W) + 12 }
-    private func 名字弧半径(_ W: CGFloat) -> CGFloat { 球半径(W) - 26 }
     private func 球心Y(_ H: CGFloat) -> CGFloat { H / 2 - 6 }
-    private func hubY(_ W: CGFloat, _ H: CGFloat) -> CGFloat { 球心Y(H) + 球半径(W) + 26 }
+    private func 头像弧半径(_ W: CGFloat) -> CGFloat { 球半径(W) + 40 }      // 上弧离球 40，明显间隔
+    private func 名半径(_ W: CGFloat) -> CGFloat { 球半径(W) + 66 }          // 下弧离球 66，整圈都在散点外
+    private let 名弧深: CGFloat = 0
+    private let 名弧下沉: CGFloat = 0
+    private func 名下沿Y(_ W: CGFloat, _ H: CGFloat) -> CGFloat { 球心Y(H) + 名半径(W) }
+    private func hubY(_ W: CGFloat, _ H: CGFloat) -> CGFloat { 球心Y(H) + 名半径(W) + 62 }
 
     var body: some View {
         GeometryReader { geo in
@@ -1003,35 +1011,18 @@ struct MemRoleWheel: View {
             let cx = W / 2
             let cy = 球心Y(H)
             let R = 头像弧半径(W)
-            let Rn = 名字弧半径(W)
             let items = 可见(W: W, H: H)
 
             ZStack {
                 ForEach(items) { item in
-                    let i = item.id
+                    let i = item.角色号
                     let sel = (i == cur)
-                    // 边缘虚化：离中心越远，越小、越淡、越糊
-                    let t = min(1, abs(item.deg - 90) / 68)
-                    let fade = 1 - 0.78 * t
-                    let d: CGFloat = (sel ? 50 : 44) * (1 - 0.26 * t)
+                    // 边缘虚化：离中心档数越远，越小、越淡、越糊
+                    let t = min(1, abs(item.d) * 档角 / 68)
+                    let fade = 1 - 0.72 * t
+                    let d: CGFloat = (sel ? 44 : 38) * (1 - 0.26 * t)
 
-                    // 名字（内圈）——与头像同角度一一对应
-                    Text(角色[i].名字)
-                        .font(.system(size: (sel ? 11 : 10) * (1 - 0.18 * t), weight: sel ? .bold : .regular))
-                        .foregroundColor(sel ? .white : Color.white.opacity(0.86))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .opacity(fade)
-                        .blur(radius: 1.4 * t)
-                        .position(x: item.nx, y: item.ny)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard i != cur else { return }
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            cur = i; wd = 0
-                        }
-
-                    // 头像（外圈，贴球上半缘）
+                    // 头像（上弧）：这一排不再带名字
                     ZStack {
                         Circle().fill(Color(red: 143/255, green: 180/255, blue: 255/255).opacity(sel ? 0.7 : 0.34))
                             .blur(radius: sel ? 10 : 7)
@@ -1055,9 +1046,41 @@ struct MemRoleWheel: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         cur = i; wd = 0
                     }
+
+                    // 名字（下半球弧）：名字上下排成一列，每个字的头顶朝球心（不是摆正、也不是横躺）
+                    let fs = (sel ? 15 : 14) * (1 - 0.1 * t)
+                    let lh = fs * 0.98
+                    let cnt = Array(角色[i].名字)
+                    let half = CGFloat(cnt.count - 1) * lh / 2
+                    let ux = cos(item.名角 * .pi / 180)
+                    let uy = sin(item.名角 * .pi / 180)
+                    ZStack {
+                        // 深色胶囊托底：长条长轴沿列方向，跟字一起转
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(red: 10/255, green: 12/255, blue: 20/255))
+                            .frame(width: fs + 8, height: half * 2 + fs + 10)
+                            .rotationEffect(.degrees(item.名角 - 90))
+                        ForEach(0..<cnt.count, id: \.self) { q in
+                            let off = -half + CGFloat(q) * lh
+                            Text(String(cnt[q]))
+                                .font(.system(size: fs, weight: sel ? .bold : .regular))
+                                .foregroundColor(sel ? .white : Color(red: 0.95, green: 0.96, blue: 0.99))
+                                .rotationEffect(.degrees(item.名角 - 90))   // ★ 字头朝球心
+                                .position(x: item.nx + ux * off, y: item.ny + uy * off)
+                        }
+                    }
+                    .opacity(fade)
+                    .blur(radius: 1.4 * t)
+                    .contentShape(Rectangle().size(CGSize(width: 44, height: half * 2 + fs + 16)))
+                    .position(x: item.nx, y: item.ny)
+                    .onTapGesture {
+                        guard i != cur else { return }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        cur = i; wd = 0
+                    }
                 }
 
-                // 中心三个点钮：放在球的下缘外，不挡球
+                // 中心三个点钮：放在浅弧最低点再往下，不挡球、不压中间那个名字
                 ZStack {
                     Circle().fill(Color(red: 143/255, green: 180/255, blue: 255/255).opacity(0.65))
                         .blur(radius: 9)
@@ -1071,60 +1094,82 @@ struct MemRoleWheel: View {
                         }
                     }
                 }
-                .frame(width: 40, height: 40)
+                .frame(width: 38, height: 38)
                 .position(x: cx, y: hubY(W, H))
                 .onTapGesture { onHub() }
             }
-            // ★ 只在"上半弧带"吃拖动，球心与球下半留给球转/点节点。
+            // ★ 只在"上弧头像带 / 下弧名字带 / 中心钮"吃拖动，球心与两弧之间透传给球转。
             .contentShape(Path { p in
-                p.addArc(center: CGPoint(x: cx, y: cy), radius: R,
+                // 上弧头像带
+                p.addArc(center: CGPoint(x: cx, y: cy), radius: R + 34,
                          startAngle: .degrees(160), endAngle: .degrees(20), clockwise: true)
-                p.addArc(center: CGPoint(x: cx, y: cy), radius: Rn,
+                p.addArc(center: CGPoint(x: cx, y: cy), radius: max(4, R - 34),
                          startAngle: .degrees(20), endAngle: .degrees(160), clockwise: true)
                 p.closeSubpath()
+                // 下弧名字带（球下方一整圈，都在散点之外）
+                let 起 = 名下沿Y(W, H)
+                p.addRect(CGRect(x: cx - 名半径(W) - 40, y: 起 - 40,
+                                 width: 2 * (名半径(W) + 40), height: 80))
+                // 中心三个点钮
+                p.addEllipse(in: CGRect(x: cx - 30, y: hubY(W, H) - 30, width: 60, height: 60))
             })
             .gesture(
                 DragGesture(minimumDistance: 6)
                     .onChanged { g in
-                        wd = g.translation.width * 0.34
-                    }
-                    .onEnded { _ in
-                        var s = Int((wd / 46).rounded())
-                        if abs(wd) < 23 { s = 0 }
-                        let n = 角色.count
-                        if s != 0 && n > 0 {
-                            cur = ((cur + s) % n + n) % n
+                        if !手势中 {
+                            手势中 = true
+                            起点cur = cur
+                            已走档 = 0
+                        }
+                        let 总位移 = g.translation.width * 0.34
+                        let 档 = Int((总位移 / 档角).rounded())
+                        if 档 != 已走档 {
+                            已走档 = 档
+                            let n = 角色.count
+                            // 拨过半档就切到经过的项，高亮实时跟着走；绝对映射避免累积误差
+                            if n > 0 { cur = ((起点cur - 档) % n + n) % n }
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         }
+                        wd = 总位移 - CGFloat(档) * 档角
+                    }
+                    .onEnded { _ in
+                        手势中 = false
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { wd = 0 }
                     }
             )
         }
     }
 
-    /// 看得见的那几颗（按离中间远近排序，远的先画）。x/y=头像外圈，nx/ny=名字内圈。
+    /// 看得见的那几颗（远的先画）：头像走上弧、名字走球下沿浅弧；两弧同档，
+    /// 共用同一个 cur / wd，所以拨上面或下面，另一边自动跟到对应项。
     private func 可见(W: CGFloat, H: CGFloat) -> [轮盘项] {
         var out: [轮盘项] = []
         let n = 角色.count
         guard n > 0 else { return out }
         let R = 头像弧半径(W)
-        let Rn = 名字弧半径(W)
+        let Rn = 名半径(W)
         let cx = W / 2
         let cy = 球心Y(H)
-        var arr: [(Int, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = []
-        for i in 0..<n {
-            var d = i - cur
-            while d > n / 2 { d -= n }
-            while d < -n / 2 { d += n }
-            let deg = 90 + CGFloat(d) * 46 - wd
+        // 虚拟档位 m：超出一圈的从另一头接回来，两弧都循环、没有空边；两弧同时加 wd，才是同向转。
+        // 元组：槽位、角色、ax、ay、nx、ny、排序用绝对档、带符号档、名角
+        var arr: [(Int, Int, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = []
+        for m in -n...n {
+            let i = ((cur + m) % n + n) % n
+            let d = CGFloat(m)
+            let deg = 90 + d * 档角 + wd
             if deg < 22 || deg > 158 { continue }
             let rad = deg * .pi / 180
-            // 第 5 项=带符号档数（排序用绝对值、虚化用真实角度），第 6 项=真实角度
-            arr.append((i, cx + R * cos(rad), cy - R * sin(rad),
-                        cx + Rn * cos(rad), cy - Rn * sin(rad), abs(CGFloat(d)), deg))
+            let ax = cx + R * cos(rad)
+            let ay = cy - R * sin(rad)
+            let degN = 270 + d * 档角 + wd
+            let radN = degN * .pi / 180
+            let nx = cx + Rn * cos(radN)
+            let ny = cy - Rn * sin(radN)
+            let 名角 = -degN
+            arr.append((m + n, i, ax, ay, nx, ny, abs(d), d, 名角))
         }
-        arr.sort { $0.5 > $1.5 }
-        for a in arr { out.append(轮盘项(id: a.0, x: a.1, y: a.2, nx: a.3, ny: a.4, deg: a.6)) }
+        arr.sort { $0.6 > $1.6 }
+        for a in arr { out.append(轮盘项(id: a.0, 角色号: a.1, x: a.2, y: a.3, nx: a.4, ny: a.5, d: a.7, 名角: a.8)) }
         return out
     }
 }

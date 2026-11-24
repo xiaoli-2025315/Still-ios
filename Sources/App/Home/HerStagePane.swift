@@ -13,6 +13,8 @@ import UIKit
 struct HerStagePane: View {
     @ObservedObject var pip: PiPController
     @ObservedObject private var packs = CatPackStore.shared
+    /// ★ 2026-11-24：制作动作面板输入框被键盘盖住 —— 按真实键盘高度把面板抬上去
+    @ObservedObject private var kb = KeyboardHeight.shared
     var onHit: () -> Void = {}
     /// 点「创作动态形象」：回到角色页登记/做第一套动作（老流程一行没删）
     var onCreateImage: () -> Void = {}
@@ -180,7 +182,9 @@ struct HerStagePane: View {
                 }
                 .frame(height: 214)
                 .padding(.top, 4)
-                .offset(y: panel.isEmpty ? 240 : 0)
+                // ★ 2026-11-24：面板打开时，键盘弹起就往上抬 kb.高，输入框不被盖住；
+                //   面板没开照旧藏到屏幕下方 240。
+                .offset(y: panel.isEmpty ? 240 : -kb.高)
                 .opacity(panel.isEmpty ? 0 : 1)
                 .animation(.easeOut(duration: 0.26), value: panel)
 

@@ -53,6 +53,9 @@ struct TalkPage: View {
 
     @ObservedObject private var focus = TalkFocus.shared
 
+    // ★ 2026-11-24：键盘真实高度 —— fullScreenCover 里 safeAreaInset 不顶键盘，自己按高度抬输入条
+    @ObservedObject private var kb = KeyboardHeight.shared
+
     // ★ 2026-11-21：聊天输入框样式（设置里切，A/B/C/D 四档只换壳）— 跟设置页同一个 key
     @AppStorage(ComposerStyle.key) private var composerStyle = 1
 
@@ -159,10 +162,13 @@ struct TalkPage: View {
             .background(Tw.white.ignoresSafeArea())
             // 浮在这一页的小宠物，退出聊天页这一层跟着销毁（11-10 就有的功能，不动）
             .overlay { TalkFloatPet() }
-            // ★ 输入条钉在底部 + safeAreaInset：键盘一升，系统把它整条顶起来，
-            //   不用自己算键盘高度，也不会被挡住。两个面板也在这一节里，
-            //   显示时占高度把聊天区挤上去，不盖聊天内容。
-            .safeAreaInset(edge: .bottom, spacing: 0) { inputDock }
+            // ★ 2026-11-24：键盘一升按真实高度把整条输入区顶上去（fullScreenCover 里
+            //   safeAreaInset 不顶键盘，他在真机上被盖住了）。外层已 ignoresSafeArea(.keyboard)，
+            //   系统不再插手，只有这一处按 kb.高 抬，不会顶两次。两个面板也在这一节里。
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                inputDock
+                    .padding(.bottom, kb.高)
+            }
             .onAppear { boot() }
             // ★ 回消息同步圆窗：收到动作建议就演，8 秒后清掉回默认（读全局共享，三处一致）
             .onReceive(NotificationCenter.default.publisher(for: PetEngine.外部动作通知)) { note in
@@ -189,6 +195,8 @@ struct TalkPage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        // ★ 2026-11-24：键盘 inset 由 KeyboardHeight 自己按真实高度顶，系统这份关掉，避免顶两次。
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .animation(.easeOut(duration: 0.22), value: showCats)
         .sheet(isPresented: $showNewGroup) { newGroupSheet }
         .sheet(isPresented: $showGroupSettings) { groupSettingsSheet }

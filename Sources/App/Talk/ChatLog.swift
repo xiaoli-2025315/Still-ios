@@ -12,6 +12,10 @@ enum ChatLog {
         var you: String
         var cat: String
         var at: Date = Date()
+        /// ★ 2026-11-24：这条属于哪个会话（角色 id / g:群号）。老记录没有 ⇒ 默认 ""，谁都看得到。
+        var ch: String = ""
+        /// ★ 2026-11-24：群聊里这句是谁说的。
+        var sp: String = ""
     }
 
     private static let key = "still.chat.log"
@@ -32,13 +36,23 @@ enum ChatLog {
     }
 
     static func add(you: String, cat: String) {
+        add(ch: "", sp: "", you: you, cat: cat)
+    }
+
+    /// ★ 2026-11-24：分会话记一轮（单聊带角色 id，群聊带 g: 会话号 + 说话人）。
+    static func add(ch: String, sp: String = "", you: String, cat: String) {
         let y = you.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !y.isEmpty else { return }
         var rows = all()
-        rows.append(Row(you: y, cat: cat))
+        rows.append(Row(you: y, cat: cat, ch: ch, sp: sp))
         if rows.count > max { rows.removeFirst(rows.count - max) }
         guard let d = defaults, let data = try? JSONEncoder().encode(rows) else { return }
         d.set(data, forKey: key)
+    }
+
+    /// ★ 2026-11-24：只取某个会话的记录（老记录 ch="" 也带上，不凭空消失）。
+    static func all(ch: String) -> [Row] {
+        all().filter { $0.ch.isEmpty || $0.ch == ch }
     }
 
     /// 这台手机「清到」哪一刻。nil 表示从来没清过，台子的历史照常往回拉。

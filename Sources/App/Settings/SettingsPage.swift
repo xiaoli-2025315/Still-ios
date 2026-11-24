@@ -47,12 +47,11 @@ struct SettingsPage: View {
                     // ★ 2026-11-24 连接器（常驻入口）：填 Key / 绑豆包，让 AI 真能调外部 API
                     row("连接器", "", tappable: true) { showConnector = true }
                     divider()
-                    row("大脑", brainText, tappable: true) { showBrain = true }
-                    divider()
+                    // ★ 2026-11-24（他定的整套改造）：删「大脑」「把这只派给别人」两行。
+                    //   · 大脑＝过时空壳（悬浮/聊天早不走它，用下面「用哪个脑子想」选）；
+                    //   · 「它记住的」已并入记忆球（上一轮删）；派给别人内置逻辑不动、只撤入口。
                     // ★ OTCO：这只用哪个脑子想（大白话，不写 Agent 这种英文）
                     row("用哪个脑子想", agentNote, tappable: true) { 打开脑子列表() }
-                    divider()
-                    row("把这只派给别人", "", tappable: true) { showDispatch = true }
                     divider()
                     row("按键声", SoundKit.tapNames[SoundKit.shared.tapKind],
                         tappable: true) { showTapSheet = true }

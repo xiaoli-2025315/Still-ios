@@ -83,6 +83,10 @@ struct TalkPage: View {
     @State private var showCats = false
     @State private var cats: [ActLab.Char] = []
     @State private var switching = ""
+    // ★ 2026-11-24：中心浮标里的搜索框 + 创建角色浮窗
+    @State private var drawerQuery = ""
+    @State private var showCreateRole = false
+    @State private var 创建方式 = "模型"
 
     // 群聊：入口、挑中的猫、建群中、加载中、失败提示；标题上的群名（空 = 单聊）
     @State private var showNewGroup = false
@@ -101,9 +105,11 @@ struct TalkPage: View {
     @State private var showGroupSettings = false
     // ★ 2026-11-21：单聊的圆角设置浮卡（大圆动态形象 + 模型/Agent）
     @State private var showSingleSettings = false
-    // ★ 2026-11-22：设置卡里点「创建动态形象」→ 带这只角色去动作库（对齐安卓）
-    @State private var showActLib = false
-    @State private var actLibTargetId = ""
+    // ★ 2026-11-24：聊天记录搜索（单聊/群聊设置卡里进，只搜当前对话）
+    @State private var showChatSearch = false
+    @State private var 定位rowId: String? = nil
+    @State private var 高亮行: UUID? = nil
+    // ★ 2026-11-24 第⑤组：原设置卡「创建动态形象 → 动作库」两个状态已撤，改走聊天内流程。
     // ★ 2026-11-22 回消息同步圆窗：共享动作名变化就刷新（8 秒后自动回默认）
     @State private var orb共享动作: String = ""
     /// 群设置页自己留一份当前群，改完就地刷新（CatBrain.group 是静态值，视图不会自己重画）
@@ -115,8 +121,8 @@ struct TalkPage: View {
     @State private var setBusy = false
     @State private var setErr = ""
 
-    // ★ 2026-11-19：聊天里的「对话 / 动作制作」两个入口和整套动作制作功能已移除；
-    //   聊天仍可发消息、语音、选附件，动作请到独立的动作库／角色页制作。
+    // ★ 2026-11-24 第⑤组：聊天仍可发消息、语音、选附件；做动态形象统一在聊天里走
+    //   （说一声 → 上传白底图 → 确认 → 选模型/豆包 → 做完直接发在对话里）。
     //   只加不删：老的「语音／键盘 → 整条按住说」那条路原样留着。
     @State private var showAttach = false
     @State private var progressText = ""
@@ -133,6 +139,8 @@ struct TalkPage: View {
         var speaker: String? = nil  // 群聊里回话的那只猫
         var failed = false          // ★ 2026-11-20：台子明说没接这单，才显示「重试」
         var retryText = ""          // 重试要重发的原话（同一句，不再摆新气泡）
+        var rowId: String? = nil    // ★ 2026-11-24：历史气泡对应的记录 id，搜索定位用
+        var image: UIImage? = nil   // ★ 2026-11-24 第⑤组：做形象时用户发的白底图
     }
 
     var body: some View {
@@ -172,25 +180,32 @@ struct TalkPage: View {
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation { showCats = false } }
                     .zIndex(9)
+                // ★ 2026-11-24：侧栏 → 画面中心的圆角浮标（不再贴左边抽屉）
                 sideBar
-                    .frame(width: min(UIScreen.main.bounds.width * 0.82, CGFloat(320)))
-                    .transition(.move(edge: .leading))
+                    .frame(width: min(UIScreen.main.bounds.width - 48, CGFloat(320)))
+                    .frame(maxHeight: UIScreen.main.bounds.height * 0.72)
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
                     .zIndex(10)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .animation(.easeOut(duration: 0.22), value: showCats)
         .sheet(isPresented: $showNewGroup) { newGroupSheet }
         .sheet(isPresented: $showGroupSettings) { groupSettingsSheet }
+        // ★ 2026-11-24：创建角色浮窗（选模型 / 选 Agent → 直接进新对话引导）
+        .sheet(isPresented: $showCreateRole) { createRoleSheet }
         // ★ 2026-11-21：单聊圆角设置浮卡（不是全屏，是一张四周留白的卡）
         .sheet(isPresented: $showSingleSettings) {
             singleSettingsCard
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
-        // ★ 2026-11-22（对齐安卓 3.93）：设置卡里点「创建动态形象」→
-        //   关掉卡片、打开动作库并带这只角色，进去就是它的动作墙。
-        .fullScreenCover(isPresented: $showActLib) {
-            ActLibPage(openCharId: actLibTargetId)
+        // ★ 2026-11-24 第⑤组：原「创建动态形象 → 动作库」这层已撤（改走聊天内流程），showActLib 不再触发。
+        // ★ 2026-11-24：聊天记录搜索（单聊/群聊设置卡进）
+        .fullScreenCover(isPresented: $showChatSearch) {
+            ChatSearchView(ch: 当前会话key, title: groupTitle.isEmpty ? (CatBrain.group == nil ? "它" : "群聊") : groupTitle) { rowId in
+                定位rowId = rowId
+            }
         }
     }
 
@@ -219,6 +234,12 @@ struct TalkPage: View {
             return "\(n) 个成员"
         }
         return "在这儿"
+    }
+
+    /// ★ 2026-11-24：当前会话的钥匙（群聊 g:群号 / 单聊角色 id）。聊天记录搜索与写入共用，口径必须一致。
+    private var 当前会话key: String {
+        if let g = CatBrain.group { return "g:" + g.number }
+        return CatBrain.currentCharId
     }
 
     private var header: some View {
@@ -354,6 +375,18 @@ struct TalkPage: View {
                     hasNew = true       // 只浮按钮，不抢用户正在看的历史
                 }
             }
+            // ★ 2026-11-24：搜索点结果 → 滚到那条历史气泡并短暂高亮。
+            .onChange(of: 定位rowId) { target in
+                guard let target, let i = lines.firstIndex(where: { $0.rowId == target }) else { return }
+                atBottom = false
+                高亮行 = lines[i].id
+                withAnimation(.easeOut(duration: 0.22)) { sp.scrollTo(lines[i].id, anchor: .center) }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                let hit = lines[i].id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                    if 高亮行 == hit { 高亮行 = nil }
+                }
+            }
             .overlay(alignment: .bottom) {
                 if hasNew {
                     Button {
@@ -393,13 +426,26 @@ struct TalkPage: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: Tw.rBubble, style: .continuous)
-                            .fill(l.mine ? Tw.accentSoft : Tw.gray200.opacity(0.55))
+                            .fill(高亮行 == l.id ? Color(red: 1, green: 0.96, blue: 0.84)
+                                  : (l.mine ? Tw.accentSoft : Tw.gray200.opacity(0.55)))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: Tw.rBubble, style: .continuous)
-                            .stroke(l.mine ? Color.clear : Tw.gray200, lineWidth: 1)
+                            .stroke(高亮行 == l.id ? Color(red: 0.94, green: 0.87, blue: 0.60)
+                                    : (l.mine ? Color.clear : Tw.gray200), lineWidth: 1)
                     )
                     .textSelection(.enabled)
+                // ★ 第⑤组：做形象时用户发的白底图（真图，不是摆设）
+                if let img = l.image {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 200, maxHeight: 200)
+                        .cornerRadius(12)
+                        .padding(5)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Tw.white)
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Tw.gray200, lineWidth: 1)))
+                }
                 // 每条回复下面一行小字：这次花了多少，只显示台子真给的数。
                 if !l.mine, let c = l.cost {
                     Text(c)
@@ -433,12 +479,15 @@ struct TalkPage: View {
         SingleSettingsCard(charId: CatBrain.currentCharId,
                            title: CatBrain.currentCharTitle,
                            onCreate: {
-                               actLibTargetId = CatBrain.currentCharId
+                               // ★ 2026-11-24 第⑤组「四点合一」：不再跳旧动作库，
+                               //   关掉设置卡、回到聊天里发起做形象流程（和安卓对称）。
                                showSingleSettings = false
-                               // sheet 关掉和全屏页弹出之间留一拍，避免两层切换打架。
                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                   showActLib = true
+                                   开始聊天内做形象()
                                }
+                           },
+                           onSearch: {
+                               showChatSearch = true
                            })
     }
 
@@ -622,18 +671,56 @@ struct TalkPage: View {
     ///   底下「＋ 新建群聊」「回到单聊」两颗常驻，不藏在条件里。
     private var sideBar: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("聊天")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Tw.gray900)
-                Spacer(minLength: 0)
-                Button("关上") { withAnimation { showCats = false } }
-                    .font(.system(size: 13))
-                    .foregroundStyle(Tw.gray500)
+            // ★ 2026-11-24：浮标最上面 = 搜索框（搜角色或对话）
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14)).foregroundStyle(Tw.gray400)
+                TextField("搜角色或对话", text: $drawerQuery)
+                    .font(.system(size: 13)).foregroundStyle(Tw.gray900)
+                Button { withAnimation { showCats = false } } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16)).foregroundStyle(Tw.gray400)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 20).fill(Tw.gray100))
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
+
+            // ★ 2026-11-24：两个大按钮「＋创建角色 / ＋创建群聊」
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation { showCats = false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showCreateRole = true }
+                } label: {
+                    Text("＋ 创建角色")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Tw.gray900))
+                }
+                .buttonStyle(PressStyle(scale: 0.96))
+                Button {
+                    withAnimation { showCats = false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showNewGroup = true; loadGroupCats()
+                    }
+                } label: {
+                    Text("＋ 创建群聊")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Tw.gray900)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 14)
+                            .fill(Tw.white)
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Tw.gray200, lineWidth: 1)))
+                }
+                .buttonStyle(PressStyle(scale: 0.96))
             }
             .padding(.horizontal, 16)
-            .padding(.top, 18)
-            .padding(.bottom, 10)
+            .padding(.top, 10)
 
             HStack(spacing: 0) {
                 drawerTabButton("群聊", 0)
@@ -677,9 +764,262 @@ struct TalkPage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Tw.white.ignoresSafeArea())
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(Tw.gray200).frame(width: 0.5)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Tw.white)
+                .shadow(color: .black.opacity(0.12), radius: 18, x: 0, y: 6)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    // ★ 2026-11-24：创建角色浮窗 —— 选模型/选 Agent，确认后直接建空角色进对话开始引导。
+    private var createRoleSheet: some View {
+        VStack(spacing: 14) {
+            Text("创建新角色").font(.system(size: 16, weight: .semibold)).foregroundStyle(Tw.gray900)
+            Text("选好方式和它开始聊").font(.system(size: 11)).foregroundStyle(Tw.gray400)
+
+            HStack(spacing: 10) {
+                方式卡("⚙", "选模型", "用哪个模型陪它说话", 创建方式 == "模型") { 创建方式 = "模型" }
+                方式卡("◍", "选 Agent", "它用什么方式陪你", 创建方式 == "Agent") { 创建方式 = "Agent" }
+            }
+
+            Button {
+                showCreateRole = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { 真正建新角色() }
+            } label: {
+                Text("确认 · 开始聊")
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Tw.gray900))
+            }
+            .buttonStyle(PressStyle(scale: 0.96))
+            Button("取消") { showCreateRole = false }
+                .font(.system(size: 12)).foregroundStyle(Tw.gray400)
+        }
+        .padding(20)
+        .presentationDetents([.medium])
+    }
+
+    private func 方式卡(_ ico: String, _ 标题: String, _ 说明: String, _ 选中: Bool, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: 10) {
+                Text(ico).font(.system(size: 17)).frame(width: 26)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(标题).font(.system(size: 14)).foregroundStyle(Tw.gray900)
+                    Text(说明).font(.system(size: 10.5)).foregroundStyle(Tw.gray400)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: 选中 ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(选中 ? Tw.gray900 : Tw.gray400)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14)
+                .fill(选中 ? Tw.gray100 : Tw.white)
+                .overlay(RoundedRectangle(cornerRadius: 14)
+                    .stroke(选中 ? Tw.gray900 : Tw.gray200, lineWidth: 1)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 建一个空角色壳并进入聊天，名字/人设交给引导逐条填。
+    private func 真正建新角色() {
+        let cid = "local_" + String(Int(Date().timeIntervalSince1970 * 1000))
+        PetName.set("新角色")
+        GuideState.开始(cid, 方式: 创建方式)
+        CatBrain.currentCharId = cid
+        CatBrain.clearGroup()
+        groupTitle = ""
+        lines = []
+        boot()
+        触发引导()
+    }
+
+    /// 进新对话时它主动开口；已经问过的不重复问（按 tag 认）。
+    private func 触发引导() {
+        guard var g = GuideState.读(CatBrain.currentCharId) else { return }
+        let 问 = GuideState.问句(g.step)
+        guard !问.isEmpty else { return }
+        if lines.contains(where: { $0.rowId == "guide:" + g.step }) { return }
+        lines.append(Line(mine: false, text: 问, rowId: "guide:" + g.step))
+        if g.step == GuideState.STEP_IMAGE {
+            lines.append(Line(mine: true, text: "做动态形象 · 上传白底图", rowId: "guideopt"))
+        }
+    }
+
+    /// 引导中处理这句；返回 true = 已接手（不走 server）。
+    private func 引导中(_ 用户话: String) -> Bool {
+        guard var g = GuideState.读(CatBrain.currentCharId) else { return false }
+        if g.step == GuideState.STEP_IMAGE {
+            let 选 = GuideState.处理形象(&g, 用户话)
+            if 选 == 1 {
+                lines.append(Line(mine: false, text: "好～那现在就给你做一个会动的形象，在聊天里做，做完直接发给你"))
+                lines.append(Line(mine: false, text: "先发一张我的白底图吧，全身半身都行，背景越干净越好"))
+                开始聊天内做形象()
+            } else {
+                lines.append(Line(mine: false, text: "好～之后想做了，在设置里点「创建动态形象」，或者直接在聊天里跟我说一声就行。"))
+            }
+            return true
+        }
+        let 下一句 = GuideState.推进(&g, 用户话)
+        if !下一句.isEmpty {
+            lines.append(Line(mine: false, text: 下一句))
+            if g.step == GuideState.STEP_IMAGE {
+                lines.append(Line(mine: true, text: "做动态形象 · 上传白底图", rowId: "guideopt"))
+            }
+            return true
+        }
+        return false
+    }
+
+    /// ★ 2026-11-24 第⑤组：起落盘状态机，提示发白底图。
+    private func 开始聊天内做形象() {
+        MakeFlow.开始(CatBrain.currentCharId)
+        lines.append(Line(mine: false, text: "先发一张我的白底图吧，全身、半身都行，背景越干净越好"))
+        lines.append(Line(mine: false, text: "收到图后我会贴出来给你确认，就用它开始做～"))
+        showAttach = true
+    }
+
+    /// ★ 第⑤组：收到白底图 —— 真上传 → 确认 → 选方式 → 下单 → 真进度。
+    private func 收白底图做形象(_ data: Data) {
+        let cid = CatBrain.currentCharId
+        guard MakeFlow.读(cid) != nil else { return }
+        // 把用户发的图贴进对话（真图）
+        if let img = UIImage(data: data) {
+            lines.append(Line(mine: true, text: "［白底图］", image: img))
+        }
+        lines.append(Line(mine: false, text: "收到，正在把这张图送上去…"))
+        Task { @MainActor in
+            var ok = false
+            do { _ = try await ActLab.charImg(charId: cid, photo: data); ok = true }
+            catch { ok = false }
+            guard var f = MakeFlow.读(cid) else { return }
+            if !ok {
+                lines.append(Line(mine: false, text: "这张图没送上去，可能是没网或没登录，再发一张试试～"))
+                return
+            }
+            MakeFlow.到确认(&f)
+            lines.append(Line(mine: false, text: "就用这张开始做吗？"))
+            lines.append(Line(mine: true, text: "就用这张", rowId: "mkopt"))
+            lines.append(Line(mine: true, text: "重新传", rowId: "mkopt"))
+        }
+    }
+
+    /// 确认后给选方式两项
+    private func 做形象到选方式() {
+        guard var f = MakeFlow.读(CatBrain.currentCharId) else { return }
+        MakeFlow.到选方式(&f)
+        lines.append(Line(mine: false, text: "那用什么做呢？"))
+        lines.append(Line(mine: true, text: "用模型做", rowId: "mkopt"))
+        lines.append(Line(mine: true, text: "用豆包做", rowId: "mkopt"))
+    }
+
+    /// 选模型 → 真下 wan 单（坐立 sit）
+    private func 做形象下单模型() {
+        let cid = CatBrain.currentCharId
+        guard var f = MakeFlow.读(cid) else { return }
+        MakeFlow.到制作中(&f, MakeFlow.WAY_MODEL)
+        lines.append(Line(mine: false, text: "好，用模型给你做，先做坐立这一条，做好再接着做别的～"))
+        Task { @MainActor in
+            do { _ = try await ActLab.wanStart(charId: cid, act: "sit") }
+            catch { lines.append(Line(mine: false, text: "模型这边没接上：\(error.localizedDescription)。你可以回一句「用豆包做」换条路。")) }
+            轮询形象进度(cid)
+        }
+    }
+
+    /// 选豆包 → 没绑去设置绑；绑了真下 genOrder
+    private func 做形象下单豆包() {
+        let cid = CatBrain.currentCharId
+        Task { @MainActor in
+            let slots = await 读豆包号()
+            guard var f = MakeFlow.读(cid) else { return }
+            if slots.isEmpty {
+                MakeFlow.到绑豆包(&f)
+                lines.append(Line(mine: false, text: "你还没绑豆包号。去「我的 → 连接器」里绑一下，回来跟我说一声，我再让你重新选一遍～"))
+                return
+            }
+            MakeFlow.到制作中(&f, MakeFlow.WAY_DOUBAO)
+            lines.append(Line(mine: false, text: "好，用豆包给你做，先做坐立这一条～"))
+            do { try await ActLab.genOrder(charId: cid, act: "sit", slot: slots[0]) }
+            catch { lines.append(Line(mine: false, text: "豆包这边没接上：\(error.localizedDescription)。你可以回一句「用模型做」换条路。")) }
+            轮询形象进度(cid)
+        }
+    }
+
+    /// 台子上登着且可用的豆包号 slot 列表（跟 GenOneSheet 读同一个口）。
+    private func 读豆包号() async -> [String] {
+        guard let d = try? await ActLab.rawGet("/api/login/accounts", timeout: 15),
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+              let arr = o["账号"] as? [[String: Any]] else { return [] }
+        return arr.compactMap { x in
+            let ok = (x["登着没"] as? Bool) ?? false
+            let slot = (x["slot"] as? String) ?? ""
+            return (ok && !slot.isEmpty) ? slot : nil
+        }
+    }
+
+    /// 查坐立这条的真状态：只把台子给的「人话」原样带回，不编百分比。
+    private func 查坐立状态(_ cid: String) async -> (String, Bool) {
+        guard let st = await ActLab.state(charId: cid) else { return ("", false) }
+        guard let sit = st.acts.first(where: { $0.act == "sit" }) else { return ("", false) }
+        return (sit.人话 ?? "", sit.状态 == "好了")
+    }
+
+    /// 制作中：只说台子真给的阶段人话，不编百分比。
+    private func 轮询形象进度(_ cid: String) {
+        Task { @MainActor in
+            var 上次 = ""
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 4_500_000_000)
+                let st = await ActLab.refState(charId: cid)
+                _ = st   // 参考图状态只是旁证；主进度看 stateOf 那条
+                let (人话, 好了) = await 查坐立状态(cid)
+                if 好了 {
+                    if var f = MakeFlow.读(cid) { MakeFlow.到完成(&f) }
+                    let 说完 = 人话.isEmpty ? "去「它」页就能看到它动起来" : 人话
+                    lines.append(Line(mine: false, text: "坐立这条做好啦：" + 说完 + "。"))
+                    lines.append(Line(mine: false, text: "剩下的动作我会接着做，做好一条就添一条～"))
+                    return
+                }
+                if !人话.isEmpty && 人话 != 上次 {
+                    上次 = 人话
+                    lines.append(Line(mine: false, text: 人话))
+                }
+            }
+        }
+    }
+
+    /// ★ 第⑤组：这句是否由做形象流程接手（确认/选方式/绑豆包），接手返回 true。
+    private func 做形象流程中(_ 话: String) -> Bool {
+        guard var f = MakeFlow.读(CatBrain.currentCharId) else { return false }
+        switch f.stage {
+        case MakeFlow.S_CONFIRM:
+            let 选 = MakeFlow.确认回答(f, 话)
+            if 选 == 1 { 做形象到选方式() }
+            else if 选 == 0 { MakeFlow.开始(CatBrain.currentCharId); lines.append(Line(mine: false, text: "好，重发一张吧～")) }
+            return true
+        case MakeFlow.S_WAY:
+            if let 方 = MakeFlow.方式回答(f, 话) {
+                if 方 == MakeFlow.WAY_DOUBAO { Task { await 做形象下单豆包() } }
+                else { 做形象下单模型() }
+            } else {
+                lines.append(Line(mine: false, text: "点下面的选一个就行——「用模型做」或者「用豆包做」～"))
+            }
+            return true
+        case MakeFlow.S_DOUBAO_BIND:
+            if MakeFlow.绑好回来(f, 话) { 做形象到选方式() }
+            else { lines.append(Line(mine: false, text: "去「我的 → 连接器」绑好豆包，回来跟我说一声就行～")) }
+            return true
+        case MakeFlow.S_WAIT_IMG:
+            if MakeFlow.等图取消(f, 话) {
+                MakeFlow.取消(&f)
+                lines.append(Line(mine: false, text: "好，那先不做了～"))
+                return true
+            }
+            return false
+        default:
+            return false
         }
     }
 
@@ -698,6 +1038,16 @@ struct TalkPage: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    /// ★ 2026-11-24：浮标里搜索框的过滤结果。
+    private var 筛群: [CatBrain.GroupRow] {
+        let k = drawerQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return k.isEmpty ? groups : groups.filter { $0.name.contains(k) }
+    }
+    private var 筛角色: [ActLab.Char] {
+        let k = drawerQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return k.isEmpty ? cats : cats.filter { $0.name.contains(k) }
     }
 
     /// 群聊分页：台子真给过的群，点一个就进那个群。
@@ -722,8 +1072,11 @@ struct TalkPage: View {
                         .font(.system(size: 12.5))
                         .foregroundStyle(Tw.gray400)
                         .padding(.vertical, 14)
+                } else if 筛群.isEmpty {
+                    Text("没有匹配的群").font(.system(size: 12.5)).foregroundStyle(Tw.gray400)
+                        .padding(.vertical, 14)
                 } else {
-                    ForEach(groups) { g in
+                    ForEach(筛群) { g in
                         Button {
                             Task { await enterGroup(g) }
                         } label: {
@@ -754,7 +1107,7 @@ struct TalkPage: View {
     private var singleTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(cats) { c in
+                ForEach(筛角色) { c in
                     Button {
                         Task { await pick(c) }
                     } label: {
@@ -1022,6 +1375,18 @@ struct TalkPage: View {
                         Text(setErr).font(.system(size: 12.5)).foregroundStyle(Tw.error)
                     }
                 }
+                // ★ 2026-11-24：群聊记录搜索（只搜当前这个群）
+                Section {
+                    Button {
+                        showGroupSettings = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showChatSearch = true }
+                    } label: {
+                        HStack {
+                            Image(systemName: "magnifyingglass").foregroundStyle(Tw.red600)
+                            Text("聊天记录搜索").foregroundStyle(Tw.red600)
+                        }
+                    }
+                }
             }
             .navigationTitle("群设置")
             .navigationBarTitleDisplayMode(.inline)
@@ -1145,12 +1510,15 @@ struct TalkPage: View {
     ///   老数据只有 last 那一句 —— 记录是空的就退回它，别让人以为记录被清了。
     /// ★ 2026-11-18：从台子接回历史之后要重铺一次，所以单独抽出来，boot 和它共用。
     private func 铺记录() {
-        let rows = ChatLog.all()
+        let rows = ChatLog.all(ch: 当前会话key)
         if rows.isEmpty, let t = CatTalk.last() {
             lines = [Line(mine: true, text: t.mine), Line(mine: false, text: t.reply)]
         } else {
-            lines = rows.flatMap {
-                [Line(mine: true, text: $0.you), Line(mine: false, text: $0.cat)]
+            lines = rows.flatMap { r in
+                [
+                    Line(mine: true, text: r.you, rowId: r.id),
+                    Line(mine: false, text: r.cat, rowId: r.id)
+                ]
             }
         }
     }
@@ -1327,10 +1695,13 @@ struct TalkPage: View {
         else { progressText = "这个功能还没接 —— 机器上没有通话" }
     }
 
-    /// 附件仍可选、可看；聊天里已不再能制作动作，如实告诉用户去哪做。
+    /// ★ 2026-11-24 第⑤组：做形象流程等图时收到白底图 → 真上传走制作链；否则照旧提示。
     private func uploadAttach(_ name: String, _ data: Data) {
-        _ = data
-        progressText = "收到 \(name)，聊天里已不能制作动作，请到角色页或动作库做"
+        if var f = MakeFlow.读(CatBrain.currentCharId), f.stage == MakeFlow.S_WAIT_IMG {
+            收白底图做形象(data)
+            return
+        }
+        progressText = "收到 \(name)。想给它做形象的话，在聊天里跟我说一声，我发张白底图的提示给你～"
     }
 
     // MARK: - 发
@@ -1341,6 +1712,10 @@ struct TalkPage: View {
         text = ""
         // 用户气泡统一在这里摆一次（排队/直发都摆），真发() 不再重复摆。
         lines.append(Line(mine: true, text: m))
+        // ★ 2026-11-24：新角色引导中 —— 这句交给引导（名字/人设/形象），不走 server 不花钱。
+        if 引导中(m) { return }
+        // ★ 2026-11-24 第⑤组：聊天内做形象流程里（确认/选方式/绑豆包），这句由流程接手。
+        if 做形象流程中(m) { return }
         // ★ 2026-11-19：生成中不再吞掉——进队，等这条真回完再发下一条。
         //   「失败绝不隐式重发」：失败那条已摆在气泡里，不重发；只推后面排队的。
         if busy {
@@ -1370,8 +1745,20 @@ struct TalkPage: View {
         }
         pulse += 1                     // 发完还留在输入态，想接着说就接着打
 
+        // ★ 2026-11-24：这条记到哪个会话（群聊 g:群号 / 单聊角色 id），供「聊天记录搜索」只搜当前对话。
+        let 会话ch: String
+        let 说话人: String
+        if let g = CatBrain.group {
+            会话ch = "g:" + g.number
+            说话人 = CatBrain.currentCharId
+        } else {
+            会话ch = CatBrain.currentCharId
+            说话人 = ""
+        }
+
         Task { @MainActor in
             let reply = await CatTalk.say(m,
+                ch: 会话ch, sp: 说话人,
                 onStream: { full in
                     // 台子给的「当前完整回话」直接写进去（片段已追加、重来已替换）。
                     if let i = lines.firstIndex(where: { $0.id == rid }) {

@@ -17,8 +17,10 @@ struct SingleSettingsCard: View {
     /// 当前单聊对象（单聊里就是这只；跟顶栏圆窗同一个来源）
     let charId: String
     let title: String
-    /// 点「创建动态形象」——交给外层去开动作库（TalkPage 里先关卡并提示去角色页）
+    /// 点「创建动态形象」——★ 2026-11-24 第⑤组：交给外层关卡片、在聊天里发起做形象流程
     var onCreate: () -> Void = {}
+    /// ★ 2026-11-24：点「聊天记录搜索」——交给外层打开全屏搜索页
+    var onSearch: () -> Void = {}
 
     @AppStorage("设置·模型") private var 模型选择 = "智谱 GLM-4-Flash"
     @AppStorage("设置·Agent") private var agent选择 = "陪伴 Agent"
@@ -96,6 +98,30 @@ struct SingleSettingsCard: View {
                     }
                     .transition(.opacity)
                 }
+                Divider().padding(.leading, 44)
+                // ★ 2026-11-24：聊天记录搜索（只搜当前这只的对话）
+                Button {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onSearch() }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Tw.red600)
+                            .frame(width: 24)
+                        Text("聊天记录搜索")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Tw.red600)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Tw.gray400)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)

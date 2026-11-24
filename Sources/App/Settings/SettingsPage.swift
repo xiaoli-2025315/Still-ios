@@ -24,8 +24,9 @@ struct SettingsPage: View {
     // ★ 2026-11-21：聊天输入框样式下拉（跟 TalkPage 同一个 key）
     @AppStorage(ComposerStyle.key) private var composerStyle = 1
     @State private var showComposerSheet = false
-    @State private var showMemory = false      // ★ 2026-11-19：它记住的
+    // ★ 2026-11-24：「它记住的」已并入记忆球（主页第三格），设置页这行重复入口删掉
     @State private var showDoubao = false      // ★ 2026-11-19：「豆包号」行点开去登录/换号
+    @State private var showConnector = false   // ★ 2026-11-24：连接器浮窗（常驻入口）
     // ★ OTCO 第0步：每只角色单独选 Agent（按 brainCharId 生效，跟大脑那行同一只）
     @State private var showAgent = false
     @State private var agentItems: [AgentStore.Item] = []
@@ -43,12 +44,13 @@ struct SettingsPage: View {
                 VStack(spacing: 0) {
                     row("豆包号", accountText, tappable: true) { showDoubao = true }
                     divider()
+                    // ★ 2026-11-24 连接器（常驻入口）：填 Key / 绑豆包，让 AI 真能调外部 API
+                    row("连接器", "", tappable: true) { showConnector = true }
+                    divider()
                     row("大脑", brainText, tappable: true) { showBrain = true }
                     divider()
                     // ★ OTCO：这只用哪个脑子想（大白话，不写 Agent 这种英文）
                     row("用哪个脑子想", agentNote, tappable: true) { 打开脑子列表() }
-                    divider()
-                    row("它记住的", "", tappable: true) { showMemory = true }
                     divider()
                     row("把这只派给别人", "", tappable: true) { showDispatch = true }
                     divider()
@@ -127,13 +129,13 @@ struct SettingsPage: View {
             brainSheet
                 .presentationDetents([.medium, .large])
         }
-        // 它记住的：看见/忘掉它记下的小事（数据来自台子 Hermes）
-        .sheet(isPresented: $showMemory) {
-            MemorySheet(charId: brainCharId).presentationDetents([.medium, .large])
-        }
         // 豆包号：点这行去登录/换号 —— 复用已有的 DoubaoLoginPage
         .sheet(isPresented: $showDoubao) {
             DoubaoLoginPage().presentationDetents([.large])
+        }
+        // ★ 2026-11-24 连接器浮窗
+        .sheet(isPresented: $showConnector) {
+            ConnectorSheet()
         }
         // ★ OTCO：这只用哪个脑子想 —— 从台子拉真实列表，选中即改（选不了的不显示假项）
         .sheet(isPresented: $showAgent) {

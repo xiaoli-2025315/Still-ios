@@ -177,6 +177,8 @@ struct MainHomeView: View {
     @State private var talkOpen = false
     /// ★ 2026-11-22：第三格「记忆」页开没开
     @State private var 记忆开 = false
+    /// ★ 11-24：切到聊天/记忆/别的 tab 时 +1，通知「它」页清除并退出捏捏（浮层不触发 onDisappear）
+    @State private var pinchReset = 0
     /// 点过几个按钮 —— 自检用：按了没反应时，先看这个数字动没动
     @State private var taps = 0
     /// 角色（动作库）那一页开着没有 —— 只作「创作动态形象」的承接，不再从首页抢入口。
@@ -380,14 +382,14 @@ struct MainHomeView: View {
             switch tab {
             // ★ 2026-11-23：新舞台直接当「它」页首页本体，不再从「角色」按钮另开一页。
             //   老 HerPane 整段留着；想退回把这一行换回 HerPane(...) 即可。
-            case 0: HerStagePane(pip: pip, onHit: hit, onCreateImage: { actOpen = true })
+            case 0: HerStagePane(pip: pip, onHit: hit, onCreateImage: { actOpen = true }, pinchReset: pinchReset)
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: tab) {
-            if tab != 0 { feed.loadIfNeeded() }
+            if tab != 0 { pinchReset += 1; feed.loadIfNeeded() }
         }
     }
 
@@ -418,6 +420,7 @@ struct MainHomeView: View {
     private func chatTabItem() -> some View {
         Button {
             hit()
+            pinchReset += 1               // ★ 11-24：离开「它」页去聊天＝清除并退出捏捏
             talkOpen = true
         } label: {
             VStack(spacing: 3) {
@@ -439,6 +442,7 @@ struct MainHomeView: View {
     private func memTabItem() -> some View {
         Button {
             hit()
+            pinchReset += 1               // ★ 11-24：离开「它」页去记忆＝清除并退出捏捏
             记忆开 = true
         } label: {
             VStack(spacing: 3) {

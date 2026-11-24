@@ -16,6 +16,9 @@ struct HerStagePane: View {
     var onHit: () -> Void = {}
     /// 点「创作动态形象」：回到角色页登记/做第一套动作（老流程一行没删）
     var onCreateImage: () -> Void = {}
+    /// ★ 11-24：由 MainHomeView 在切到聊天/记忆浮层时 +1，触发「清除并退出捏捏」。
+    ///   这两个页是 fullScreenCover，不会让本视图 onDisappear，得靠这个信号兜住。
+    var pinchReset: Int = 0
 
     @State private var roles: [ActLab.Char] = []
     @State private var pos: Double = 0
@@ -203,14 +206,13 @@ struct HerStagePane: View {
         }
         .background(Color.clear)   // ★ 透出底下 MainHomeView 的全屏动态柔光
         .task { await load() }
-        // ★ 纠偏4：切页 / 视图移除时退出玩耍、复位捏捏状态，不残留形变。
+        // ★ 11-24：切页 / 视图移除时＝清除涂抹＋退出玩耍＋解锁，不等残留。
         .onDisappear {
-            playBridge.setPlaying(false)
-            playBridge.playEnabled = false
-            paintRef?.setMarksVisible(true, animated: false)
-            sqState = 0
-            sqTool = 0
-            toolChosen = false
+            退出并清除捏捏()
+        }
+        // ★ 11-24：聊天/记忆浮层按钮不会让本视图消失，靠这个计数变化兜住同等清理。
+        .onChange(of: pinchReset) { _ in
+            退出并清除捏捏()
         }
         .alert("确认开始生成？", isPresented: $confirmShow) {
             Button("取消", role: .cancel) {}
@@ -378,13 +380,8 @@ struct HerStagePane: View {
 
     private func showPanel(_ which: String) {
         if panel == "pinch" {
-            // ★ 纠偏4：从捏捏切到别的模式 → 退出玩耍、复位浏览态，不残留形变。
-            playBridge.setPlaying(false)
-            playBridge.playEnabled = false
-            paintRef?.setMarksVisible(true, animated: false)
-            sqState = 0
-            sqTool = 0
-            toolChosen = false
+            // ★ 11-24：从捏捏切到别的模式 → 清除涂抹＋退出玩耍＋解锁，等同「清除并退出捏捏」。
+            退出并清除捏捏()
         }
         panel = (panel == which) ? "" : which
         hint = ""
@@ -482,6 +479,21 @@ struct HerStagePane: View {
         toolChosen = false
         sqKey += 1
         panel = ""
+        hint = ""
+    }
+
+    /// ★ 11-24：离开捏捏＝清除本次涂抹＋退出玩耍＋解锁角色卡横轨。
+    /// 切页、点悬浮模式/制作动作/聊天都会走这里，回来不会残留「清除」态、也不会锁住竖选。
+    private func 退出并清除捏捏() {
+        playBridge.setPlaying(false)
+        playBridge.playEnabled = false
+        paintRef?.clearSoft()
+        paintRef?.setMarksVisible(true, animated: false)
+        hasSoftPaint = false
+        sqState = 0
+        sqTool = 0
+        toolChosen = false
+        sqKey += 1                       // 兜底：paintRef 为 nil 时下次 updateUIView 也清一次
         hint = ""
     }
 

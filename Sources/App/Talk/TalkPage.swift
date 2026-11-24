@@ -1758,7 +1758,6 @@ struct TalkPage: View {
 
         Task { @MainActor in
             let reply = await CatTalk.say(m,
-                ch: 会话ch, sp: 说话人,
                 onStream: { full in
                     // 台子给的「当前完整回话」直接写进去（片段已追加、重来已替换）。
                     if let i = lines.firstIndex(where: { $0.id == rid }) {
@@ -1777,7 +1776,8 @@ struct TalkPage: View {
                         lines[i].failed = true
                         lines[i].retryText = m
                     }
-                })
+                },
+                ch: 会话ch, sp: 说话人)
             // 用返回值做最后对齐：中文错误提示、或断网回落的本地猫话，都落进气泡。
             if let i = lines.firstIndex(where: { $0.id == rid }) {
                 lines[i].text = reply

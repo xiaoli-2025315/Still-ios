@@ -407,42 +407,11 @@ struct MainHomeView: View {
         }
         .padding(.top, 10)
         .padding(.bottom, 4)
-        .background(
-            ZStack {
-                // 原白底一直垫在最下面：其他页看到的还是原来的白底材质。
-                Tw.white.ignoresSafeArea(edges: .bottom)
-                // ★ 只在「它」页叠玻璃层，切页 0.42s 渐变显隐，不是硬切。
-                //   选中胶囊等上面那套完全不动，只换底栏材质；阴影已撤掉。
-                Rectangle()
-                    .fill(Color.white.opacity(0.52))
-                    .background(.ultraThinMaterial)
-                    .ignoresSafeArea(edges: .bottom)
-                    .opacity(tab == 0 ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.42), value: tab)
-
-                // ★ 玻璃厚度：顶边一道两端渐隐的高光 + 底边暗侧壁，取代原来的投影。
-                if tab == 0 {
-                    VStack(spacing: 0) {
-                        Rectangle()
-                            .fill(
-                                LinearGradient(colors: [
-                                    Color.white.opacity(0),
-                                    Color.white.opacity(0.86),
-                                    Color.white.opacity(0.18),
-                                    Color.white.opacity(0)
-                                ], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .frame(height: 1.2)
-                        Spacer(minLength: 0)
-                        Rectangle()
-                            .fill(Color.black.opacity(0.10))
-                            .frame(height: 1.6)
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                    .allowsHitTesting(false)
-                }
-            }
-        )
+        // ★ 2026-11-24 纠偏1：撤销玻璃化，回到玻璃之前的原样整块白底。
+        //   只加一条柔和阴影，让白底像一张纸浮在页面上（只有底栏要阴影，
+        //   跟其他组件扁平化不冲突）。阴影放在白底之后、y 为负 → 投在上方页面。
+        .background(Tw.white.ignoresSafeArea(edges: .bottom))
+        .shadow(color: Color.black.opacity(0.12), radius: 8, y: -2)
     }
 
     /// 第二格「聊天」：不切屏，直接开对话页（跟安卓 tab_comm → 去聊天页() 一致）。

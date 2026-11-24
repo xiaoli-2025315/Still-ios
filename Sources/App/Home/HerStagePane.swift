@@ -135,10 +135,7 @@ struct HerStagePane: View {
             VStack(alignment: .leading, spacing: 0) {
                 stageView
 
-                Text(currentRole?.title ?? "还没有形象")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Tw.gray900)
-                    .frame(maxWidth: .infinity)
+                // ★ 名字只在卡面上显示：按钮上方这行整个删掉，不再单独显示角色名。
                 // 「左右拖动换一只」按他要求删掉。
                 if currentRole == nil {
                     Text("先做一只，它就有地方住了")
@@ -532,13 +529,15 @@ struct HerStagePane: View {
             toolGlyph(asset: "tool_pencil", selected: sqTool == 0, wide: false) { pickTool(0) }
             toolGlyph(asset: "tool_eraser", selected: sqTool == 1, wide: true) { pickTool(1) }
             Spacer(minLength: 0)
+            // ★ 取消 = 一键清除：清掉刚涂的软区、留在捏捏面板，不再退出。
             if toolChosen && sqState == 1 {
-                smallButton("取消", primary: false) { exitPinch() }
+                smallButton("取消", primary: false) { clearPinch() }
             }
             if sqState == 2 {
                 smallButton("清除", primary: true) { clearPinch() }
             } else {
-                smallButton("确认", primary: true, enabled: hasSoftPaint) { confirmPinch() }
+                // ★ 确认键不再灰化：没涂时点它会提示，但仍一眼看得清。
+                smallButton("确认", primary: true) { confirmPinch() }
             }
         }
         .frame(height: 62)
@@ -566,7 +565,7 @@ struct HerStagePane: View {
         .buttonStyle(PressStyle(scale: 0.94))
     }
 
-    private func smallButton(_ label: String, primary: Bool, enabled: Bool = true,
+    private func smallButton(_ label: String, primary: Bool,
                              _ tap: @escaping () -> Void) -> some View {
         Button {
             onHit()
@@ -574,14 +573,14 @@ struct HerStagePane: View {
         } label: {
             Text(label)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(enabled ? Tw.gray900 : Tw.gray400)
+                // ★ 确认/清除 = 实心深底白字，一眼看得清；取消 = 浅底深字。
+                .foregroundStyle(primary ? Tw.white : Tw.gray900)
                 .frame(width: 62, height: 34)
-                // ★ 统一单层半透明白底，无阴影无描边。
-                .flatGlass(corner: 12,
-                           opacity: enabled ? (primary ? 0.55 : 0.34) : 0.18)
+                .background(
+                    Capsule().fill(primary ? Tw.gray900 : Color.white.opacity(0.72))
+                )
         }
         .buttonStyle(PressStyle(scale: 0.94))
-        .disabled(!enabled)
     }
 
     private var makePanel: some View {
@@ -641,8 +640,7 @@ struct HerStagePane: View {
             }
         }
         .padding(14)
-        // ★ 单层半透明面板；TextEditor 文字仍是深色，看得清。
-        .flatGlass(corner: 18, opacity: 0.50)
+        // ★ 不再给整块面板垫一层透明底：输入区各组件自带底，别多垫一层。
     }
 
     private var chatPanel: some View {

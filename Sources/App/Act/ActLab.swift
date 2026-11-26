@@ -482,6 +482,26 @@ enum ActLab {
         }
     }
 
+    /// ★ 2026-11-26：创建角色三段链（一条10秒片→待机/工作/大笑三条），代替原来的单条坐立。
+    ///   豆包 / wan 两条渠道都走这一条，渠道与豆包号透传给台子。走台子 base。
+    static func createStart(charId: String, channel: String, slot: String) async throws {
+        var body: [String: Any] = ["char": charId, "渠道": channel]
+        if !slot.isEmpty { body["账号"] = slot }
+        let d = try await rawPost("/api/char/create/start", body: body, timeout: 60)
+        let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+        if !((o?["ok"] as? Bool) ?? false) {
+            let why = (o?["错误"] as? String) ?? "台子没接这一单"
+            throw LabError(why)
+        }
+    }
+
+    /// 创建三段链做到哪了（台子读盘推进，不编状态）。
+    static func createState(charId: String) async -> [String: Any]? {
+        guard let d = try? await rawGet("/api/char/create/state?char=" + enc(charId), timeout: 20),
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return nil }
+        return o
+    }
+
     /// ★ 2026-11-03：把 iOS 这边的下单结果报给台子诊断口（来源=ios_order）。
     ///   否则"iOS 没下单"这种问题我只能在电话里猜。
     static func diagSay(_ note: String) async {

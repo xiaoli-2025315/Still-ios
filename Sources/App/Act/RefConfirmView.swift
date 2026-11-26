@@ -599,13 +599,13 @@ struct RefConfirmView: View {
             return
         }
         do {
-            if channel.hasPrefix("doubao:") {
-                let slot = String(channel.dropFirst("doubao:".count))
-                try await ActLab.genOrder(charId: charId, act: "sit", slot: slot)
-            } else {
-                _ = try await ActLab.wanStart(charId: charId, act: "sit")
-            }
-            await ActLab.diagSay("参考图页下单成功 char=\(charId) channel=\(channel)")
+            // ★★ 2026-11-26：创建角色改走三段链（一条10秒片→待机/工作/大笑三条），
+            //   代替原来的单条坐立。豆包 / wan 两条渠道都走这条，渠道和号透传给台子。
+            //   原 genOrder / wanStart 保留不删（别处还用；接口只加不改）。
+            let chan = channel.hasPrefix("doubao:") ? "doubao" : "wan"
+            let slot = channel.hasPrefix("doubao:") ? String(channel.dropFirst("doubao:".count)) : ""
+            try await ActLab.createStart(charId: charId, channel: chan, slot: slot)
+            await ActLab.diagSay("参考图页下单成功(三段链) char=\(charId) channel=\(channel)")
             // ★ 2026-11-03：把"下单回执"留在本地，制作页会显示出来 ——
             //   这样"到底有没有下到单"用户自己就能看见，不用等我去翻诊断。
             UserDefaults.standard.set("已下单 · \(channel) · \(Self.nowText())",

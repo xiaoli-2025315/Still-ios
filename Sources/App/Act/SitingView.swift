@@ -202,6 +202,26 @@ struct SitingView: View {
     private func watch() async {
         lastOrder = UserDefaults.standard.string(forKey: "still.lastorder." + char.id) ?? ""
         while alive {
+            // ★★ 2026-11-26：创建角色走三段链（一条10秒片→三条动作）。
+            //   中间阶段（下单/等片/切段/入库）用它的真话显示；"没开工"=存量走原逻辑，
+            //   "好了"也走原逻辑（三段入库后 act_queue 抠完那个"好了"才真能装）。
+            if let c3 = await ActLab.createState(charId: char.id),
+               let c3s = c3["状态"] as? String {
+                let why = c3["人话"] as? String ?? ""
+                if c3s == "失败" {
+                    stage = .failed(why.isEmpty ? "没做成" : why, false)
+                    try? await Task.sleep(nanoseconds: 2_200_000_000); continue
+                }
+                if c3s == "等成片" || c3s == "已下单" || c3s == "成片已到"
+                    || c3s == "切段中" || c3s == "切段完成" {
+                    stage = .generating
+                    try? await Task.sleep(nanoseconds: 2_200_000_000); continue
+                }
+                if c3s == "入库中" {
+                    stage = .matting(0)
+                    try? await Task.sleep(nanoseconds: 2_200_000_000); continue
+                }
+            }
             if let w = await ActLab.wanState(charId: char.id, act: act),
                let ws = w.状态, !ws.isEmpty, ws != "没做" {
                 let why = w.人话 ?? ""

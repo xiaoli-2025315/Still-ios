@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>它页 · 形象选择卡</title>
+<style>
+
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+  body{
+    margin:0;background:#F4F5F7;color:#111;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    padding:26px 16px 60px;
+  }
+  .wrap{max-width:520px;margin:0 auto}
+  h1{font-size:15px;font-weight:700;margin:0 0 4px}
+  .sub{font-size:12px;color:#A3A39C;margin:0 0 22px}
+
+  /* ===== 舞台 ===== */
+  .phone{
+    max-width:420px;margin:0 auto;border-radius:32px;overflow:hidden;
+    background:#FAFAFA;position:relative;
+  }
+  .stage{position:relative;height:470px;overflow:hidden;touch-action:pan-y;perspective:1050px;perspective-origin:50% 44%}
+
+  /* 满幅彩色光带（照参考，卡片颜色往外化开铺满画面、左右出血） */
+  .band{position:absolute;inset:-10% -40%;pointer-events:none;filter:blur(34px);opacity:.9}
+  .band.warm{
+    background:
+      radial-gradient(45% 55% at 8% 52%,rgba(150,190,60,.8),transparent 70%),
+      radial-gradient(40% 50% at 20% 60%,rgba(255,170,90,.85),transparent 72%),
+      radial-gradient(35% 45% at 4% 42%,rgba(190,120,255,.5),transparent 70%),
+      radial-gradient(40% 50% at 32% 46%,rgba(255,110,70,.7),transparent 72%);
+    animation:bandA 12s ease-in-out infinite alternate;
+  }
+  .band.cool{
+    background:
+      radial-gradient(46% 58% at 92% 50%,rgba(30,90,255,.9),transparent 72%),
+      radial-gradient(38% 50% at 78% 42%,rgba(90,180,255,.85),transparent 72%),
+      radial-gradient(30% 40% at 100% 62%,rgba(140,230,255,.75),transparent 70%);
+    animation:bandB 14s ease-in-out infinite alternate;
+  }
+  @keyframes bandA{from{transform:translateX(-2%) scale(1)}to{transform:translateX(3%) scale(1.06)}}
+  @keyframes bandB{from{transform:translateX(2%) scale(1.04)}to{transform:translateX(-3%) scale(1)}}
+
+  /* ===== 环形转盘：所有卡排在一个圆环上，绕中轴转 ===== */
+  .orbit{
+    position:absolute;left:50%;top:50%;width:0;height:0;
+    transform-style:preserve-3d;
+    /* ★ 去掉 transform 过渡：自动旋转每帧改角度，CSS 过渡永远追不上、实际角度滞后；
+       选中卡用无过渡的自身旋转去抵消理论角度，抵消不干净就会一晃一晃往左偏。
+       逐帧 render 本身就平滑，平拖也是逐帧的，不需要过渡。 */
+    transition:none;
+    will-change:transform;
+  }
+  .card{
+    position:absolute;left:0;top:0;
+    width:176px;height:235px;margin:-117px 0 0 -88px;
+    border-radius:15px;overflow:hidden;
+    transition:opacity .4s ease, filter .4s ease;
+    transform-style:preserve-3d;
+    cursor:pointer;
+    /* 卡片颜色往外晕（参考里卡边缘是化开的） */
+    box-shadow:0 0 56px -4px var(--spill), 0 16px 36px -26px rgba(0,0,0,.35);
+    /* ★ 环是通透的：背面不藏，能看见对面的卡 */
+  }
+  .card .face{
+    position:absolute;inset:0;border-radius:15px;overflow:hidden;background:var(--grad);
+    /* 玻璃感：微透 + 毛玻璃，对面的卡能透过来一点 */
+    opacity:.9;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+  }
+  /* ★ 完全选中的那张：彻底实体化——不透明、不吃毛玻璃、投影加厚 */
+  .card.picked .face{opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .card.picked{box-shadow:0 0 66px -2px var(--spill), 0 22px 46px -16px rgba(0,0,0,.5)}
+  .card .blob{position:absolute;border-radius:50%;filter:blur(20px);mix-blend-mode:screen;opacity:.9}
+  .card .b1{width:78%;height:52%;left:-16%;top:2%;background:var(--b1);animation:d1 10s ease-in-out infinite}
+  .card .b2{width:70%;height:46%;right:-18%;bottom:6%;background:var(--b2);animation:d2 12s ease-in-out infinite}
+  @keyframes d1{0%,100%{transform:translate(0,0)}50%{transform:translate(9%,7%) scale(1.1)}}
+  @keyframes d2{0%,100%{transform:translate(0,0)}50%{transform:translate(-8%,-6%) scale(1.08)}}
+  .card .orb{
+    position:absolute;left:50%;top:52%;width:66%;aspect-ratio:1;transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:
+      radial-gradient(circle at 38% 34%,rgba(255,255,255,.95),transparent 42%),
+      conic-gradient(from 210deg,#FFD9A0,#FF8A6B,#C0F08A,#8FD3FF,#C9A7FF,#FFD9A0);
+    filter:blur(2px);opacity:.72;mix-blend-mode:screen;
+    animation:spin 18s linear infinite;
+  }
+  @keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .card .pet{
+    position:absolute;left:50%;bottom:15%;height:58%;width:auto;
+    filter:drop-shadow(0 16px 22px rgba(40,20,10,.32));
+    animation:floaty 5s ease-in-out infinite;
+  }
+  @keyframes floaty{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-5px)}}
+  .card .veil{position:absolute;inset:0;background:linear-gradient(190deg,rgba(255,255,255,.16),transparent 42%);pointer-events:none}
+
+  /* ★ 空卡：白底虚线、不带彩色晕；有聊天端没形象＝虚线猫脸，完全空＝加号 */
+  .card.empty .face{background:#F7F7F5;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;
+    border:1.5px dashed #D1D5DB}
+  .card.empty .blob,.card.empty .orb,.card.empty .pet,.card.empty .veil{display:none}
+  .card.empty .title{color:#111;text-shadow:none}
+  .card.empty .small{color:#6E6E68}
+  .card.empty .footL{color:#A3A39C}
+  .card.empty{box-shadow:0 10px 26px -20px rgba(0,0,0,.35)}
+  .ec-glyph{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);
+    display:flex;align-items:center;justify-content:center}
+
+  .card .title{position:absolute;left:15px;top:14px;font-size:15px;font-weight:600;color:#fff;
+    text-shadow:0 1px 8px rgba(0,0,0,.18);max-width:76%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .small{position:absolute;left:15px;top:36px;font-size:10.5px;color:rgba(255,255,255,.72)}
+  .card .footL{position:absolute;left:15px;bottom:13px;font-size:10.5px;color:rgba(255,255,255,.8)}
+
+  /* 色板：珊瑚橙 / 深蓝 / 橄榄绿 / 紫（照参考色系） */
+  .k1{--grad:linear-gradient(170deg,#FF8A5B 0%,#F2653F 46%,#FFB489 100%);
+      --b1:radial-gradient(circle,#FFE0B8,transparent 70%);
+      --b2:radial-gradient(circle,#FF9A7A,transparent 70%);
+      --spill:rgba(255,120,70,.55)}
+  .k2{--grad:linear-gradient(170deg,#2F6BFF 0%,#0E2A8A 55%,#5FA8FF 100%);
+      --b1:radial-gradient(circle,#8FE8FF,transparent 70%);
+      --b2:radial-gradient(circle,#1B3FBF,transparent 70%);
+      --spill:rgba(40,110,255,.55)}
+  .k3{--grad:linear-gradient(170deg,#B9CC5A 0%,#6E8A22 52%,#D9E870 100%);
+      --b1:radial-gradient(circle,#FFFFC0,transparent 70%);
+      --b2:radial-gradient(circle,#8FD36A,transparent 70%);
+      --spill:rgba(150,180,60,.5)}
+  .k4{--grad:linear-gradient(170deg,#C08BFF 0%,#7A46D6 52%,#F0A8FF 100%);
+      --b1:radial-gradient(circle,#FFD9F2,transparent 70%);
+      --b2:radial-gradient(circle,#A8C8FF,transparent 70%);
+      --spill:rgba(150,110,230,.5)}
+
+  /* ★ 三个功能键：选定后从卡右侧垂直滑出 */
+  .tools{
+    position:absolute;left:50%;top:50%;margin-left:156px;
+    transform:translateY(-50%) translateX(14px);opacity:0;
+    display:flex;flex-direction:column;gap:10px;
+    transition:transform .35s cubic-bezier(.22,.82,.26,1), opacity .3s ease;
+    pointer-events:none;
+  }
+  .tools.open{transform:translateY(-50%) translateX(0);opacity:1;pointer-events:auto}
+  .tool{
+    width:50px;height:50px;border-radius:18px;background:#fff;border:1px solid #E8E8E4;
+    display:flex;align-items:center;justify-content:center;font-size:19px;color:#6E6E68;
+    box-shadow:0 6px 18px -8px rgba(0,0,0,.2);
+  }
+  .hint{text-align:center;font-size:11px;color:#A3A39C;margin-top:8px}
+  .note{margin-top:20px;font-size:11.5px;line-height:1.8;color:#6E6E68}
+  .note b{font-weight:600;color:#111}
+
+  /* ===== 以下为「它」页整页框架，严格取当前 App 真风格 ===== */
+  /* 真机比例：骨架 360:800 = 0.45。屏幕净宽保持 420（卡片动画基准不动），净高按同比例 = 420/0.45 ≈ 933 */
+  .device{width:438px;height:951px;max-width:100%;margin:0 auto;background:#fff;
+    border:9px solid #F2F2EF;border-radius:46px;
+    box-shadow:0 4px 22px rgba(17,17,17,.10);overflow:hidden;position:relative}
+  .screen{width:420px;height:933px;max-width:100%;background:#fff;position:relative;
+    overflow:hidden;border-radius:36px;display:flex;flex-direction:column}
+  /* 舞台自动填满状态栏与底栏之间；轮盘整体上移一档，透视原点跟着走，卡片/按钮不脱节 */
+  .stage{flex:1;height:auto;min-height:0;perspective-origin:50% 42%}
+  .orbit{top:42%}      /* 轮盘上移 8% 舞台高（约 60px） */
+  .tools{top:42%}
+
+  /* 系统状态栏 */
+  .statusbar{height:44px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 26px 0 30px;font-size:13px;font-weight:700;color:#111;background:#fff;letter-spacing:.2px}
+  .sb-r{display:flex;align-items:center;gap:6px}
+  .sb-r svg{display:block}
+
+  /* 顶栏：绿点 + 桌面 + 版本 + 我 */
+  .topbar{height:56px;display:flex;align-items:center;gap:8px;padding:0 18px 0 20px;background:#fff}
+  .wdot{width:8px;height:8px;border-radius:50%;background:#10B981;flex:none}
+  .room{font-size:13.5px;font-weight:700;color:#111}
+  .ver{font-size:9px;font-weight:700;color:#C0392B;background:#FEF2F2;border-radius:999px;padding:2px 6px;margin-left:1px}
+  .me{margin-left:auto;width:40px;height:40px;border-radius:50%;background:#F7F7F5;
+    display:flex;align-items:center;justify-content:center;color:#6E6E68;flex:none}
+
+  /* ★ 左上角桌宠条：名字下拉条决定桌宠是哪一只，旁边圆点管开/关 */
+  .floatbar{position:absolute;left:14px;top:12px;display:flex;align-items:center;gap:9px;z-index:450}
+  .fsel{height:32px;max-width:190px;display:flex;align-items:center;gap:8px;padding:0 10px;
+    background:#fff;border:1px solid #E8E8E4;border-radius:16px;
+    box-shadow:0 4px 14px -8px rgba(0,0,0,.3);cursor:pointer}
+  .fsel:active{transform:scale(.97)}
+  .fsel #fselName{font-size:12px;font-weight:700;color:#111;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .caret{font-size:11px;color:#A3A39C;line-height:1;transition:transform .2s ease}
+  .fsel.open .caret{transform:rotate(180deg)}
+  .fdd{position:absolute;left:0;top:38px;min-width:186px;background:#fff;
+    border:1px solid #E8E8E4;border-radius:14px;padding:5px;
+    box-shadow:0 12px 30px -12px rgba(0,0,0,.35);
+    opacity:0;transform:translateY(-6px);pointer-events:none;
+    transition:opacity .18s ease,transform .18s ease;z-index:460}
+  .fdd.open{opacity:1;transform:translateY(0);pointer-events:auto}
+  .fopt{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:8px 10px;border-radius:10px;font-size:12px;color:#111;cursor:pointer}
+  .fopt:hover{background:#F7F7F5}
+  .fopt.sel{background:#F0F0EE;font-weight:700}
+  .fopt .tick{color:#111;font-size:11px;visibility:hidden}
+  .fopt.sel .tick{visibility:visible}
+  .fdot{width:22px;height:22px;border-radius:50%;border:2px solid #D1D5DB;background:#fff;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;
+    transition:background .18s ease,border-color .18s ease,box-shadow .18s ease}
+  .fdot i{display:block;width:7px;height:7px;border-radius:50%;background:#A3A39C;transition:background .18s ease}
+  .fdot.on{background:#111;border-color:#111;box-shadow:0 0 0 3px rgba(17,17,17,.10)}
+  .fdot.on i{background:#fff}
+  .fdot:active{transform:scale(.9)}
+  .fmode{font-size:11.5px;font-weight:700;color:#111;white-space:nowrap;letter-spacing:.2px}
+
+  /* ★ 键盘：输入框聚焦时升起；选中卡与输入框一起上推（kbLift） */
+  .kbd{position:absolute;left:0;right:0;bottom:0;height:120px;background:#F7F7F5;
+    border-top:1px solid #E8E8E4;z-index:380;padding:9px 8px 0;box-sizing:border-box;
+    transform:translateY(100%);transition:transform .3s cubic-bezier(.22,.82,.26,1)}
+  .screen.kbd .kbd{transform:translateY(0)}
+  .krow{display:flex;justify-content:center;gap:5px;margin-bottom:7px}
+  .kkey{min-width:27px;height:34px;padding:0 6px;border-radius:7px;background:#fff;
+    border:1px solid #E8E8E4;box-shadow:0 1.5px 0 #DFDFDB;display:flex;align-items:center;
+    justify-content:center;font-size:12px;font-weight:600;color:#111}
+  .kkey.wide{min-width:70px}
+
+  /* ★ 发送后到聊天里多问一步：用什么方式制作 */
+  .chatview{position:absolute;left:0;right:0;top:44px;bottom:0;background:#fff;z-index:600;
+    display:flex;flex-direction:column;transform:translateY(100%);opacity:.4;pointer-events:none;
+    transition:transform .34s cubic-bezier(.22,.82,.26,1),opacity .24s ease}
+  .chatview.open{transform:translateY(0);opacity:1;pointer-events:auto}
+  .cv-head{height:52px;flex:none;border-bottom:1px solid #E8E8E4;display:flex;align-items:center;
+    gap:8px;padding:0 18px;font-size:14px;font-weight:700;color:#111}
+  .cv-back{width:28px;height:28px;border-radius:50%;background:#F7F7F5;color:#6E6E68;
+    font-size:20px;line-height:26px;text-align:center;cursor:pointer}
+  .cv-who{margin-left:auto;font-size:11px;font-weight:600;color:#6E6E68}
+  .cv-body{flex:1;overflow:auto;padding:18px 16px;display:flex;flex-direction:column;gap:12px}
+  .cv-bub{max-width:78%;padding:10px 13px;border-radius:15px;font-size:12.5px;line-height:1.6}
+  .cv-me{align-self:flex-end;background:#111;color:#fff;border-bottom-right-radius:5px}
+  .cv-it{align-self:flex-start;background:#F7F7F5;color:#111;border:1px solid #E8E8E4;
+    border-bottom-left-radius:5px}
+  .cv-chips{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .cv-chip{padding:6px 12px;border-radius:999px;border:1px solid #D1D5DB;background:#fff;
+    font-size:11.5px;font-weight:600;color:#111;cursor:pointer}
+  .cv-chip:active{transform:scale(.94)}
+  .cv-chip.sel{background:#111;color:#fff;border-color:#111}
+
+  /* 功能入口：选中卡片后从卡右侧垂直冒出的两个按钮，可点、有反馈 */
+  .tools{gap:9px}
+  .tool{width:54px;height:56px;flex-direction:column;gap:3px;color:#6E6E68;
+    transition:transform .12s ease, background .18s ease, border-color .18s ease}
+  .tool .tl{font-size:9.5px;font-weight:600;color:#6E6E68}
+  .tool:active{transform:scale(.93);background:#F7F7F5}
+  .tool.on{background:#111;border-color:#111;color:#fff}
+  .tool.on .tl{color:#fff}
+
+  /* 制作动作面板 */
+  .actpanel{position:absolute;left:18px;right:18px;bottom:16px;background:#fff;border:1px solid #E8E8E4;
+    border-radius:18px;padding:14px;box-shadow:0 10px 34px -14px rgba(0,0,0,.3);
+    transform:translateY(140%);opacity:0;pointer-events:none;
+    transition:transform .34s cubic-bezier(.22,.82,.26,1),opacity .25s ease;z-index:400}
+  .actpanel.open{transform:translateY(0);opacity:1;pointer-events:auto}
+  .ap-head{font-size:13px;font-weight:700;color:#111;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .ap-x{width:24px;height:24px;border-radius:50%;background:#F7F7F5;color:#6E6E68;
+    display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer}
+  .ap-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .ap-field{flex:1;min-height:56px;background:#fff;border:1.5px solid #D1D5DB;border-radius:14px;
+    box-shadow:0 2px 0 #E5E7EB;padding:9px 11px;font-size:11px;color:#111;outline:none;line-height:1.5}
+  .ap-field:empty:before{content:attr(data-ph);color:#A3A39C}
+  .ap-lab{font-size:11px;color:#6E6E68}
+  .ap-go{width:100%;height:44px;border:0;border-radius:14px;background:#111;color:#fff;
+    font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;transition:transform .12s ease}
+  .ap-go:active{transform:scale(.97)}
+
+  .fx-toast{position:absolute;left:50%;top:20%;transform:translate(-50%,-8px);background:#111;color:#fff;
+    font-size:11.5px;font-weight:600;padding:8px 14px;border-radius:999px;opacity:0;pointer-events:none;
+    transition:opacity .2s ease,transform .2s ease;z-index:500;white-space:nowrap}
+  .fx-toast.show{opacity:.92;transform:translate(-50%,0)}
+
+  /* 捏一下的抖动 */
+  @keyframes pinch{0%,100%{transform:translateX(-50%) translateY(0) scale(1)}
+    30%{transform:translateX(-50%) translateY(3px) scale(1.14,.86)}
+    60%{transform:translateX(-50%) translateY(-2px) scale(.93,1.1)}}
+  .card .pet.pinch{animation:pinch .42s ease}
+
+  /* 底栏：三格 它 / 聊天 / 记忆，白胶囊 */
+  .tabbar{height:78px;flex:none;background:#fff;border-top:1px solid #E8E8E4;
+    display:flex;align-items:flex-start;padding:9px 5px 0;gap:5px}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:8px 0 10px;color:#A3A39C;border-radius:18px;cursor:pointer;transition:transform .12s ease}
+  .tab:active{transform:scale(.94)}
+  .tab svg{display:block}
+  .tab span{font-size:10px;font-weight:600}
+  .tab.on{background:#F0F0EE;color:#111}
+  .tab.on span{font-weight:800}
+  .home-ind{height:5px;width:134px;border-radius:999px;background:#111;margin:2px auto 0;opacity:.85}
+
+  .cap{text-align:center;font-size:11px;color:#A3A39C;margin:12px 0 0}
+
+  .act-tag{position:absolute;left:10px;right:10px;bottom:34px;background:rgba(17,17,17,.78);
+    color:#fff;font-size:10px;line-height:1.45;padding:6px 8px;border-radius:9px;
+    max-height:56px;overflow:hidden}
+
+  /* ===== 捏捏乐：软区画布 + 工具条（两端真机同款两步玩法，不是抖一下） ===== */
+  .pinch-cv{position:absolute;inset:0;width:176px;height:235px;z-index:3;touch-action:none;cursor:crosshair}
+  .pinchbar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%) translateY(140%);opacity:0;
+    pointer-events:none;background:#fff;border:1px solid #E8E8E4;border-radius:16px;padding:9px 10px 10px;
+    box-shadow:0 10px 30px -14px rgba(0,0,0,.35);z-index:420;width:calc(100% - 36px);max-width:320px;
+    transition:transform .3s cubic-bezier(.22,.82,.26,1),opacity .25s ease}
+  .pinchbar.show{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
+  .pb-hint{font-size:11px;color:#6E6E68;text-align:center;margin-bottom:8px}
+  .pb-row{display:flex;gap:7px}
+  .pb-btn{flex:1;text-align:center;padding:8px 0;border-radius:11px;background:#F7F7F5;border:1px solid #E8E8E4;
+    font-size:11.5px;font-weight:600;color:#6E6E68;cursor:pointer;transition:transform .12s ease}
+  .pb-btn:active{transform:scale(.94)}
+  .pb-btn.on,.pb-btn.go{background:#111;color:#fff;border-color:#111}
+
+  /* ===== App 内嵌版：WebView 只占它页舞台区，外壳交回原生 ===== */
+  html,body{margin:0!important;padding:0!important;background:#fff!important;width:100%;height:100%;overflow:hidden}
+  .wrap{max-width:none!important;margin:0!important;padding:0!important;width:100%!important}
+  .wrap>h1,.wrap>p.caption,.wrap>p.sub,.cap,.note{display:none!important}
+  .device{width:100%!important;height:100%!important;max-width:none!important;border:0!important;
+    border-radius:0!important;box-shadow:none!important;margin:0!important}
+  .screen{width:100%!important;height:100%!important;max-width:none!important;border-radius:0!important}
+  .statusbar,.topbar,.tabbar,.home-ind{display:none!important}
+  .stage{height:100%!important;flex:1 1 auto!important}
+  /* 舞台留点顶部空间给左上角桌宠条，别压到卡片 */
+  .floatbar{top:10px!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 style="font-size:16px;font-weight:700;margin:0 0 4px">还在 · 它页（完整页面预览）</h1>
+  <p class="sub" style="font-size:12px;color:#A3A39C;margin:0 0 16px">
+    手机按真机骨架 360:800 比例（约 1:2.22）做。桌宠模式在左上角（名字下拉条＋开关圆点）；选中卡后从侧面冒出两个按钮。卡片区照 Basit 环形透视：平拖转环，往下拉拔出选定，上滑插回。</p>
+  <p style="font-size:12px;color:#6E6E68;margin:0 0 14px">
+    看摆位（<b>有形象的全部摆上，跟创建先后无关</b>；一环最多 8 个，不足用空卡补）：
+    <a href="?n=8" style="color:#111">8 只有形象·全摆满（默认）</a> ·
+    <a href="?n=4" style="color:#111">4 只有形象+4 空卡</a> ·
+    <a href="?n=12" style="color:#111">12 只全有形象（只摆前 8）</a> ·
+    <a href="?n=0" style="color:#111">0 只·全空卡</a></p>
+
+  <div class="device">
+    <div class="screen">
+
+      <!-- 状态栏 -->
+      <div class="statusbar">
+        <span>9:41</span>
+        <span class="sb-r">
+          <svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="7" width="3" height="5" rx="1" fill="#111"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#111"/><rect x="10" y="2.5" width="3" height="9.5" rx="1" fill="#111"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#111"/></svg>
+          <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 11.2 1 4.4a10 10 0 0 1 14 0z" fill="#111"/></svg>
+          <svg width="25" height="12" viewBox="0 0 25 12"><rect x=".5" y=".5" width="21" height="11" rx="3" fill="none" stroke="#111" stroke-opacity=".4"/><rect x="2" y="2" width="17" height="8" rx="1.6" fill="#111"/><rect x="23" y="4" width="2" height="4" rx="1" fill="#111" fill-opacity=".5"/></svg>
+        </span>
+      </div>
+
+      <!-- 顶栏 -->
+      <div class="topbar">
+        <span class="wdot"></span>
+        <span class="room">桌面</span>
+        <span class="ver">v3.138</span>
+        <span class="me">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+        </span>
+      </div>
+
+      <!-- 卡片舞台（原样保留） -->
+      <div class="stage" id="stage">
+        <div class="band warm"></div>
+        <div class="band cool"></div>
+        <div class="orbit" id="orbit"></div>
+        <!-- ★ 左上角桌宠模式：名字下拉条选哪一只 + 旁边圆点开关 -->
+        <div class="floatbar" id="floatbar">
+          <div class="fsel" id="fselBtn"><span id="fselName">毛毡猫 · 样板</span><span class="caret">⌄</span></div>
+          <div class="fdot" id="fdot" title="桌宠模式开 / 关"><i></i></div>
+          <span class="fmode">桌宠模式</span>
+          <div class="fdd" id="fdd"></div>
+        </div>
+        <div class="tools" id="tools">
+          <div class="tool" data-act="pet" title="捏捏它">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5a2 2 0 0 1 4 0v5M13 10V6a2 2 0 0 1 4 0v6M17 11a2 2 0 0 1 4 0v4c0 4-3 7-7 7h-2c-3 0-5-2-6-4l-2-4a2 2 0 0 1 3-2l2 2"/></svg>
+            <span class="tl">捏捏</span></div>
+          <div class="tool" data-act="act" title="制作动作">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5L8 21H3v-5z"/><path d="m13 6 5 5"/></svg>
+            <span class="tl">动作</span></div>
+        </div>
+        <!-- 制作动作面板（点「动作」按钮弹出） -->
+        <div class="actpanel" id="actpanel">
+          <div class="ap-head">给它做个动作 <span class="ap-x" id="apX">✕</span></div>
+          <div class="ap-row"><div class="ap-field" id="apField" contenteditable="true" data-ph="描述它要做什么动作，比如：它伸个懒腰，然后回头看看你。"></div></div>
+          <button class="ap-go" id="apGo">发送</button>
+        </div>
+        <!-- 键盘占位：输入框聚焦时升起，选中卡与输入框一起上推 -->
+        <div class="kbd" id="kbd">
+          <div class="krow"><div class="kkey">Q</div><div class="kkey">W</div><div class="kkey">E</div><div class="kkey">R</div><div class="kkey">T</div><div class="kkey">Y</div><div class="kkey">U</div><div class="kkey">I</div><div class="kkey">O</div><div class="kkey">P</div></div>
+          <div class="krow"><div class="kkey">A</div><div class="kkey">S</div><div class="kkey">D</div><div class="kkey">F</div><div class="kkey">G</div><div class="kkey">H</div><div class="kkey">J</div><div class="kkey">K</div><div class="kkey">L</div></div>
+        </div>
+        <!-- 发送后到聊天里多问一步：用什么方式制作 -->
+        <div class="chatview" id="chatview">
+          <div class="cv-head"><span class="cv-back" id="cvBack">‹</span><span>聊天</span><span class="cv-who" id="cvWho"></span></div>
+          <div class="cv-body" id="cvBody"></div>
+        </div>
+        <div class="fx-toast" id="fxToast"></div>
+      </div>
+
+      <!-- 功能入口：选中卡片后从卡右侧垂直冒出的两个按钮（见舞台内 .tools），下方不再放固定按钮 -->
+
+      <!-- 底栏 -->
+      <div class="tabbar">
+        <div class="tab on">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 6 4l4 3a6 6 0 0 1 4 0l4-3 2 5v3a7 7 0 0 1-14 0z"/><circle cx="9.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+          <span>它</span>
+        </div>
+        <div class="tab">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.5 7.2L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>
+          <span>聊天</span>
+        </div>
+        <div class="tab">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5.9 1.2 1 1.9h5c.1-.7.4-1.4 1-1.9A6 6 0 0 0 12 3z"/></svg>
+          <span>记忆</span>
+        </div>
+      </div>
+      <div class="home-ind"></div>
+
+    </div>
+  </div>
+
+  <p class="cap">左上角「桌宠模式」：选名字＋点圆点开关 · 下拉拔出选定 · 选中后右侧冒出两个按钮 · 上滑插回 · 平拖＝转环 · 点空卡＝创建形象／新建角色</p>
+
+  <p class="note">
+    <b>整页是替换，不是叠加：</b>新卡片系统整体换掉原来的卡牌展示和选中方式；原来下方那排固定按钮撤掉。<b>桌宠模式在页面左上角</b>，四个字直接显示：名字下拉条列出所有有形象的角色（默认 8 只），决定桌宠是哪一只；旁边圆点管开启和关闭。卡片侧面只剩选中后才冒出的<b>捏捏／动作</b>两个按钮。页面其余（顶栏、底栏）照当前 App 真代码：状态栏 → 顶栏「桌面 · v3.138 · 我」→ 卡片舞台 → 底栏「它／聊天／记忆」。白底 #FFFFFF、次底 #F7F7F5、1dp 描边 #E8E8E4，主色黑、无凹凸双阴影。<br>
+    <b>捏捏它（真机同款）：</b>不是抖一下。选中卡后点「捏捏」→ 用<b>笔</b>在它身上涂软的地方（涂抹本身不变形，橙色点＝软区），可切<b>橡皮</b>擦；点<b>确认</b>进玩耍态，笔迹渐隐、提示「摸摸它软的地方，按住拽拽看」；<b>按住软区拽/甩，松手带阻尼弹簧回弹</b>，硬的地方捏不动。玩耍态锁住卡片横轨；再点捏捏＝退出玩耍回涂抹，点「清除／取消」或切桌宠／制作／上滑插回＝退出并清软区。<br>
+    <b>制作动作：</b>输入框里只有动作描述，秒数和制作方式都去掉了；按钮改「发送」，发出后跳到聊天，在聊天里多问一句「你想用什么方式制作？」（豆包／阿里云是真实的两条制作通道，预览不真生成）。输入框拉出键盘时，<b>选中的卡和输入框当一个整体上推</b>，键盘收起一起回来。<br>
+    <b>三档虚实：</b>选中的卡彻底实体；下拉／上滑途中居中；后面的卡在选中态下再虚一档。两个按钮贴在选中卡右侧外沿，不压卡。<br>
+    <b>下滑合拢／上滑插回：</b>下滑缩小内径、就近合拢不绕圈；上滑扩充内径、就近插回、退到同层同高。选中期间锁选，先插回才能换一张。<br>
+    <b>有形象的全上环（跟创建先后无关）：</b>环形只认「这一只有没有形象」，<b>不按创建顺序取前几个</b>——你创建了 12 只、其中 8 只有形象，哪怕有形象的是第 10、11、12 个才建的，这 8 只也全部摆上环；一环最多 8 个槽位，摆满为止。不足 8 只才用空卡补，占位优先级 <b>有形象 &gt; 有聊天端没形象 &gt; 完全空卡</b>，有形象的占显眼槽位（正面 → 近侧 → 侧面 → 背面），空卡塞后头，角度固定 360/8 均分。<b>有聊天端没形象</b>＝虚线猫脸、点了「创建动态形象」；<b>完全空卡</b>＝加号、点了「新建角色」。空卡不参与下拉选中，桌宠下拉只列有形象的角色。<br>
+    <b>待确认：</b>底栏代码里是三格（它／聊天／记忆），与此前「两格」口径不同——按代码做了三格，若仍要两格告我改回。
+  </p>
+</div>
+
+<script>
+window.INIT = window.INIT || {};
+
+  // ★ App 版：真数据由宿主注入 window.INIT.roles（有形象）/ .noav（无形象）；无数据用浏览器兜底样例。
+  const _INIT = window.INIT || {};
+  const _FALLBACK = [
+    {k:'k1', n:'毛毡猫 · 样板', s:'动作 8 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k2', n:'kk (6)',       s:'动作 3 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k3', n:'麦龙龙',       s:'动作 11 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k4', n:'第四只',       s:'动作 0 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k1', n:'小五',         s:'动作 5 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k2', n:'小六',         s:'动作 2 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k3', n:'小七',         s:'动作 7 / 11', img:'mock_assets/sit_maozhan.webp'},
+    {k:'k4', n:'小八',         s:'动作 6 / 11', img:'mock_assets/sit_maozhan.webp'}
+  ];
+  const _roles = (_INIT.roles && _INIT.roles.length) ? _INIT.roles : _FALLBACK;
+  const _COLORS = ['k1','k2','k3','k4'];
+  // ★ 有形象的全部摆上（最多 8），跟创建先后无关；色板只作卡面装饰，宠物图用真 sit 动画。
+  const realList = _roles.filter(d => d.img && d.img.length).slice(0, 8).map((d, i) => ({
+      k: _COLORS[i % 4], n: d.name || d.n || '', s: '动作 ' + (d.done || 0) + ' / 11',
+      img: d.img, id: d.id || '', type: 'real'
+  }));
+  const ordered = [];
+  realList.forEach(d => ordered.push(d));
+  // 空卡：先"有聊天端没形象"（点了建动态形象），再"完全空"（点了建角色）
+  const _noavs = _INIT.noav || [];
+  for (const r of _noavs) {
+    if (ordered.length >= 8) break;
+    ordered.push({k:'k2', type:'noav', n:(r.name || r.n || ''), id:(r.id || ''), s:'点它建动态形象'});
+  }
+  while (ordered.length < 8) ordered.push({k:'k3', type:'create', n:'创建角色', id:'', s:'点它新建一只'});
+  const VIS = [0, 1, 7, 2, 6, 3, 5, 4];
+  const data = new Array(8);
+  ordered.forEach((d, k) => { data[VIS[k]] = d; });
+  const orbit = document.getElementById('orbit');
+  const stage = document.getElementById('stage');
+  const tools = document.getElementById('tools');
+
+  // ★ 一环最多 8 个槽位，不足用空卡补满；按 360/N 均分整圈，正反都看得见
+  const N = 8;
+  const STEP = 360 / N;
+  const R = 292;
+  const R_CLOSE = R * (N - 1) / N;   // ★ 抽走一张后剩 7 张，半径按 7/8 收进去，间隙宽度不变
+
+  const els = data.map((d, i) => {
+    const el = document.createElement('div');
+    el.className = 'card ' + d.k + (d.type !== 'real' ? ' empty' : '');
+    if (d.type === 'real') {
+      el.innerHTML = `<div class="face">
+          <div class="blob b1"></div><div class="blob b2"></div>
+          <div class="orb"></div>
+          <img class="pet" src="${d.img||''}" alt="">
+          <div class="veil"></div>
+        </div>
+        <div class="title">${d.n}</div>
+        <div class="small">形象</div>
+        <div class="footL">${d.s}</div>`;
+    } else {
+      const glyph = d.type === 'noav'
+        ? '<svg width="70" height="70" viewBox="0 0 64 64" fill="none" stroke="#A3A39C" stroke-width="2" stroke-dasharray="4 3" stroke-linecap="round"><path d="M14 24 12 10l10 6a20 20 0 0 1 20 0l10-6-2 14v10a20 20 0 0 1-36 0z"/><circle cx="25" cy="33" r="1.6" fill="#A3A39C" stroke="none"/><circle cx="39" cy="33" r="1.6" fill="#A3A39C" stroke="none"/></svg>'
+        : '<svg width="56" height="56" viewBox="0 0 48 48" fill="none" stroke="#A3A39C" stroke-width="2.4" stroke-linecap="round"><path d="M24 11v26M11 24h26"/></svg>';
+      el.innerHTML = `<div class="face"><div class="ec-glyph">${glyph}</div></div>
+        <div class="title">${d.n}</div>
+        <div class="small">${d.type === 'noav' ? '等待形象' : '空位'}</div>
+        <div class="footL">${d.s}</div>`;
+    }
+    orbit.appendChild(el);
+    return el;
+  });
+
+  let pos = 0;                 // 环的相位（一直慢慢自动转）
+  let slotA = els.map((_, i) => i * STEP);  // 每张卡在环上的角度（插回后就近重排，始终均匀 45°）
+  let selIdx = -1;             // 选中的卡
+  let selW = 0;                // 选中卡悬停的世界角（从哪拔出的就在哪悬停，跟环一起转）
+  let selS = 0;                // 闭合程度 0..1（1=剩下 7 张完全合拢）
+  let fly = null, insert = null;             // 两段动画（期间环静止不转）
+  let pullIdx = -1, pullDy = 0;// 跟手阶段：抓住的卡和当前下拉/上滑量
+
+  const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+  const norm = a => { a = ((a % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
+
+  // 环序工具：按 slotA 排出循环顺序
+  function rankOf(j, i){       // 卡 j 沿环方向数、在中断处（i 的缺口）后面第几张
+    const order = els.map((_, t) => t).sort((a, b) => slotA[a] - slotA[b]);
+    return ((order.indexOf(j) - order.indexOf(i) - 1) % N + N) % N;
+  }
+  const closedLocal = (i, k) => N <= 1 ? slotA[i] : slotA[i] + 180/(N-1) + k * 360/(N-1);  // 合拢：剩 N-1 张均分整圈，缺口两侧各让半个间距
+
+  // dim = 选中态下后面卡的额外虚化 0..1（越大越虚）；选中的卡自己不调这个
+  function shade(el, delta, dim){
+    const a = Math.abs(delta);
+    const facing = Math.cos(delta * Math.PI / 180);
+    let op, bl;
+    if (facing < -0.2) { op = .3; bl = 3; }
+    else { op = Math.max(.45, 1 - a / 110); bl = a < 12 ? 0 : Math.min(a / 45, 1) * 1.6; }
+    const d = dim || 0;
+    if (d) { op *= (1 - d * .55); bl += d * 2.4; }
+    el.style.opacity = op.toFixed(3);
+    el.style.filter = bl > .05 ? `blur(${bl.toFixed(2)}px) saturate(${(1 - d * .35).toFixed(2)})` : (d ? `saturate(${(1 - d * .35).toFixed(2)})` : 'none');
+    el.style.zIndex = String(100 - Math.round(a));
+  }
+
+  let kbLift = 0, kbTarget = 0;
+  function paint(){
+    kbLift += (kbTarget - kbLift) * .22;
+    if (Math.abs(kbTarget - kbLift) < .4) kbLift = kbTarget;
+    const _t = document.getElementById('tools');
+    if (_t) _t.style.marginTop = (-kbLift).toFixed(1) + 'px';
+    const _p = document.getElementById('actpanel');
+    if (_p) _p.style.bottom = (16 + kbLift).toFixed(1) + 'px';
+    els.forEach(el => el.classList.remove('picked'));   // 每帧重置：只有完全拔出的那张是实心的
+    els.forEach((el, i) => {
+      // ---------- 上滑插回：环静止；卡从跟手位置纯后退滑进环面（和其他卡同一平面），其余的卡就近补位 ----------
+      if (insert) {
+        const p = ease(Math.min(1, (performance.now() - insert.t0) / insert.dur));
+        const ringR = R_CLOSE + (R - R_CLOSE) * p;   // ★ 内径随插回扩充：落后半圈时环还是收着的，落定才放回 R
+        const w = insert.froms[i] + (insert.tos[i] - insert.froms[i]) * p;
+        if (i === insert.i) {
+          // 卡退回到「此时这一层的深度」——和邻居同层，不浮在前面
+          const z = (R + 74) + (ringR - (R + 74)) * p;
+          el.style.transform =
+            `rotateY(${w + pos * STEP}deg) translateZ(${z}px) translateY(${insert.y0 * (1 - p) - kbLift}px) scale(${1.12 - 0.12 * p})`;
+          // 层级跟角度走：越往环深处落，越让位给更近的卡——插完和其他卡完全同一层序
+          el.style.zIndex = String(100 - Math.round(Math.abs(norm(w))));
+          // ★ 明暗跟着落点走：落到位时和邻居完全一致（该淡的淡、该虚的虚），不再比别的卡亮出一截
+          el.style.opacity = .88 + (insert.toOp - .88) * p;   // 从中间态退回后面那一档
+          el.style.filter = `blur(${(.45 + (insert.toBlur - .45) * p).toFixed(2)}px)`;
+        } else {
+          el.style.transform = `rotateY(${w + pos * STEP}deg) translateZ(${ringR}px)`;
+          shade(el, norm(w), .45);
+        }
+        return;
+      }
+      // ---------- 下拉选定中：卡从原位直接朝镜头拔出，同时转正对屏幕（不走弧线），身后的卡同步向中间聚拢（环静止） ----------
+      if (fly && fly.i === i) {
+        const p = ease(Math.min(1, (performance.now() - fly.t0) / fly.dur));
+        const w = fly.w0 * (1 - p);                   // 世界角渐变到 0：拔出的同时转正
+        const follow = (p < .25) ? fly.follow : 0;    // 起步带一点手指余量
+        el.style.transform =
+          `rotateY(${pos * STEP + w}deg) translateZ(${R + 74 * p}px) translateY(${44 * p + follow - kbLift}px) scale(${1 + 0.12 * p})`;
+        el.style.opacity = .88;              // 中间态：明显比选中虚一点、又明显比后面实
+        el.style.filter = 'blur(.45px)';
+        el.style.zIndex = '200';
+        return;
+      }
+      // ---------- 跟手阶段：被抓的卡随手指下拉/上滑 ----------
+      if (i === pullIdx && pullDy !== 0) {
+        if (i === selIdx) {
+          el.style.transform =
+            `rotateY(${selW + pos * STEP}deg) translateZ(${R + 74}px) translateY(${44 + pullDy * 0.85 - kbLift}px) scale(1.12)`;
+        } else {
+          el.style.transform =
+            `rotateY(${slotA[i]}deg) translateZ(${R + Math.max(0, pullDy) * 0.4}px) translateY(${pullDy * 0.85}px) scale(${1 + Math.max(0, pullDy) * 0.0009})`;
+        }
+        el.style.opacity = .88;
+        el.style.filter = 'blur(.45px)';
+        el.style.zIndex = '150';
+        return;
+      }
+      // ---------- 已选定：悬停在拔出的位置上方，跟环一起慢慢转 ----------
+      if (i === selIdx) {
+        el.classList.add('picked');          // ★ 完全选中：实体化，不透明、不吃毛玻璃
+        el.style.transform =
+          `rotateY(${selW + pos * STEP}deg) translateZ(${R + 74}px) translateY(${44 - kbLift}px) scale(1.12)`;
+        el.style.opacity = 1;
+        el.style.filter = 'none';
+        el.style.zIndex = '200';
+        return;
+      }
+      // ---------- 环上的卡：缩小/扩充内径 + 角度微调合拢（半径和角度同步，间隙宽度不变） ----------
+      let angle = slotA[i];
+      if (selIdx >= 0 && selS > 0) {
+        const tgt = closedLocal(selIdx, rankOf(i, selIdx));
+        angle = slotA[i] + selS * norm(tgt - slotA[i]);   // ★ 最短路合拢：每张卡就近挪到目标，绝不绕一整圈
+      }
+      // ★ 环半径随合拢程度缩放：抽走后收进 R_CLOSE（7 张卡保持原间隙宽度），插回后放回 R
+      const ringR = R + (R_CLOSE - R) * selS;
+      el.style.transform = `rotateY(${angle}deg) translateZ(${ringR}px)`;
+      shade(el, norm(angle - pos * STEP), selIdx >= 0 ? .45 : 0);   // ★ 选中态：后面的卡再虚一档
+    });
+  }
+  function render(){
+    orbit.style.transform = `translateZ(${-R}px) rotateY(${-pos * STEP}deg)`;
+    // 功能键跟着选中的卡走（按悬停世界角估屏幕横向位置）
+    tools.style.marginLeft = (Math.sin(selW * Math.PI / 180) * (R + 74) * 0.9 + 156) + 'px';
+    paint();
+  }
+
+  // ---------- 触发动画：动画期间环静止不转，做完才恢复自动旋转 ----------
+  function flyTo(i){           // 下拉选定：卡从原位朝镜头拔出、同时转正到正对屏幕；身后的卡同步聚拢合上（同一段动画、同时开始结束）
+    const w0 = norm(slotA[i] - pos * STEP);   // 出发的世界角
+    fly = { i, w0, s0: selS, t0: performance.now(), dur: 620, follow: pullDy * 0.4 };
+    selW = 0;                                 // 悬停永远正对屏幕（世界角 0）
+    selIdx = i; tools.classList.remove('open');
+    pullIdx = -1; pullDy = 0;   // ★ 交棒给拔出动画：清掉跟手残留（follow 已存进 fly）
+  }
+  function startInsert(i){
+    if (window.__pinchReset) window.__pinchReset();   // 上滑插回＝退出并清除捏捏
+     // 上滑插回：环静止；卡就近落进离它最近的槽位（不必是原来那道缝），其余的卡按环序各挪一格让位
+    const y0 = 44 + pullDy * 0.85;
+    // 目标槽位：8 个均匀槽里、离卡当前悬停位置最近的那一个
+    let best = slotA[i], bestD = 1e9;
+    els.forEach((_, j) => {
+      const d = Math.abs(norm(slotA[j] - pos * STEP - selW));
+      if (d < bestD) { bestD = d; best = slotA[j]; }
+    });
+    // 其余 7 张沿环序依次往后填一格（每张最多挪一格，把原来的缝顺带补上）
+    const others = els.map((_, t) => t).filter(j => j !== i)
+      .sort((a, b) => (((slotA[a] - best) % 360 + 360) % 360) - (((slotA[b] - best) % 360 + 360) % 360));
+    const froms = [], tos = [];
+    els.forEach(() => { froms.push(0); tos.push(0); });
+    froms[i] = selW;
+    tos[i] = selW + norm(best - pos * STEP - selW);          // 落到目标槽（就近、最短路）
+    others.forEach((j, m) => {
+      froms[j] = slotA[j] + norm(closedLocal(i, rankOf(j, i)) - slotA[j]) - pos * STEP;  // ★ 和合拢画面同一角度（最短路），插回第一帧不跳圈
+      const goal = best + (m + 1) * STEP;                    // 目标槽位（局部角）
+      tos[j] = froms[j] + norm(goal - pos * STEP - froms[j]);// 各自最短路滑过去
+    });
+    // 落点的明暗：和邻居完全一致（环上的卡越靠边越淡越虚），插完不比别的卡亮
+    const tf = Math.cos(tos[i] * Math.PI / 180);
+    const ta = Math.abs(norm(tos[i]));
+    const toOp = tf < -0.2 ? 0.3 : Math.max(.45, 1 - ta / 110);
+    const toBlur = tf < -0.2 ? 3 : (ta < 12 ? 0 : Math.min(ta / 45, 1) * 1.6);
+    insert = { i, froms, tos, y0, toOp, toBlur, t0: performance.now(), dur: 560 + bestD * 2 };
+    tools.classList.remove('open');
+    pullIdx = -1; pullDy = 0;   // ★ 交棒给插回动画：不清的话动画结束后这张卡会一直被当成"跟手中"往上飘一节、还浮在前面
+  }
+  function openTools(){ tools.classList.add('open'); }
+
+  // 主循环：动画期间环静止，做完才恢复自动旋转
+  function tick(){
+    let dirty = false;
+    if (fly) {
+      const p = Math.min(1, (performance.now() - fly.t0) / fly.dur);
+      selS = fly.s0 + (1 - fly.s0) * ease(p);      // ★ 聚拢与拔出共用同一个进度：同时开始、同时结束
+      if (p >= 1) { fly = null; pullIdx = -1; pullDy = 0; selS = 1; openTools(); }
+      dirty = true;
+    } else if (insert) {
+      const p = Math.min(1, (performance.now() - insert.t0) / insert.dur);
+      if (p >= 1) {
+        els.forEach((_, j) => { slotA[j] = insert.tos[j] + pos * STEP; });   // 落定（pos 不动，环原地接着转）
+        slotA = slotA.map(a => ((a % 360) + 360) % 360);
+        selIdx = -1; selS = 0; insert = null;
+        pullIdx = -1; pullDy = 0;   // ★ 保险：插回的卡彻底回到环上，和邻居同一层、同一高度
+      }
+      dirty = true;
+    } else if (!dragging) {
+      pos += 0.0035;           // ★ 动画都做完了，环才开始慢慢转
+      dirty = true;
+    }
+    if (dirty) render();
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- 手势：抓卡跟手 → 下拉过阈值=拔出选定；上滑选中的卡过阈值=原地插回；平拖=转环 ----------
+  let dragging = false, lastX = 0, downX = 0, downY = 0, downCard = null;
+  let tapEmpty = -1, tapMoved = false;   // ★ 空卡点击判定
+  stage.addEventListener('pointerdown', e => {
+    if (window.__pinchLock) return;   // 捏捏乐锁轨：涂抹/玩耍时不转环、不换卡
+    dragging = true; lastX = e.clientX; downX = e.clientX; downY = e.clientY; tapMoved = false;
+    const c = e.target.closest('.card');
+    downCard = c ? els.indexOf(c) : -1;
+    const isEmpty = downCard >= 0 && data[downCard].type !== 'real';
+    tapEmpty = isEmpty ? downCard : -1;   // ★ 空卡不参与下拉选中，点击＝触发创建
+    pullIdx = (!isEmpty && downCard >= 0 && fly == null && insert == null && (selIdx < 0 || downCard === selIdx)) ? downCard : -1;
+    pullDy = 0;
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dy = e.clientY - downY;
+    if (Math.abs(e.clientX - downX) > 6 || Math.abs(dy) > 6) tapMoved = true;
+    if (pullIdx >= 0) { pullDy = Math.max(-70, Math.min(70, dy)); render(); }
+    if (pullIdx >= 0 && pullIdx !== selIdx && dy > 46) { flyTo(pullIdx); dragging = false; return; }
+    if (pullIdx >= 0 && pullIdx === selIdx && dy < -46) { startInsert(selIdx); dragging = false; return; }
+    if (pullIdx < 0 && selIdx < 0 && Math.abs(dy) < 12) {   // ★ 选中期间锁转环：摸后面的牌堆不能手动拨动，必须先上滑插回
+      const dx = e.clientX - lastX;
+      if (dx !== 0) { pos -= dx * 0.012; lastX = e.clientX; render(); }
+    }
+  });
+  const stop = (e) => {
+    if (dragging) {
+      dragging = false;
+      // ★ 空卡＝点击触发创建（没拖动、没在播动画时）
+      if (tapEmpty >= 0 && !tapMoved && e && e.type === 'pointerup' && fly == null && insert == null) {
+        if (window.__emptyTap) window.__emptyTap(data[tapEmpty].type, data[tapEmpty].n);
+      }
+      pullIdx = -1; pullDy = 0;   // 没过阈值松手：卡弹回
+      render();
+    }
+    tapEmpty = -1;
+  };
+  ['pointerup','pointercancel','pointerleave'].forEach(t => stage.addEventListener(t, stop));
+
+  render();
+  tick();
+
+  // ===== 三个功能按钮：点击真的有反馈（预览稿内的可见交互） =====
+  const actpanel = document.getElementById('actpanel');
+  const apField  = document.getElementById('apField');
+  const fxToast  = document.getElementById('fxToast');
+  let toastTimer = null;
+  function toast(msg){
+    fxToast.textContent = msg; fxToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => fxToast.classList.remove('show'), 1500);
+  }
+  document.querySelectorAll('#tools .tool').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sel = selIdx >= 0 ? els[selIdx] : null;
+      const act = btn.dataset.act;
+      if (act === 'pet') {
+        // 捏捏它：真机同款两步玩法——涂软区→确认→按住拽、松手弹回；再点一次退出
+        if (pState === 2) { pExitPlay(); return; }
+        if (pState === 1) { pClear(); return; }
+        pOpen();
+      } else if (act === 'act') {
+        // 制作动作：弹出面板（选中卡后可用）
+        pClear();   // 切到制作动作＝退出并清除捏捏（真机三按钮互斥）
+        if (!sel) { toast('先下拉选中一只'); return; }
+        actpanel.classList.add('open');
+      }
+    });
+  });
+  const screen = document.querySelector('.screen');
+  // ★ 输入框聚焦=键盘升起：选中的卡和输入框当成一个整体上推（kbLift 只作用在选中卡上）
+  apField.addEventListener('focus', () => { kbTarget = 110; screen.classList.add('kbd'); });
+  apField.addEventListener('blur',  () => { kbTarget = 0;   screen.classList.remove('kbd'); });
+  document.getElementById('apX').addEventListener('click', () => actpanel.classList.remove('open'));
+
+  // ★ 发送：面板里不再选秒数/制作方式；发送后到聊天里多问一步「用什么方式制作」
+  const chatview = document.getElementById('chatview');
+  const cvBody = document.getElementById('cvBody');
+  const cvWho = document.getElementById('cvWho');
+  document.getElementById('apGo').addEventListener('click', () => {
+    const txt = (apField.textContent || '').trim();
+    if (!txt) { toast('先写下要做什么动作'); return; }
+    const who = selIdx >= 0 ? data[selIdx % data.length].n : floatWho;
+    cvWho.textContent = who;
+    cvBody.innerHTML = '';
+    const mine = document.createElement('div');
+    mine.className = 'cv-bub cv-me'; mine.textContent = txt;
+    const ask = document.createElement('div');
+    ask.className = 'cv-bub cv-it'; ask.textContent = '你想用什么方式制作？';
+    const chips = document.createElement('div'); chips.className = 'cv-chips';
+    ['豆包', '阿里云'].forEach(c => {
+      const b = document.createElement('div'); b.className = 'cv-chip'; b.textContent = c;
+      b.addEventListener('click', () => {
+        chips.querySelectorAll('.cv-chip').forEach(x => x.classList.remove('sel'));
+        b.classList.add('sel');
+        toast('用' + c + '制作，已发出');
+        var _cid = selIdx >= 0 ? data[selIdx].id : '';
+        if (window.StillBridge) window.StillBridge.make(_cid, txt, (c === '豆包') ? 'doubao' : 'wan');
+      });
+      chips.appendChild(b);
+    });
+    ask.appendChild(chips);
+    cvBody.appendChild(mine); cvBody.appendChild(ask);
+    actpanel.classList.remove('open');
+    apField.textContent = '';
+    kbTarget = 0; screen.classList.remove('kbd');
+    chatview.classList.add('open');
+  });
+  document.getElementById('cvBack').addEventListener('click', () => chatview.classList.remove('open'));
+
+  // ===== 左上角桌宠模式：名字下拉条决定桌宠是哪一只，旁边圆点管开/关 =====
+  const fselBtn = document.getElementById('fselBtn');
+  const fselName = document.getElementById('fselName');
+  const fdd = document.getElementById('fdd');
+  const fdot = document.getElementById('fdot');
+  const floatNames = Array.from(new Set(data.filter(d => d.type === 'real').map(d => d.n)));   // 只列有形象的角色；空卡不进桌宠名单
+  if (!floatNames.length) floatNames.push('（还没有形象，先创建一只）');
+  let floatOn = false;
+  let floatWho = floatNames[0];
+  const fopts = floatNames.map(n => {
+    const o = document.createElement('div');
+    o.className = 'fopt';
+    o.innerHTML = '<span></span><span class="tick">✓</span>';
+    o.querySelector('span').textContent = n;
+    o.addEventListener('click', e => {
+      e.stopPropagation();
+      floatWho = n;
+      fselName.textContent = n;
+      markFloat();
+      fdd.classList.remove('open'); fselBtn.classList.remove('open');
+      toast(floatOn ? ('现在桌宠是 ' + n) : ('桌宠已设为 ' + n));
+      if (window.StillBridge) window.StillBridge.floatName(n);
+    });
+    fdd.appendChild(o);
+    return o;
+  });
+  function markFloat(){ fopts.forEach((o, i) => o.classList.toggle('sel', floatNames[i] === floatWho)); }
+  markFloat();
+  fselBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = fdd.classList.toggle('open');
+    fselBtn.classList.toggle('open', open);
+  });
+  fdot.addEventListener('click', e => {
+    e.stopPropagation();
+    pClear();   // 切桌宠＝退出并清除捏捏（真机互斥）
+    floatOn = !floatOn;
+    fdot.classList.toggle('on', floatOn);
+    if (window.StillBridge) window.StillBridge.floatPet(floatWho, floatOn ? 1 : 0);
+    toast(floatOn ? ('桌宠模式已开 · ' + floatWho) : '桌宠模式已关');
+  });
+  document.addEventListener('click', () => {
+    fdd.classList.remove('open'); fselBtn.classList.remove('open');
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { fdd.classList.remove('open'); fselBtn.classList.remove('open'); }
+  });
+
+  // ===== 空卡点击：有聊天没形象→建动态形象；完全空卡→建角色（都先清捏捏、选中态不响应）=====
+  window.__emptyTap = (kind, name) => {
+    pClear();
+    if (selIdx >= 0) { toast('先把选中的它上滑插回，再创建'); return; }
+    if (kind === 'noav') {
+      toast('给「' + name + '」创建动态形象');
+      if (window.StillBridge) window.StillBridge.create('noav', name);
+    } else {
+      toast('新建一只角色');
+      if (window.StillBridge) window.StillBridge.create('create', name);
+    }
+  };
+
+  // ===== 捏捏乐：涂软区 → 确认 → 按住拽、松手弹簧回弹（真机同款，不是"抖一下"）=====
+  const PG = 16, PSIG = .18, PK = .22, PC = .12, PFLING = .45;
+  let pState = 0, pTool = 0;                       // 0 关 / 1 涂抹 / 2 玩耍；笔0橡皮1
+  const pMask = new Float32Array(32*32);
+  const VN = (PG+1)*(PG+1);
+  const pVX = new Float32Array(VN), pVY = new Float32Array(VN);
+  const pSX = new Float32Array(VN), pSY = new Float32Array(VN);
+  let pCard = -1, pCv = null, pCtx = null, pSrc = null, pSCtx = null, pImg = null;
+  let pGrab = 0, pGX = 0, pGY = 0, pLX = 0, pLY = 0, pLT = 0, pMVX = 0, pMVY = 0;
+  let pRAF = 0, pFade = 1, pBar = null;
+
+  function pSoft(u, v){
+    const x=u*31, y=v*31, x0=Math.floor(x), y0=Math.floor(y);
+    const x1=Math.min(31,x0+1), y1=Math.min(31,y0+1), fx=x-x0, fy=y-y0;
+    const a=pMask[y0*32+x0]*(1-fx)+pMask[y0*32+x1]*fx;
+    const b=pMask[y1*32+x0]*(1-fx)+pMask[y1*32+x1]*fx;
+    return a*(1-fy)+b*fy;
+  }
+  function pHasSoft(){ for(const v of pMask) if(v>.15) return true; return false; }
+  function pImgUV(u, v){
+    return {u:(u*176-pImg.x)/pImg.w, v:(v*235-pImg.y)/pImg.h};
+  }
+  function pStroke(u, v){
+    const q=pImgUV(u,v); if(q.u<0||q.u>1||q.v<0||q.v>1) return;
+    const R=.06;
+    for(let gy=0;gy<32;gy++) for(let gx=0;gx<32;gx++){
+      const d=Math.hypot((gx+.5)/32-q.u,(gy+.5)/32-q.v)/R; if(d>1) continue;
+      const w=(1-d*d)*(pTool?-.5:.5);
+      pMask[gy*32+gx]=Math.max(0,Math.min(1,pMask[gy*32+gx]+w));
+    }
+  }
+  function pTri(c, s0,s1,s2, d0,d1,d2){
+    const x0=s0[0],y0=s0[1],x1=s1[0],y1=s1[1],x2=s2[0],y2=s2[1];
+    const det=x0*(y1-y2)+x1*(y2-y0)+x2*(y0-y1); if(!det) return;
+    const a=(d0[0]*(y1-y2)+d1[0]*(y2-y0)+d2[0]*(y0-y1))/det;
+    const b=(d0[1]*(y1-y2)+d1[1]*(y2-y0)+d2[1]*(y0-y1))/det;
+    const c2=(d0[0]*(x2-x1)+d1[0]*(x0-x2)+d2[0]*(x1-x0))/det;
+    const d=(d0[1]*(x2-x1)+d1[1]*(x0-x2)+d2[1]*(x1-x0))/det;
+    const e=(d0[0]*(x1*y2-x2*y1)+d1[0]*(x2*y0-x0*y2)+d2[0]*(x0*y1-x1*y0))/det;
+    const f=(d0[1]*(x1*y2-x2*y1)+d1[1]*(x2*y0-x0*y2)+d2[1]*(x0*y1-x1*y0))/det;
+    c.save(); c.beginPath(); c.moveTo(d0[0],d0[1]); c.lineTo(d1[0],d1[1]); c.lineTo(d2[0],d2[1]);
+    c.closePath(); c.clip(); c.transform(a,b,c2,d,e,f); c.drawImage(pSrc,0,0,176,235); c.restore();
+  }
+  function pDraw(){
+    if(!pCtx) return;
+    const c=pCtx, {x:ix,y:iy,w:iw,h:ih}=pImg;
+    c.clearRect(0,0,176,235);
+    const cw=iw/PG, ch=ih/PG;
+    for(let gy=0;gy<PG;gy++) for(let gx=0;gx<PG;gx++){
+      const i00=gy*(PG+1)+gx, i10=i00+1, i01=(gy+1)*(PG+1)+gx, i11=i01+1;
+      const ox=(pVX[i00]+pVX[i10]+pVX[i01]+pVX[i11])/4;
+      const oy=(pVY[i00]+pVY[i10]+pVY[i01]+pVY[i11])/4;
+      c.drawImage(pSrc,(ix+gx*cw)*2,(iy+gy*ch)*2,(cw+.7)*2,(ch+.7)*2,
+                  ix+gx*cw+ox,iy+gy*ch+oy,cw+.9,ch+.9);
+    }
+    if(pFade>.01){
+      c.save(); c.globalAlpha=pFade*.8;
+      for(let gy=0;gy<32;gy++) for(let gx=0;gx<32;gx++){
+        const sv=pMask[gy*32+gx]; if(sv<.12) continue;
+        c.beginPath(); c.arc(ix+(gx+.5)/32*iw, iy+(gy+.5)/32*ih, 2.2*sv, 0, 6.283);
+        c.fillStyle='rgba(255,150,60,'+(sv*.9).toFixed(3)+')'; c.fill();
+      }
+      c.restore();
+    }
+  }
+  function pUV(e){ const r=pCv.getBoundingClientRect();
+    return {u:(e.clientX-r.left)/r.width, v:(e.clientY-r.top)/r.height}; }
+  function pDown(e){
+    e.stopPropagation();
+    if(pCv.setPointerCapture) try{pCv.setPointerCapture(e.pointerId);}catch(err){}
+    const q=pUV(e);
+    if(pState===1){ pStroke(q.u,q.v); pGrab=-2; pDraw(); return; }
+    if(pState===2){
+      const t=pImgUV(q.u,q.v); if(t.u<0||t.u>1||t.v<0||t.v>1) return;
+      if(pSoft(t.u,t.v)<=.2){ toast('这里不软，捏涂过的地方'); return; }
+      pGrab=1; pGX=t.u; pGY=t.v; pLX=e.clientX; pLY=e.clientY; pLT=performance.now(); pMVX=0; pMVY=0;
+    }
+  }
+  function pMove(e){
+    if(!pGrab) return;
+    e.stopPropagation();
+    const now=performance.now(), dt=Math.max(8,now-pLT);
+    if(pState===1 && pGrab===-2){ pStroke(pUV(e).u,pUV(e).v); pLT=now; pDraw(); return; }
+    if(pState!==2 || pGrab!==1) return;
+    const dx=e.clientX-pLX, dy=e.clientY-pLY;
+    pMVX=dx/dt*16; pMVY=dy/dt*16; pLX=e.clientX; pLY=e.clientY; pLT=now;
+    for(let gy=0;gy<=PG;gy++) for(let gx=0;gx<=PG;gx++){
+      const uu=gx/PG, vv=gy/PG, sv=pSoft(uu,vv);
+      const g=Math.exp(-((uu-pGX)**2+(vv-pGY)**2)/(2*PSIG*PSIG)), wt=sv*g;
+      const i=gy*(PG+1)+gx; pVX[i]=dx*wt; pVY[i]=dy*wt; pSX[i]=0; pSY[i]=0;
+    }
+    pDraw();
+  }
+  function pUp(){
+    if(!pGrab) return;
+    if(pState===2 && pGrab===1){
+      for(let gy=0;gy<=PG;gy++) for(let gx=0;gx<=PG;gx++){
+        const uu=gx/PG, vv=gy/PG, sv=pSoft(uu,vv);
+        const g=Math.exp(-((uu-pGX)**2+(vv-pGY)**2)/(2*PSIG*PSIG));
+        const i=gy*(PG+1)+gx; pSX[i]=pMVX*sv*g*PFLING; pSY[i]=pMVY*sv*g*PFLING;
+      }
+      if(!pRAF) pRAF=requestAnimationFrame(pSpring);
+    }
+    pGrab=0;
+  }
+  function pSpring(){
+    let moving=false;
+    for(let i=0;i<VN;i++){
+      if(Math.abs(pVX[i])>.05||Math.abs(pVY[i])>.05||Math.abs(pSX[i])>.05||Math.abs(pSY[i])>.05){
+        pSX[i]+=-PK*pVX[i]-PC*pSX[i]; pSY[i]+=-PK*pVY[i]-PC*pSY[i];
+        pVX[i]+=pSX[i]; pVY[i]+=pSY[i]; moving=true;
+      } else { pVX[i]=pVY[i]=pSX[i]=pSY[i]=0; }
+    }
+    pDraw(); pRAF = moving ? requestAnimationFrame(pSpring) : 0;
+  }
+  function pBarUI(){
+    const stage=document.getElementById('stage');
+    if(!pBar){ pBar=document.createElement('div'); pBar.className='pinchbar'; stage.appendChild(pBar); }
+    if(pState===0){ pBar.className='pinchbar'; pBar.innerHTML=''; return; }
+    pBar.className='pinchbar show';
+    if(pState===1){
+      pBar.innerHTML='<div class="pb-hint">用笔在它身上涂软的地方，涂完点确认</div><div class="pb-row">'+
+        '<span class="pb-btn'+(pTool===0?' on':'')+'" data-pb="pen">笔</span>'+
+        '<span class="pb-btn'+(pTool===1?' on':'')+'" data-pb="era">橡皮</span>'+
+        '<span class="pb-btn" data-pb="cancel">取消</span>'+
+        '<span class="pb-btn go" data-pb="ok">确认</span></div>';
+    } else {
+      pBar.innerHTML='<div class="pb-hint">摸摸它软的地方，按住拽拽看</div><div class="pb-row">'+
+        '<span class="pb-btn" data-pb="clear">清除</span></div>';
+    }
+    pBar.querySelectorAll('[data-pb]').forEach(b => {
+      b.onclick = () => {
+        const a=b.dataset.pb;
+        if(a==='pen'){ pTool=0; pBarUI(); }
+        else if(a==='era'){ pTool=1; pBarUI(); }
+        else if(a==='ok') pConfirm();
+        else pClear();
+      };
+    });
+  }
+  function pAttach(){
+    const el=els[selIdx]; if(!el) return false;
+    const face=el.querySelector('.face'), img=el.querySelector('.pet');
+    pCv=document.createElement('canvas'); pCv.className='pinch-cv';
+    pCv.width=352; pCv.height=470; face.appendChild(pCv);
+    pCtx=pCv.getContext('2d'); pCtx.scale(2,2);
+    pSrc=document.createElement('canvas'); pSrc.width=352; pSrc.height=470;
+    pSCtx=pSrc.getContext('2d'); pSCtx.scale(2,2);
+    const ih=235*.58, iw=ih*(320/180), ix=176/2-iw/2, iy=235*.85-ih;
+    pImg={x:ix,y:iy,w:iw,h:ih};
+    try{ pSCtx.drawImage(img,ix,iy,iw,ih); }catch(err){}
+    img.style.opacity='0';
+    pCv.addEventListener('pointerdown',pDown); pCv.addEventListener('pointermove',pMove);
+    ['pointerup','pointercancel','pointerleave'].forEach(t=>pCv.addEventListener(t,pUp));
+    pCard=selIdx;
+    return true;
+  }
+  function pOpen(){
+    if(selIdx<0){ toast('先下拉选中一只'); return; }
+    if(pState!==0) return;
+    if(!pAttach()) return;
+    pState=1; pTool=0; pFade=1; window.__pinchLock=true; pBarUI(); pDraw();
+    toast('用笔在它身上涂软的地方，涂完点确认');
+  }
+  function pConfirm(){
+    if(pState!==1) return;
+    if(!pHasSoft()){ toast('先用笔在它身上涂一块软的，再点确认'); return; }
+    pState=2; pBarUI();
+    const t0=performance.now();
+    (function fade(){ pFade=Math.max(0,1-(performance.now()-t0)/600); pDraw();
+      if(pFade>0) requestAnimationFrame(fade); })();
+    toast('摸摸它软的地方，按住拽拽看');
+  }
+  function pExitPlay(){
+    if(pState!==2) return;
+    pState=1; pFade=1;
+    for(let i=0;i<VN;i++) pVX[i]=pVY[i]=pSX[i]=pSY[i]=0;
+    pDraw(); pBarUI(); toast('用笔在它身上涂软的地方，涂完点确认');
+  }
+  function pClear(){
+    if(pState===0) return;
+    if(pRAF){ cancelAnimationFrame(pRAF); pRAF=0; }
+    pState=0; pGrab=0; window.__pinchLock=false;
+    if(pCv&&pCv.parentNode) pCv.parentNode.removeChild(pCv);
+    const el=pCard>=0?els[pCard]:null; if(el){ const im=el.querySelector('.pet'); if(im) im.style.opacity=''; }
+    pCv=null; pCtx=null; pSrc=null; pSCtx=null; pCard=-1;
+    pMask.fill(0); for(let i=0;i<VN;i++) pVX[i]=pVY[i]=pSX[i]=pSY[i]=0;
+    pBarUI();
+  }
+  window.__pinchReset=pClear;
+
+</script>
+</body>
+</html>

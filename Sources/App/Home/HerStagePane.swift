@@ -58,9 +58,11 @@ struct HerStagePane: View {
         let mine: Bool
     }
 
-    // ★ 2026-11-24：卡面加大（对齐预览），角色缩小留白；扇形展牌靠 rotationEffect。
-    private let cardW: CGFloat = 182
-    private let cardH: CGFloat = 258
+    // ★ 2026-11-26 按预览换算：176×235 CSS px（420 屏）→ 165×220pt（393 屏）。
+    private let cardW: CGFloat = 165
+    private let cardH: CGFloat = 220
+    /// 舞台真实高度，卡环中心要放在 42%（预览是这个位置，不是 50%）。
+    @State private var stageH: CGFloat = 0
 
     // ★ 2026-11-26：3D 透视环。8 个槽位绕 Y 轴匀速转；选中卡拔出正对、身后卡合拢。
     private let stepDeg: Double = 45
@@ -77,7 +79,7 @@ struct HerStagePane: View {
     @State private var dragDY: CGFloat = 0
     @State private var petOn = false
     private let ringTimer = Timer.publish(every: 0.033, on: .main, in: .common).autoconnect()
-    private let gap: CGFloat = 150
+    private let gap: CGFloat = 140
 
     // MARK: 当前角色
 
@@ -107,9 +109,8 @@ struct HerStagePane: View {
                 ringCard(i)
             }
         }
-        // 舞台固定高度（跟安卓 330dp 一致），下方交给 Spacer 把面板压到底栏上方。
-        .frame(height: 330)
-        .frame(maxWidth: .infinity)
+        // ★ 11-26：舞台铺满状态栏到底栏之间（预览是 flex:1，不是写死 330）。
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
     }
 
@@ -182,9 +183,14 @@ struct HerStagePane: View {
 
     var body: some View {
         // ★ 11-24 夜：整页铺满、不再上下滑；「它在这儿」小标题按他要求删掉。
-        GeometryReader { _ in
-            VStack(alignment: .leading, spacing: 0) {
-                // ★ 2026-11-26：桌宠模式条（左上角，名字下拉 + 开关点）。
+        GeometryReader { geo in
+            // ★ 11-26 按预览整页重做：卡环舞台铺满，桌宠条/侧按钮/面板全浮在它上面。
+            //   旧「悬浮模式／捏捏它／制作动作」一排已撤，改成选中卡右侧两按钮。
+            ZStack(alignment: .topLeading) {
+                stageView
+                    .frame(width: geo.size.width, height: geo.size.height)
+
+                // 桌宠模式：左上角四字 + 名字下拉 + 开关点。
                 HStack(spacing: 10) {
                     Text("桌宠模式").font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Tw.gray500)
@@ -204,77 +210,42 @@ struct HerStagePane: View {
                     }
                     Spacer()
                 }
-                .padding(.horizontal, 4).padding(.bottom, 2)
+                .padding(.horizontal, 4).padding(.top, 4)
 
-                stageView
+                sideTools(geo)
 
-                // ★ 名字只在卡面上显示：按钮上方这行整个删掉，不再单独显示角色名。
-                // 「左右拖动换一只」按他要求删掉。
-                if currentRole == nil {
-                    Text("先做一只，它就有地方住了")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Tw.gray400)
-                        .frame(maxWidth: .infinity)
+                // 面板/提示浮在底部，不再占舞台高度。
+                VStack(spacing: 8) {
+                    if !hint.isEmpty {
+                        Text(hint).font(.system(size: 11)).foregroundStyle(Tw.gray500)
+                            .frame(maxWidth: .infinity)
+                    }
+                    if !banner.isEmpty {
+                        Text(banner).font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Tw.white).frame(maxWidth: .infinity)
+                            .padding(.vertical, 10).background(Capsule().fill(Tw.gray900))
+                    }
+                    ZStack {
+                        if panel == "float" { floatPanel }
+                        if panel == "pinch" { pinchPanel }
+                        if panel == "make" { makePanel }
+                        if panel == "chat" { chatPanel }
+                    }
+                    .frame(height: 214)
+                    .offset(y: panel.isEmpty ? 240 : -kb.高)
+                    .opacity(panel.isEmpty ? 0 : 1)
+                    .animation(.easeOut(duration: 0.26), value: panel)
                 }
-                HStack(spacing: 8) {
-                    actionButton("悬浮模式", enabled: currentHasFrame && sqState != 2) { showPanel("float") }
-                    actionButton("捏捏它", enabled: currentHasFrame) { pinchTap() }
-                    actionButton("制作动作", enabled: currentHasFrame && sqState != 2) { showPanel("make") }
-                }
-
-                if !currentHasFrame {
-                    Text("请先创建形象")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Tw.gray400)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 10)
-                }
-
-                if !hint.isEmpty {
-                    Text(hint)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Tw.gray500)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
-                }
-
-                // 这段空白把面板压到底栏上方，工具条贴着底栏从下方推出。
-                Spacer(minLength: 8)
-
-                // ★ 11-24 夜：面板从屏幕下方推出、切走收回（跟安卓同一手感）。
-                ZStack {
-                    if panel == "float" { floatPanel }
-                    if panel == "pinch" { pinchPanel }
-                    if panel == "make" { makePanel }
-                    if panel == "chat" { chatPanel }
-                }
-                .frame(height: 214)
-                .padding(.top, 4)
-                // ★ 2026-11-24：面板打开时，键盘弹起就往上抬 kb.高，输入框不被盖住；
-                //   面板没开照旧藏到屏幕下方 240。
-                .offset(y: panel.isEmpty ? 240 : -kb.高)
-                .opacity(panel.isEmpty ? 0 : 1)
-                .animation(.easeOut(duration: 0.26), value: panel)
-
-                if !banner.isEmpty {
-                    Text(banner)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Tw.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(Tw.gray900))
-                        .padding(.top, 8)
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 12)
+                .allowsHitTesting(!panel.isEmpty)
             }
-            // ★ 展开动画挂在外层稳定 VStack 上：开合捏捏面板不会重播摊牌。
             .onAppear {
+                stageH = geo.size.height
                 spread = 0
                 withAnimation(.easeInOut(duration: 0.42)) { spread = 1 }
             }
-            // ★ 整页铺满：左右不留白，两侧卡延伸到屏幕边缘（gap 仍按安卓约定 150）。
-            .padding(.horizontal, 0)
-            .padding(.top, 4)
-            .padding(.bottom, 12)
+            .onChange(of: geo.size.height) { stageH = $0 }
         }
         .background(Color.clear)   // ★ 透出底下 MainHomeView 的全屏动态柔光
         .task { await load() }
@@ -348,17 +319,23 @@ struct HerStagePane: View {
         let pd = pos * stepDeg
         var g = RingGeom()
         g.ringR = cardW * 1.66
+        // ★ 预览卡环中心在舞台 42%，不是 50%。
+        let centerShift = -stageH * 0.08
         var w = normDeg(slotA[i] - pd)
 
-        // ① 完全拔出选中：正对、前推、下移、稍大、实体。
-        if i == selIdx && selS > 0.99 {
+        // ① 选中/拔出：正对、前推、下移、稍大、实体（selS 连续过渡）。
+        if i == selIdx && selS > 0 {
             w = normDeg(selW)
-            g.ty = 44; g.sc = 1.12; g.op = 1; g.picked = true
+            g.ty = centerShift + 44 * CGFloat(selS)
+            if i == pullIdx { g.ty += pullDy * 0.85 }
+            g.sc = 1 + 0.12 * CGFloat(selS)
+            g.op = (i == pullIdx) ? 0.88 : 1
+            g.picked = true
         }
-        // ② 跟手：被抓的卡随手指上下；已选中的卡只在拔出位微微跟。
+        // ② 跟手：被抓的卡随手指上下。
         else if i == pullIdx && abs(pullDy) > 0.01 {
-            g.ty = (i == selIdx ? 44 : 0) + pullDy * 0.85
-            g.sc = i == selIdx ? 1.12 : 1 + max(0, pullDy) * 0.0009
+            g.ty = centerShift + pullDy * 0.85
+            g.sc = 1 + max(0, pullDy) * 0.0009
             g.op = 0.88
         }
         // ③ 环上的卡：身后合拢（角度就近挪向缺口 + 半径收进），三档虚实。
@@ -370,16 +347,49 @@ struct HerStagePane: View {
                 g.ringR = g.ringR * CGFloat(1 - selS)
                     + (cardW * 1.66 * CGFloat(n - 1) / CGFloat(n)) * CGFloat(selS)
             }
+            g.ty = centerShift
             w = normDeg(angle - pd)
             let dim = min(1, max(0, (abs(w) - 30) / 150))
             g.op = (1 - dim * 0.5) * (selIdx >= 0 ? (1 - 0.22 * (1 - abs(w) / 180)) : 1)
         }
         g.depth = cos(w * .pi / 180)
-        let perspectiveScale: CGFloat = 0.72 + 0.28 * CGFloat(max(0, g.depth))
+        // ★ 真透视：CSS perspective 1050px/420 屏 → 393pt 屏约 980pt。
+        //   背面卡缩放 = 1/(1+2R/P) ≈ 0.64，跟预览一致（旧近似 0.44 太小）。
+        let persp: CGFloat = 980
+        let perspectiveScale: CGFloat = 1 / (1 + (2 * g.ringR) * (1 - CGFloat(max(0, g.depth))) / persp)
         g.sc = g.sc * perspectiveScale
         g.x = CGFloat(sin(w * .pi / 180)) * g.ringR
         g.w = w
         return g
+    }
+
+    /// ★ 11-26：选中卡右侧才冒出的「捏捏／动作」两个按钮；位置跟预览同一公式。
+    @ViewBuilder
+    private func sideTools(_ geo: GeometryProxy) -> some View {
+        let show = selIdx >= 0 && selS > 0.9
+        let off = sin(selW * .pi / 180) * (Double(cardW) * 1.66 + 74) * 0.9 + 146
+        VStack(spacing: 8) {
+            Button { pinchTap() } label: {
+                Text("捏捏").font(.system(size: 11))
+                    .frame(width: 46, height: 46)
+                    .background(RoundedRectangle(cornerRadius: 15).fill(Color.white))
+                    .overlay(RoundedRectangle(cornerRadius: 15)
+                        .stroke(Color(hex: 0xE8E8E4), lineWidth: 1))
+            }
+            Button { showPanel("make") } label: {
+                Text("动作").font(.system(size: 11))
+                    .frame(width: 46, height: 46)
+                    .background(RoundedRectangle(cornerRadius: 15).fill(Color.white))
+                    .overlay(RoundedRectangle(cornerRadius: 15)
+                        .stroke(Color(hex: 0xE8E8E4), lineWidth: 1))
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!currentHasFrame || sqState == 2)
+        .opacity(show ? 1 : 0)
+        .offset(x: geo.size.width / 2 + CGFloat(off) - 23,
+                y: geo.size.height * 0.42 - 50)
+        .animation(.easeOut(duration: 0.28), value: show)
     }
 
     // ★ 2026-11-26：3D 透视环上的一张卡（原生 rotation3DEffect，不是网页）。
@@ -430,7 +440,7 @@ struct HerStagePane: View {
         .frame(width: cardW, height: cardH)
         .scaleEffect(g.sc)
         .rotation3DEffect(.degrees(w), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-        .offset(x: g.x, y: g.ty + CGFloat(abs(w)) * 0.08)
+        .offset(x: g.x, y: g.ty)
         .opacity(g.op)
         .zIndex(g.depth + (g.picked ? 100 : 0))
         .animation(.easeOut(duration: 0.28), value: selIdx)

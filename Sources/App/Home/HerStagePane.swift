@@ -47,6 +47,8 @@ struct HerStagePane: View {
     @State private var model = "wan"
     @State private var boundSlot = ""
     @State private var confirmShow = false
+    @State private var showWaySheet = false
+    @State private var pendingDesc = ""   // 发送后到聊天里问方式期间，暂存用户写的动作原句
     @State private var chatLines: [ChatLine] = []
     @State private var banner = ""
 
@@ -59,12 +61,29 @@ struct HerStagePane: View {
     // ★ 2026-11-24：卡面加大（对齐预览），角色缩小留白；扇形展牌靠 rotationEffect。
     private let cardW: CGFloat = 182
     private let cardH: CGFloat = 258
+
+    // ★ 2026-11-26：3D 透视环。8 个槽位绕 Y 轴匀速转；选中卡拔出正对、身后卡合拢。
+    private let stepDeg: Double = 45
+    @State private var slotA: [Double] = Array(0..<8).map { Double($0) * 45 }
+    /// 每张卡类型：0=有形象 1=有聊天端没形象 2=完全空卡。与 slotRoles 下标一一对应。
+    @State private var cardKind: [Int] = Array(repeating: 2, count: 8)
+    /// 环上 8 张卡对应的角色（nil=完全空卡）。
+    @State private var slotRoles: [ActLab.Char?] = Array(repeating: nil, count: 8)
+    @State private var selIdx: Int = -1
+    @State private var selW: Double = 0
+    @State private var selS: Double = 0
+    @State private var pullIdx: Int = -1
+    @State private var pullDy: CGFloat = 0
+    @State private var dragDY: CGFloat = 0
+    @State private var petOn = false
+    private let ringTimer = Timer.publish(every: 0.033, on: .main, in: .common).autoconnect()
     private let gap: CGFloat = 150
 
     // MARK: 当前角色
 
     private var currentRole: ActLab.Char? {
-        roles.indices.contains(focus) ? roles[focus] : nil
+        guard slotRoles.indices.contains(focus) else { return nil }
+        return slotRoles[focus]
     }
 
     private var currentHasFrame: Bool {
@@ -84,12 +103,8 @@ struct HerStagePane: View {
     @ViewBuilder
     private var stageContent: some View {
         ZStack {
-            if roles.isEmpty {
-                addCard
-            } else {
-                ForEach(roles.indices, id: \.self) { i in
-                    roleCard(i)
-                }
+            ForEach(slotRoles.indices, id: \.self) { i in
+                ringCard(i)
             }
         }
         // 舞台固定高度（跟安卓 330dp 一致），下方交给 Spacer 把面板压到底栏上方。
@@ -110,34 +125,87 @@ struct HerStagePane: View {
                 .highPriorityGesture(
                     DragGesture(minimumDistance: 6)
                         .onChanged { v in
-                            // 循环：往一个方向一直滑就一直换，不再卡在两端。
-                            pos = dragStart - Double(v.translation.width / gap)
+                            let dx = v.translation.width, dy = v.translation.height
+                            if selIdx < 0 {
+                                // 纵向拉超过阈值 → 抓正面那张开始拔出；否则横滑转环。
+                                if pullIdx < 0 && abs(dy) > 14 && abs(dy) > abs(dx) * 1.1 {
+                                    pullIdx = frontIndex()
+                                }
+                                if pullIdx >= 0 { pullDy = max(-70, min(90, dy)) }
+                                else { pos = dragStart - Double(dx / gap) }
+                            } else if pullIdx == selIdx || abs(dx) < abs(dy) {
+                                pullIdx = selIdx
+                                pullDy = max(-90, min(70, dy))
+                            }
                         }
                         .onEnded { _ in
-                            guard !roles.isEmpty else { return }
-                            let n = roles.count
-                            let target = ((Int(pos.rounded()) % n) + n) % n
-                            // 走最短一圈回到选中位置，避免多滑了后跳一大段。
-                            var m = pos.truncatingRemainder(dividingBy: Double(n))
-                            if m < 0 { m += Double(n) }
-                            var delta = Double(target) - m
-                            if delta > Double(n) / 2 { delta -= Double(n) }
-                            if delta < -Double(n) / 2 { delta += Double(n) }
-                            withAnimation(.easeOut(duration: 0.26)) {
-                                focus = target
-                                pos += delta
-                                dragStart = pos
+                            if pullIdx >= 0 && pullDy < -46 && selIdx < 0 {
+                                let i = pullIdx; pullIdx = -1; pullDy = 0; flyTo(i); return
+                            }
+                            if pullIdx == selIdx && pullDy < -46 {
+                                pullIdx = -1; pullDy = 0; startInsert(); return
+                            }
+                            pullIdx = -1; pullDy = 0
+                            if selIdx < 0 {
+                                let n = max(1, slotA.count)
+                                let target = ((Int(pos.rounded()) % n) + n) % n
+                                var m = pos.truncatingRemainder(dividingBy: Double(n))
+                                if m < 0 { m += Double(n) }
+                                var delta = Double(target) - m
+                                if delta > Double(n) / 2 { delta -= Double(n) }
+                                if delta < -Double(n) / 2 { delta += Double(n) }
+                                withAnimation(.easeOut(duration: 0.26)) {
+                                    pos += delta
+                                    dragStart = pos
+                                }
                             }
                             onHit()
                         }
                 )
+                .onReceive(ringTimer) { _ in
+                    if !stageLocked && selIdx < 0 && spread > 0.05 && slotA.count > 1 {
+                        pos += 0.006
+                    }
+                }
         }
+    }
+
+    private func frontIndex() -> Int {
+        let pd = pos * stepDeg
+        var best = 0, bd = 1e9
+        for i in slotA.indices {
+            let w = normDeg(slotA[i] - pd)
+            if abs(w) < bd { bd = abs(w); best = i }
+        }
+        return best
     }
 
     var body: some View {
         // ★ 11-24 夜：整页铺满、不再上下滑；「它在这儿」小标题按他要求删掉。
         GeometryReader { _ in
             VStack(alignment: .leading, spacing: 0) {
+                // ★ 2026-11-26：桌宠模式条（左上角，名字下拉 + 开关点）。
+                HStack(spacing: 10) {
+                    Text("桌宠模式").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Tw.gray500)
+                    Menu {
+                        ForEach(slotRoles.indices, id: \.self) { i in
+                            if let c = slotRoles[i] {
+                                Button(c.title) { pickPet(c) }
+                            }
+                        }
+                    } label: {
+                        Text((currentRole?.title ?? "选一只") + " ▾")
+                            .font(.system(size: 11)).foregroundStyle(Tw.gray900)
+                    }
+                    Button { togglePet() } label: {
+                        Text(petOn ? "●" : "○").font(.system(size: 20))
+                            .foregroundStyle(petOn ? Tw.red600 : Tw.gray400)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 4).padding(.bottom, 2)
+
                 stageView
 
                 // ★ 名字只在卡面上显示：按钮上方这行整个删掉，不再单独显示角色名。
@@ -226,6 +294,16 @@ struct HerStagePane: View {
         } message: {
             Text("角色：\(currentRole?.title ?? "它")\n用哪个来做：\(model == "wan" ? "wan" : "豆包号")\n时长：5s\n\n\(prompt)")
         }
+        // ★ 2026-11-26：发送后在聊天里多问一步「用哪个来做」。
+        .confirmationDialog("用哪个来做？", isPresented: $showWaySheet, titleVisibility: .visible) {
+            Button("wan") { model = "wan"; Task { await submitJob() } }
+            if boundSlot.isEmpty {
+                Button("绑定豆包账号") { openDoubaoLogin() }
+            } else {
+                Button("豆包号（\(boundSlot)）") { model = "doubao"; Task { await submitJob() } }
+            }
+            Button("取消", role: .cancel) {}
+        }
     }
 
     // MARK: - 角色卡
@@ -251,6 +329,173 @@ struct HerStagePane: View {
     private func glassCard(on: Bool) -> some View {
         RoundedRectangle(cornerRadius: 26, style: .continuous)
             .fill(Color.white.opacity(on ? 0.32 : 0.22))
+    }
+
+    /// 3D 环一张卡的几何（普通函数，避开 @ViewBuilder 里不能写赋值语句的限制）。
+    private struct RingGeom {
+        var w: Double = 0
+        var ringR: CGFloat = 0
+        var ty: CGFloat = 0
+        var sc: CGFloat = 1
+        var op: Double = 1
+        var picked: Bool = false
+        var depth: Double = 1
+        var x: CGFloat = 0
+    }
+
+    private func ringGeom(_ i: Int) -> RingGeom {
+        let n = slotA.count
+        let pd = pos * stepDeg
+        var g = RingGeom()
+        g.ringR = cardW * 1.66
+        var w = normDeg(slotA[i] - pd)
+
+        // ① 完全拔出选中：正对、前推、下移、稍大、实体。
+        if i == selIdx && selS > 0.99 {
+            w = normDeg(selW)
+            g.ty = 44; g.sc = 1.12; g.op = 1; g.picked = true
+        }
+        // ② 跟手：被抓的卡随手指上下；已选中的卡只在拔出位微微跟。
+        else if i == pullIdx && abs(pullDy) > 0.01 {
+            g.ty = (i == selIdx ? 44 : 0) + pullDy * 0.85
+            g.sc = i == selIdx ? 1.12 : 1 + max(0, pullDy) * 0.0009
+            g.op = 0.88
+        }
+        // ③ 环上的卡：身后合拢（角度就近挪向缺口 + 半径收进），三档虚实。
+        else {
+            let tgt = closedAngle(i, n: n)
+            let angle = selIdx >= 0 && selS > 0
+                ? slotA[i] + selS * normDeg(tgt - slotA[i]) : slotA[i]
+            if selIdx >= 0 && selS > 0 {
+                g.ringR = g.ringR * CGFloat(1 - selS)
+                    + (cardW * 1.66 * CGFloat(n - 1) / CGFloat(n)) * CGFloat(selS)
+            }
+            w = normDeg(angle - pd)
+            let dim = min(1, max(0, (abs(w) - 30) / 150))
+            g.op = (1 - dim * 0.5) * (selIdx >= 0 ? (1 - 0.22 * (1 - abs(w) / 180)) : 1)
+        }
+        g.depth = cos(w * .pi / 180)
+        let perspectiveScale: CGFloat = 0.72 + 0.28 * CGFloat(max(0, g.depth))
+        g.sc = g.sc * perspectiveScale
+        g.x = CGFloat(sin(w * .pi / 180)) * g.ringR
+        g.w = w
+        return g
+    }
+
+    // ★ 2026-11-26：3D 透视环上的一张卡（原生 rotation3DEffect，不是网页）。
+    @ViewBuilder
+    private func ringCard(_ i: Int) -> some View {
+        let g = ringGeom(i)
+        let w = g.w
+        let kind = i < cardKind.count ? cardKind[i] : 2
+
+        ZStack(alignment: .bottom) {
+            if kind == 0, let c = slotRoles[i] {
+                glassCard(on: g.picked)
+                if OrbPet.hasFrame(c.id) {
+                    OrbPet(charId: c.id, actName: "sit", width: cardW * 0.92,
+                           playBridge: (i == focus && !g.picked) ? playBridge : nil,
+                           playEnabled: i == focus && sqState == 2)
+                        .frame(width: cardW * 0.92, height: cardH * 0.84)
+                }
+                ZStack(alignment: .bottom) {
+                    LinearGradient(colors: [Color.clear, Color(hex: 0x1A1A1E).opacity(0.8)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: cardH * 0.4)
+                    Text(c.title).font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(g.picked ? 1 : 0.82))
+                        .lineLimit(1).padding(.bottom, 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
+                if i == focus && OrbPet.hasFrame(c.id) {
+                    CardPinchPaintView(active: panel == "pinch" && (sqState == 1 || sqState == 2),
+                                       playMode: sqState == 2, tool: sqTool, key: sqKey,
+                                       bridge: playBridge,
+                                       onSoftChanged: { hasSoftPaint = $0 },
+                                       onReady: { paintRef = $0 })
+                        .frame(width: cardW * 0.92, height: cardH * 0.84)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    Text("＋").font(.system(size: 42, weight: .light))
+                        .foregroundStyle(Tw.gray400)
+                    Text(kind == 2 ? "创建角色" : "创作动态形象")
+                        .font(.system(size: 11)).foregroundStyle(Tw.gray500)
+                }
+                .frame(width: cardW, height: cardH)
+                .background(glassCard(on: g.picked))
+            }
+        }
+        .frame(width: cardW, height: cardH)
+        .scaleEffect(g.sc)
+        .rotation3DEffect(.degrees(w), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+        .offset(x: g.x, y: g.ty + CGFloat(abs(w)) * 0.08)
+        .opacity(g.op)
+        .zIndex(g.depth + (g.picked ? 100 : 0))
+        .animation(.easeOut(duration: 0.28), value: selIdx)
+        .onTapGesture { ringTap(i, kind: kind) }
+    }
+
+    private func ringTap(_ i: Int, kind: Int) {
+        if stageLocked { return }
+        if selIdx >= 0 { return }               // 选中期间锁：先上滑插回
+        if kind == 1 || kind == 2 {
+            // 建动态形象 / 建角色都进角色页那条真实入口（做形象、登记都在那）。
+            onCreateImage()
+            return
+        }
+        flyTo(i)
+    }
+
+    private func normDeg(_ a: Double) -> Double {
+        var x = a.truncatingRemainder(dividingBy: 360)
+        if x >= 180 { x -= 360 }
+        if x < -180 { x += 360 }
+        return x
+    }
+
+    private func closedAngle(_ i: Int, n: Int) -> Double {
+        guard selIdx >= 0, n > 1 else { return slotA[i] }
+        let rest = slotA.indices.filter { $0 != selIdx }.sorted { normDeg(slotA[$0]) < normDeg(slotA[$1]) }
+        let k = rest.firstIndex(of: i) ?? 0
+        let start = normDeg(selW + 180 / Double(n - 1))
+        return start + Double(k) * (360 / Double(n - 1))
+    }
+
+    private func flyTo(_ i: Int) {
+        guard slotA.indices.contains(i) else { return }
+        let w0 = normDeg(slotA[i] - pos * stepDeg)
+        selIdx = i
+        pullIdx = -1; pullDy = 0
+        focus = i
+        withAnimation(.easeOut(duration: 0.56)) {
+            selW = w0 * 0.001
+            selS = 1
+        }
+        onHit()
+    }
+
+    private func startInsert() {
+        guard selIdx >= 0 else { return }
+        let idx = selIdx
+        var nearest = slotA[idx], bd = 1e9
+        for j in slotA.indices where j != idx {
+            let d = abs(normDeg(slotA[j] - pos * stepDeg - selW))
+            if d < bd { bd = d; nearest = slotA[j] }
+        }
+        let targetW = normDeg(nearest - pos * stepDeg)
+        withAnimation(.easeOut(duration: 0.56)) {
+            selS = 0
+            selW = targetW
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.58) {
+            slotA[idx] = normDeg(selW + pos * stepDeg)
+            let order = slotA.indices.sorted { normDeg(slotA[$0] - pos * stepDeg) < normDeg(slotA[$1] - pos * stepDeg) }
+            let start = slotA[idx]
+            for (k, oi) in order.enumerated() { slotA[oi] = normDeg(start + Double(k) * stepDeg) }
+            selIdx = -1; selW = 0; selS = 0; pullIdx = -1; pullDy = 0
+        }
     }
 
     @ViewBuilder
@@ -619,28 +864,11 @@ struct HerStagePane: View {
                 )
 
             HStack(spacing: 8) {
-                Menu {
-                    Button { model = "wan" } label: { Text("wan") }
-                    if boundSlot.isEmpty {
-                        Button { openDoubaoLogin() } label: { Text("绑定豆包账号") }
-                    } else {
-                        Button { model = "doubao" } label: { Text("豆包号（\(boundSlot)）") }
-                    }
-                } label: {
-                    Text("用哪个来做：\(model == "wan" ? "wan" : "豆包号") ▾")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Tw.gray500)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .flatGlass(corner: 13, opacity: 0.44)
-                }
-                Text("5 秒")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Tw.gray500)
+                // ★ 2026-11-26：秒数、制作方式都撤掉；发送后在聊天里多问一步方式。
                 Spacer(minLength: 0)
                 Button {
                     onHit()
-                    if promptReady { confirmShow = true }
+                    if promptReady { confirmMake() }
                 } label: {
                     ZStack {
                         Circle()
@@ -699,8 +927,25 @@ struct HerStagePane: View {
             let cs = try await ActLab.chars()
             await MainActor.run {
                 roles = cs
-                if focus >= cs.count { focus = 0 }
-                pos = Double(focus)
+                // ★ 2026-11-26：一环 8 张；有形象优先全摆上（与创建先后无关），
+                //   不足依次补「有聊天端没形象」「完全空卡」。@MainActor 下同步取 hasFrame。
+                var filled: [ActLab.Char?] = Array(repeating: nil, count: 8)
+                var kinds: [Int] = Array(repeating: 2, count: 8)
+                var k = 0
+                for c in cs where OrbPet.hasFrame(c.id) {
+                    if k >= 8 { break }
+                    filled[k] = c; kinds[k] = 0; k += 1
+                }
+                for c in cs where !OrbPet.hasFrame(c.id) {
+                    if k >= 8 { break }
+                    filled[k] = c; kinds[k] = 1; k += 1
+                }
+                slotRoles = filled
+                cardKind = kinds
+                slotA = Array(0..<8).map { Double($0) * 45 }
+                selIdx = -1; selW = 0; selS = 0; pullIdx = -1; pullDy = 0
+                if focus >= 8 { focus = 0 }
+                pos = 0
                 dragStart = pos
             }
         } catch {
@@ -714,6 +959,19 @@ struct HerStagePane: View {
         } catch { }
     }
 
+    private func pickPet(_ c: ActLab.Char) {
+        CatBrain.currentCharId = c.id
+        onHit()
+    }
+
+    private func togglePet() {
+        if petOn { pip.stop(); petOn = false }
+        else {
+            pip.start()
+            petOn = true
+        }
+    }
+
     private func openDoubaoLogin() {
         NotificationCenter.default.post(name: Notification.Name("StillOpenDoubaoLogin"), object: nil)
         hint = "先去绑一个豆包号，一人只绑一个"
@@ -723,19 +981,32 @@ struct HerStagePane: View {
         chatLines.append(ChatLine(text: text, mine: mine))
     }
 
+    /// ★ 2026-11-26：点发送 → 用户原句进聊天 → 再问制作方式。
+    private func confirmMake() {
+        let desc = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !desc.isEmpty else { return }
+        pendingDesc = desc
+        panel = "chat"
+        chatLines.removeAll()
+        addLine(desc, true)            // 用户写的动作原句，一字不动
+        prompt = ""
+        showWaySheet = true
+    }
+
     private func submitJob() async {
         guard let c = currentRole else { return }
         let charId = c.id
         let roleName = c.title
-        let desc = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let desc = pendingDesc.isEmpty
+            ? prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            : pendingDesc
         let useModel = model
         let slot = boundSlot
         guard !desc.isEmpty else { return }
 
         panel = "chat"
         banner = ""
-        chatLines.removeAll()
-        addLine("正在把动作交给它做…", true)
+        if chatLines.isEmpty { addLine("正在把动作交给它做…", true) }
         do {
             let d1 = try await ActLab.rawPost("/api/act/draft", body: ["char": charId, "描述": desc])
             let j1 = (try? JSONSerialization.jsonObject(with: d1) as? [String: Any]) ?? [:]

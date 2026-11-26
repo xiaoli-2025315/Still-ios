@@ -236,9 +236,6 @@ struct MainHomeView: View {
                     .zIndex(4)
             }
         }
-        // ★ 2026-11-26：形象选择卡网页里的「建动态形象 / 新建角色」两个空卡回调。
-        .onReceive(NotificationCenter.default.publisher(for: .cardRingMakeImage)) { _ in talkOpen = true }
-        .onReceive(NotificationCenter.default.publisher(for: .cardRingCreate)) { _ in actOpen = true }
         // ★ v95：第一回进首页，把「它在这儿 / 叫它来 / 我」三处挖亮讲一遍。
         //   只讲一遍。讲过就记在本地，再也不弹。
         .overlayPreferenceValue(CoachAnchorKey.self) { CoachOverlay(册: "首页v1", 锚: $0) }
@@ -383,12 +380,9 @@ struct MainHomeView: View {
     private var content: some View {
         Group {
             switch tab {
-            // ★ 2026-11-26：形象选择卡（网页版，设计稿原样）当「它」页本体。
-            //   老 HerStagePane 整段留着；想退回把这一行换回 HerStagePane(...) 即可。
-            case 0: CardRingHost(
-                onMakeImage: { _, _ in talkOpen = true },   // 建动态形象 → 进聊天页走做形象流程
-                onCreate: { actOpen = true }                // 新建角色 → 角色页
-            )
+            // ★ 2026-11-23：新舞台直接当「它」页首页本体，不再从「角色」按钮另开一页。
+            //   老 HerPane 整段留着；想退回把这一行换回 HerPane(...) 即可。
+            case 0: HerStagePane(pip: pip, onHit: hit, onCreateImage: { actOpen = true }, pinchReset: pinchReset)
             case 1: CommPane(feed: feed)
             default: RankPane(feed: feed)
             }

@@ -497,7 +497,8 @@ enum ActLab {
 
     /// 创建三段链做到哪了（台子读盘推进，不编状态）。
     static func createState(charId: String) async -> [String: Any]? {
-        guard let d = try? await rawGet("/api/char/create/state?char=" + enc(charId), timeout: 20),
+        let c = charId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? charId
+        guard let d = try? await rawGet("/api/char/create/state?char=" + c, timeout: 20),
               let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return nil }
         return o
     }

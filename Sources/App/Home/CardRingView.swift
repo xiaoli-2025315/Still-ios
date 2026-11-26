@@ -179,7 +179,7 @@ enum CardRingBuild {
         let cs = (try? await ActLab.chars()) ?? []
         for c in cs {
             let row: [String: Any] = ["id": c.id, "name": c.title, "done": c.doneCount]
-            if OrbPet.hasFrame(c.id) {
+            if await OrbPet.hasFrame(c.id) {
                 var r = row
                 let assetId = (c.id == "builtin" || c.id == "__builtin") ? "maozhan" : c.id
                 var comp = URLComponents(string: ActLab.base + "/assets/acts/"

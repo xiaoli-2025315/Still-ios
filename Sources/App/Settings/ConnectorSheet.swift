@@ -54,8 +54,21 @@ struct ConnectorSheet: View {
                 if !loaded {
                     ProgressView().tint(Cfg.Palette.faint)
                 } else if groups.isEmpty {
-                    Text("没读到连接器，等下再开一次")
-                        .font(.system(size: 13)).foregroundStyle(Cfg.Palette.faint)
+                    VStack(spacing: 10) {
+                        Text("没读到连接器")
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
+                        if !note.isEmpty {
+                            Text(note).font(.system(size: 12)).foregroundStyle(Cfg.Palette.faint)
+                                .multilineTextAlignment(.center)
+                        }
+                        if note.contains("登录") {
+                            Text("回 App 重新登录一下，再进这里")
+                                .font(.system(size: 11)).foregroundStyle(Tw.red600)
+                        }
+                        Button("再试一次") { Task { await 载入() } }
+                            .buttonStyle(.borderedProminent).tint(Tw.red600)
+                    }
+                    .padding(.horizontal, 24)
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
@@ -157,11 +170,19 @@ struct ConnectorSheet: View {
 
     private func 载入() async {
         do {
-            let data = try await ActLab.rawGet("/api/connector/list")
+            // ★ 2026-11-25：服务端这条只注册在 POST 区，之前 GET 打的是空路由
+            let data = try await ActLab.rawPost("/api/connector/list", body: [String: Any]())
             let p = try JSONDecoder().decode(ConnectorPayload.self, from: data)
-            groups = p.groups
+            if p.ok != false {
+                groups = p.groups
+                note = ""
+            } else {
+                groups = []
+                note = "服务器没把连接器读出来"
+            }
         } catch {
             groups = []
+            note = "连不上服务器：\(error.localizedDescription)"
         }
         loaded = true
     }

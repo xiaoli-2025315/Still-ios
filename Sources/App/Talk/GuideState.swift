@@ -41,7 +41,14 @@ enum GuideState {
     static func 推进(_ g: inout G, _ 用户话: String) -> String {
         if g.step == STEP_NAME {
             let 名 = 提取名字(用户话)
-            if !名.isEmpty { PetName.set(名) }
+            if !名.isEmpty {
+                PetName.set(名)
+                // ★ 2026-11-26：名字同步到台子 —— local_ 新角色当场登记（侧栏/记忆球才
+                //   看得到），老角色改名字。失败不拦引导（本地名字已经落了）。
+                let cid = g.charId
+                let nm = 名
+                Task { try? await ActLab.charName(charId: cid, name: nm) }
+            }
             写(g.charId, STEP_PERSONA, g.方式); g.step = STEP_PERSONA
             return "好呀\(名)，那我就叫你阿明啦～以后就这么喊你"
         } else if g.step == STEP_PERSONA {

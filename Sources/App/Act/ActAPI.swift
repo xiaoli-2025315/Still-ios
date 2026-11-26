@@ -74,6 +74,15 @@ extension ActLab {
         return data
     }
 
+    // MARK: - 角色名字同步（2026-11-26）
+
+    /// 名字定下来同步到台子 —— local_ 新角色当场登记进角色表（侧栏/记忆球才看得到），
+    /// 老角色只改名字一个字段。对齐安卓 3.x 的 Act.charName。
+    static func charName(charId: String, name: String) async throws {
+        _ = try await rawPost("/api/act/charname",
+                              query: ["char": charId, "name": name])
+    }
+
     private static func snipText(_ d: Data) -> String {
         let s = String(data: d.prefix(160), encoding: .utf8) ?? ""
         return s.isEmpty ? "（没有正文）" : s

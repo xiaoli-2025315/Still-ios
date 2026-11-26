@@ -286,7 +286,9 @@ struct TalkPage: View {
                 .background(Circle().fill(Tw.orbBlue))
                 .shadow(color: Color.black.opacity(0.10), radius: 6, y: 3)
 
-                Text(groupTitle.isEmpty ? (CatBrain.group == nil ? "它" : "群聊") : groupTitle)
+                // ★ 2026-11-26：单聊标题显示它真正的名字（引导里起的名字），不再永远写「它」；
+                //   群聊照旧显示群名。PetName 是全工程唯一一份名字，引导答完这句就会跟着刷新。
+                Text(groupTitle.isEmpty ? (CatBrain.group == nil ? PetName.current : "群聊") : groupTitle)
                     .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(Tw.gray900)
                     .lineLimit(1)
